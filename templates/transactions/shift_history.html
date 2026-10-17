@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Guard Shifts — KEYTRACK{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="text-[22px] font-extrabold tracking-tight">Guard Shifts</h1>
+  <p class="text-[13px] text-stone-500 mt-0.5">Shifts start automatically when you log in and end when you log out.</p>
+</div>
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
+<table class="min-w-full text-[13px]">
+<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
+<th class="p-3 font-medium">Guard</th><th class="p-3 font-medium">Post</th><th class="p-3 font-medium">Start</th><th class="p-3 font-medium">End</th><th class="p-3 font-medium">Status</th></tr></thead>
+<tbody class="divide-y divide-stone-100">
+{% for s in shifts %}
+<tr class="hover:bg-stone-50/60">
+  <td class="p-3">{{ s.guard }}</td>
+  <td class="p-3">{{ s.post }}</td>
+  <td class="p-3 text-stone-500">{{ s.shift_start|date:"M j, Y, g:i A" }}</td>
+  <td class="p-3 text-stone-500">{{ s.shift_end|date:"M j, Y, g:i A"|default:"—" }}</td>
+  <td class="p-3">{% if s.is_on_duty %}<span class="bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● ON DUTY</span>{% else %}<span class="bg-stone-100 text-stone-500 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold">● ENDED</span>{% endif %}</td>
+</tr>
+{% empty %}<tr><td colspan="5" class="p-6 text-center text-stone-400">No shifts yet. Log in to start one.</td></tr>{% endfor %}
+</tbody>
+</table>
+</div>
+{% endblock %}

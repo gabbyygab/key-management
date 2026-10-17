@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="bg-white rounded-xl border border-stone-200 p-6">
+    <h1 class="text-2xl font-extrabold">KEYTRACK</h1>
+    <p class="mt-2 text-stone-500 text-[13px]">University Key Management. <a href="{% url 'accounts:login' %}" class="font-semibold underline">Log in</a></p>
+  </div>
+{% endblock %}
+{% block content_anon %}
+  <div class="min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white rounded-2xl border border-stone-200 shadow-sm p-8 max-w-md w-full text-center">
+      <div class="flex justify-center"><i data-lucide="key-round" class="w-8 h-8"></i></div>
+      <h1 class="text-2xl font-extrabold mt-2">KEYTRACK</h1>
+      <p class="mt-1 text-stone-500 text-[13px]">University Key Management</p>
+      <a href="{% url 'accounts:login' %}" class="mt-4 inline-block bg-[#14342A] text-white px-5 py-2.5 rounded-lg text-[14px] font-semibold">Log in →</a>
+    </div>
+  </div>
+{% endblock %}

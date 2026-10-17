@@ -1,0 +1,8 @@
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+  <div class="flex items-start justify-between">
+    <div class="text-[13px] text-stone-500">{{ label }}</div>
+    <div class="w-8 h-8 rounded-lg flex items-center justify-center {{ icon_bg|default:'bg-stone-100' }}"><i data-lucide="{{ icon|default:'key-round' }}" class="w-4 h-4"></i></div>
+  </div>
+  <div class="text-[26px] leading-8 font-extrabold mt-1">{{ value }}</div>
+  <div class="text-[12px] text-stone-400 mt-0.5">{{ sub }}</div>
+</div>

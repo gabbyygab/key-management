@@ -1,0 +1,25 @@
+<header class="bg-[#FAF7F0]/90 backdrop-blur border-b border-stone-200 sticky top-0 z-10">
+  <div class="px-6 lg:px-8 py-3 flex items-center gap-3">
+    <div class="text-[12px] text-stone-500 tracking-wide md:hidden font-extrabold text-[#0F2E1F]">KEYTRACK</div>
+    <nav class="hidden md:block text-[12px] text-stone-500">
+      <span class="font-semibold text-stone-700">KEYTRACK</span>
+      <span class="mx-1">›</span> Workspace <span class="mx-1">›</span>
+      <span class="text-stone-800 font-medium">{% block crumb %}Dashboard{% endblock %}</span>
+    </nav>
+    <div class="flex-1"></div>
+    <span class="hidden lg:inline text-[12px] text-stone-500">{% now "D, F j, Y" %}</span>
+    <div class="w-8 h-8 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
+    <button type="button" data-logout-open title="Logout" aria-label="Log out" class="w-8 h-8 rounded-lg border border-stone-200 bg-white flex items-center justify-center hover:bg-stone-50">
+      <i data-lucide="log-out" class="w-4 h-4 text-stone-500"></i>
+    </button>
+  </div>
+  <!-- mobile nav -->
+  <nav class="md:hidden flex gap-1 overflow-x-auto px-4 pb-2 text-[13px]">
+    <a href="{% url 'dashboard' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Dashboard</a>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Transact</a>
+    <a href="{% url 'keys:key_list' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Keys</a>
+    <a href="{% url 'accounts:borrower_list' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Borrowers</a>
+    <a href="{% url 'transactions:history' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">History</a>
+    <button type="button" data-logout-open class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap text-red-700 font-medium">Log out</button>
+  </nav>
+</header>

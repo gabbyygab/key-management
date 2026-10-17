@@ -1,0 +1,44 @@
+{% load static tailwind_cli %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — KEYTRACK</title>{% tailwind_css %}
+</head>
+<body class="bg-[#0F2E1F] min-h-screen flex items-center justify-center p-6">
+  <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-2xl overflow-hidden shadow-2xl">
+    <div class="bg-[#0F2E1F] text-white p-8 flex flex-col justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"><i data-lucide="key-round" class="w-5 h-5"></i></div>
+        <div class="leading-tight"><div class="font-extrabold tracking-wide">KEYTRACK</div>
+        <div class="text-[11px] text-white/60">University Key Management</div></div>
+      </div>
+      <div class="mt-10">
+        <h1 class="text-2xl font-extrabold">Guard<br>Workspace</h1>
+        <p class="text-[13px] text-white/60 mt-2">Release and receive keys, track who has what, and keep every room secure.</p>
+        <div class="mt-6 space-y-2 text-[13px] text-white/70">
+          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> Search person, release key in seconds</div>
+          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> One active key per borrower</div>
+          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> Shift starts on login, ends on logout</div>
+        </div>
+      </div>
+      <div class="text-[11px] text-white/40 mt-8">Campus Security · Facilities Office</div>
+    </div>
+    <div class="bg-[#FAF7F0] p-8">
+      <h2 class="text-xl font-extrabold">Welcome back</h2>
+      <p class="text-[13px] text-stone-500 mt-1">Log in to start your shift.</p>
+      {% if error %}<div class="mt-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ error }}</div>{% endif %}
+      <form method="post" class="mt-5 space-y-3">{% csrf_token %}
+        <div><label class="text-[12px] font-semibold text-stone-600">USERNAME</label>
+          <input name="username" required autocomplete="username" class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></div>
+        <div><label class="text-[12px] font-semibold text-stone-600">PASSWORD</label>
+          <input name="password" type="password" required autocomplete="current-password" class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></div>
+        <button class="w-full bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2.5 rounded-lg font-semibold text-[14px] inline-flex items-center justify-center gap-2">Log in <i data-lucide="arrow-right" class="w-4 h-4"></i></button>
+      </form>
+      <p class="text-[12px] text-stone-400 mt-4">No account? Ask an admin to create your guard account and approve it.</p>
+    </div>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

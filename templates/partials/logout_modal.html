@@ -1,0 +1,66 @@
+{# Reusable logout confirmation modal. Opened by any [data-logout-open] button. #}
+<div id="logout-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="logout-modal-title">
+  <div data-logout-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+        <i data-lucide="log-out" class="w-5 h-5 text-red-600"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="logout-modal-title" class="text-[15px] font-bold text-stone-900">Log out of KEYTRACK?</h2>
+        <p class="text-[13px] text-stone-500 mt-1">You will be signed out of this device. Your current guard shift will end on logout.</p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 mt-5">
+      <button type="button" data-logout-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+        Cancel
+      </button>
+      <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="px-4 py-2 rounded-lg bg-[#0F2E1F] text-white text-[13px] font-semibold hover:bg-[#143d28] inline-flex items-center gap-2">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          Log out
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var modal = document.getElementById("logout-modal");
+  if (!modal) return;
+  var lastFocused = null;
+
+  function openModal() {
+    lastFocused = document.activeElement;
+    modal.classList.remove("hidden");
+    document.body.classList.add("overflow-hidden");
+    var cancelBtn = modal.querySelector("[data-logout-close]");
+    if (cancelBtn) cancelBtn.focus();
+  }
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    document.body.classList.remove("overflow-hidden");
+    if (lastFocused && lastFocused.focus) lastFocused.focus();
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-logout-open]")) {
+      e.preventDefault();
+      openModal();
+    } else if (e.target.closest("[data-logout-close]") || e.target.closest("[data-logout-overlay]")) {
+      closeModal();
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
+})();
+</script>

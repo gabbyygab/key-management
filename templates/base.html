@@ -1,0 +1,33 @@
+{% load static tailwind_cli %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}KEYTRACK{% endblock %}</title>
+  {% tailwind_css %}
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-[#FAF7F0] text-stone-800 min-h-screen">
+  {% if user.is_authenticated %}
+  <div class="flex min-h-screen">
+    {% include "partials/sidebar.html" %}
+    <div class="flex-1 min-w-0 flex flex-col">
+      {% include "partials/navbar.html" %}
+      <main class="flex-1 px-6 lg:px-8 py-6 max-w-[1400px] w-full mx-auto">
+        {% include "partials/messages.html" %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% else %}
+    {% block content_anon %}{% endblock %}
+  {% endif %}
+  {% if user.is_authenticated %}
+    {% include "partials/logout_modal.html" %}
+  {% endif %}
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>lucide.createIcons();</script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

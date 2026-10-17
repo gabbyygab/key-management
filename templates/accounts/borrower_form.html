@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — KEYTRACK{% endblock %}
+{% block content %}
+<div class="max-w-2xl">
+  <div class="mb-4">
+    <h1 class="text-[22px] font-extrabold tracking-tight">{{ title }}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Saved borrowers appear in guard search instantly.</p>
+  </div>
+
+  <form method="post" class="bg-white rounded-xl shadow-sm border border-stone-200 divide-y divide-stone-100">{% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="p-4 sm:px-6">
+      <div class="px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ form.non_field_errors }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Identity -->
+    <div class="p-4 sm:p-6">
+      <h2 class="text-[12px] font-bold uppercase tracking-wider text-stone-400 mb-4">Identity</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-1">
+          <label for="{{ form.id_number.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">ID number <span class="text-red-500">*</span></label>
+          {{ form.id_number }}
+          {% if form.id_number.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.id_number.errors.0 }}</p>{% endif %}
+        </div>
+        <div class="sm:col-span-1">
+          <label for="{{ form.borrower_type.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Borrower type <span class="text-red-500">*</span></label>
+          {{ form.borrower_type }}
+          {% if form.borrower_type.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.borrower_type.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="{{ form.first_name.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">First name <span class="text-red-500">*</span></label>
+          {{ form.first_name }}
+          {% if form.first_name.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.first_name.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="{{ form.last_name.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Last name <span class="text-red-500">*</span></label>
+          {{ form.last_name }}
+          {% if form.last_name.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.last_name.errors.0 }}</p>{% endif %}
+        </div>
+        <div class="sm:col-span-2">
+          <label for="{{ form.department.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Department</label>
+          {{ form.department }}
+          {% if form.department.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.department.errors.0 }}</p>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact -->
+    <div class="p-4 sm:p-6">
+      <h2 class="text-[12px] font-bold uppercase tracking-wider text-stone-400 mb-4">Contact</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label for="{{ form.contact_number.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Contact number</label>
+          {{ form.contact_number }}
+          {% if form.contact_number.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.contact_number.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="{{ form.email.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Email</label>
+          {{ form.email }}
+          {% if form.email.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.email.errors.0 }}</p>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Borrowing privilege -->
+    <div class="p-4 sm:p-6">
+      <h2 class="text-[12px] font-bold uppercase tracking-wider text-stone-400 mb-4">Borrowing privilege</h2>
+      <div class="space-y-3">
+        <label class="flex items-center gap-3 bg-[#FAF7F0] border border-stone-200 rounded-xl px-4 py-3 cursor-pointer">
+          {{ form.is_authorized }}
+          <span class="text-[13px]"><b>Authorized to borrow</b><br><span class="text-stone-500">Uncheck to block this person without deleting them.</span></span>
+        </label>
+        {% if form.is_authorized.errors %}<p class="text-[12px] text-red-600">{{ form.is_authorized.errors.0 }}</p>{% endif %}
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label for="{{ form.authorized_until.id_for_label }}" class="block text-[13px] font-semibold text-stone-700 mb-1.5">Authorized until <span class="text-stone-400 font-normal">(optional)</span></label>
+            {{ form.authorized_until }}
+            {% if form.authorized_until.errors %}<p class="text-[12px] text-red-600 mt-1">{{ form.authorized_until.errors.0 }}</p>{% endif %}
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="flex items-center gap-2.5 cursor-pointer">
+              {{ form.is_active }}
+              <span class="text-[13px] font-semibold text-stone-700">Active record</span>
+            </label>
+          </div>
+        </div>
+        {% if form.is_active.errors %}<p class="text-[12px] text-red-600">{{ form.is_active.errors.0 }}</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="p-4 sm:px-6 flex items-center gap-2 bg-[#FAF7F0]/60 rounded-b-xl">
+      <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-5 py-2.5 rounded-lg text-[13px] font-semibold inline-flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> Save user</button>
+      <a href="{% url 'accounts:borrower_list' %}" class="bg-white border border-stone-200 px-5 py-2.5 rounded-lg text-[13px] font-medium">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
