@@ -38,7 +38,8 @@
       <p class="text-[12px] text-stone-400 mt-4">No account? Ask an admin to create your guard account and approve it.</p>
     </div>
   </div>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script>lucide.createIcons();</script>
+  {# Standalone page — does not extend base.html, so it loads these itself. #}
+  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+  <script src="{% static 'js/init-icons.js' %}"></script>
 </body>
 </html>

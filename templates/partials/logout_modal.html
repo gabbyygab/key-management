@@ -1,6 +1,9 @@
-{# Reusable logout confirmation modal. Opened by any [data-logout-open] button. #}
+{# Reusable logout confirmation modal.
+   Behavior (overlay click, Escape, focus trap, focus restore, scroll lock)
+   comes from static/js/modal.js — this partial is markup only (F6.9).
+   Opened by any [data-modal-open="logout-modal"] button. #}
 <div id="logout-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="logout-modal-title">
-  <div data-logout-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
 
   <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">
     <div class="flex items-start gap-3">
@@ -14,7 +17,7 @@
     </div>
 
     <div class="flex items-center justify-end gap-2 mt-5">
-      <button type="button" data-logout-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+      <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
         Cancel
       </button>
       <form method="post" action="{% url 'accounts:logout' %}">
@@ -27,40 +30,3 @@
     </div>
   </div>
 </div>
-
-<script>
-(function () {
-  var modal = document.getElementById("logout-modal");
-  if (!modal) return;
-  var lastFocused = null;
-
-  function openModal() {
-    lastFocused = document.activeElement;
-    modal.classList.remove("hidden");
-    document.body.classList.add("overflow-hidden");
-    var cancelBtn = modal.querySelector("[data-logout-close]");
-    if (cancelBtn) cancelBtn.focus();
-  }
-
-  function closeModal() {
-    modal.classList.add("hidden");
-    document.body.classList.remove("overflow-hidden");
-    if (lastFocused && lastFocused.focus) lastFocused.focus();
-  }
-
-  document.addEventListener("click", function (e) {
-    if (e.target.closest("[data-logout-open]")) {
-      e.preventDefault();
-      openModal();
-    } else if (e.target.closest("[data-logout-close]") || e.target.closest("[data-logout-overlay]")) {
-      closeModal();
-    }
-  });
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !modal.classList.contains("hidden")) {
-      closeModal();
-    }
-  });
-})();
-</script>

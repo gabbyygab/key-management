@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Key Transactions — KEYTRACK{% endblock %}
 {% block content %}
+<div data-pos-root data-shift-active="{% if shift %}1{% else %}0{% endif %}">
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Key Transactions</h1>
@@ -86,4 +88,9 @@
   </div>
 </div>
 </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+  <script src="{% static 'js/pos.js' %}"></script>
 {% endblock %}
