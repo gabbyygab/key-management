@@ -1,0 +1,708 @@
+===============================================================================
+KEYTRACK - KEY MANAGEMENT SYSTEM
+BACKEND TASK LIST
+===============================================================================
+Project:   C:\Users\GabrielD\OneDrive\Documents\Desktop\IT401\key-management
+Stack:     Django 5.x, Python 3.14, SQLite (dev), django_tailwind_cli
+Date:      2026-10-19
+Audience:  Backend developer
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+SECTION 0 - READ THIS FIRST: WHAT ALREADY EXISTS
+-------------------------------------------------------------------------------
+Do NOT rebuild these. They are implemented and verified working against the
+database (a real borrow/return cycle was executed end-to-end):
+
+  WORKING:
+  - accounts.User (custom user, AUTH_USER_MODEL) with Role choices:
+      ADMIN, FACILITIES, CUSTODIAN, GUARD, FACULTY_STAFF
+    and Approval choices: PENDING, APPROVED, REJECTED
+  - accounts.Department, accounts.Borrower (with .can_borrow, .full_name,
+    .active_transaction())
+  - facilities.Building, facilities.Room (RoomType + Status choices,
+    unique_room_per_building constraint)
+  - keys.KeyCategory, keys.Key (Status choices, unique copy per
+    room+category constraint, .is_available)
+  - transactions.GuardShift, transactions.BorrowTransaction
+  - transactions/services.py -> borrow_key() and return_key()
+      * @db_transaction.atomic
+      * select_for_update() row locking (prevents double-issue of one key)
+      * generate_transaction_no() -> format TXN-YYYYMMDD-0001
+      * Rules enforced: no open shift = cannot release; unauthorized borrower
+        = blocked; one active key per borrower = blocked
+  - transactions/signals.py -> GuardShift opens on login, closes on logout
+  - accounts/decorators.py -> role_required(*roles); superusers bypass
+  - accounts/mixins.py -> RoleRequiredMixin (written but NEVER USED anywhere)
+  - accounts/backends.py -> ApprovedUserBackend (active auth backend)
+  - Migrations applied for: accounts, facilities, keys, transactions
+
+  THE CORE PROBLEM TO FIX:
+  Every single view in the project is decorated @role_required("GUARD").
+  That is 20 views across 4 apps. There is no ADMIN-gated view anywhere in
+  the codebase. The role separation the system is supposed to have does not
+  exist yet. Guards can currently create buildings, rooms, keys, categories
+  and borrowers - that is the admin's job, not theirs.
+
+  ALSO MISSING / BROKEN:
+  - audit app:         models.py is EMPTY (stub comment only), no migrations
+  - notifications app: models.py is EMPTY (stub comment only), no migrations
+  - Room has NO form, NO view, NO URL, NO template (model exists only)
+  - No room scheduling model of any kind
+  - No user/guard management views (User model has approval_status,
+    approved_by, approved_at fields that nothing ever writes to)
+  - Every tests.py is empty - zero automated tests
+  - Database is completely empty (0 rows in every table, no superuser)
+  - ALLOWED_HOSTS excludes "testserver" so Django test client returns HTTP 400
+    (see TASK B8.5)
+  - transactions/views.py:117 redirects with a hardcoded f-string URL instead
+    of reverse() (see TASK B8.4)
+  - MORE DEFECTS: see SECTION 8 for the full reviewed bug list, including
+    an open redirect at accounts/views.py:30, GET-logout CSRF, and a login
+    check that locks non-superuser ADMINs out of the app entirely
+
+
+-------------------------------------------------------------------------------
+SECTION 1 - ROLE SEPARATION (HIGHEST PRIORITY - DO THIS FIRST)
+-------------------------------------------------------------------------------
+Everything else depends on this. Target permission model:
+
+  ADMIN  = sets up and owns all master data + scheduling + user management
+  GUARD  = ONLY releases keys, receives returns, and logs those records
+
+TASK B1.1 - Create a shared permissions module
+  File: accounts/permissions.py (new)
+  - admin_required      -> wraps role_required("ADMIN")
+  - guard_required      -> wraps role_required("GUARD")
+  - admin_or_guard_required -> role_required("ADMIN", "GUARD") for read-only
+                               shared screens
+  - Keep superuser bypass behavior that role_required already has.
+
+TASK B1.2 - Re-gate every existing view
+  Change the decorator on each view listed below. This is the single most
+  important change in this task list.
+
+  MOVE TO @admin_required:
+    facilities/views.py:9    building_list
+    facilities/views.py:15   building_create
+    facilities/views.py:25   building_update
+    keys/views.py:10         key_list
+    keys/views.py:25         key_create
+    keys/views.py:37         key_update
+    keys/views.py:48         category_list
+    keys/views.py:54         category_create
+    accounts/views.py:45     borrower_list
+    accounts/views.py:57     borrower_create
+    accounts/views.py:70     borrower_update
+    accounts/views.py:84     borrower_toggle
+
+  KEEP AS @guard_required:
+    transactions/views.py:52   borrow_dashboard   (the POS screen)
+    transactions/views.py:99   borrow_confirm
+    transactions/views.py:117  return_confirm
+
+  MAKE @admin_or_guard_required (both roles read, scoped differently):
+    transactions/views.py:13   dashboard
+    transactions/views.py:129  shift_history
+    transactions/views.py:139  transaction_history
+
+  NOTE: shift_history already scopes by is_superuser. Change that to scope by
+  role: ADMIN sees all shifts, GUARD sees only their own
+  (GuardShift.objects.filter(guard=request.user)).
+
+TASK B1.3 - Guard read-only access to master data
+  The guard's POS screen must still SEARCH keys and borrowers, but must not
+  be able to create or edit them. Provide read-only JSON search endpoints
+  (see Section 3) instead of giving guards the list views.
+
+TASK B1.4 - Harden the 403 path
+  - Confirm templates/403.html renders for PermissionDenied.
+  - Add a handler403 in config/urls.py if not already resolving.
+  - The 403 page must state which role is required.
+
+TASK B1.5 - Role-aware landing redirect
+  - LOGIN_REDIRECT_URL is currently "dashboard" for everyone.
+  - Add a post_login_router view: ADMIN -> admin dashboard,
+    GUARD -> POS borrow screen. Point LOGIN_REDIRECT_URL at it.
+
+
+-------------------------------------------------------------------------------
+SECTION 2 - ADMIN: USER & GUARD MANAGEMENT (DOES NOT EXIST YET)
+-------------------------------------------------------------------------------
+The admin must be the one who creates guards. Currently impossible outside
+Django's /admin/.
+
+TASK B2.1 - GuardForm / UserForm
+  File: accounts/forms.py (append)
+  - UserCreateForm: username, first_name, last_name, email, employee_id,
+    contact_number, role, department, password1, password2
+  - UserEditForm: same minus passwords
+  - Validate email unique (model already enforces unique=True)
+  - Validate employee_id unique when provided
+  - Follow the existing TAILWIND widget-class pattern used by the other forms
+    in this file.
+
+TASK B2.2 - User management views
+  File: accounts/views.py (append) - ALL @admin_required
+  - user_list      GET  /accounts/users/
+                   Filter by role, approval_status, department; search by
+                   name/username/employee_id
+  - user_create    POST /accounts/users/new/
+                   On save set approval_status=APPROVED, approved_by=
+                   request.user, approved_at=now() (admin-created users are
+                   pre-approved)
+  - user_update    POST /accounts/users/<pk>/edit/
+  - user_toggle    POST /accounts/users/<pk>/toggle/
+                   Toggle is_active. Must NOT allow self-deactivation.
+  - user_reset_password POST /accounts/users/<pk>/reset-password/
+
+TASK B2.3 - Approval workflow (fields exist, logic does not)
+  - pending_user_list  GET  /accounts/users/pending/   @admin_required
+  - user_approve       POST /accounts/users/<pk>/approve/
+                       Set approval_status=APPROVED, approved_by, approved_at
+  - user_reject        POST /accounts/users/<pk>/reject/ (require a reason)
+  - Confirm ApprovedUserBackend actually blocks PENDING/REJECTED users at
+    login. Write a test proving it (see Section 7).
+
+TASK B2.4 - URLs
+  File: accounts/urls.py - add all routes above under the "accounts" namespace.
+
+TASK B2.5 - Guard duty/post assignment
+  - GuardShift.post is currently hardcoded to "Main Desk" in
+    transactions/signals.py.
+  - Add a GuardPost model (name, building FK nullable, is_active) OR a
+    default_post field on User.
+  - Admin assigns the post; the login signal must read it instead of
+    hardcoding. Migration required.
+
+
+-------------------------------------------------------------------------------
+SECTION 3 - ADMIN: ROOM MANAGEMENT + JSON SEARCH ENDPOINTS
+-------------------------------------------------------------------------------
+TASK B3.1 - RoomForm
+  File: accounts/forms.py (append, matching existing pattern)
+  - Fields: building, room_code, name, room_type, floor, capacity, status,
+    is_active
+  - Surface the unique_room_per_building constraint as a friendly
+    ValidationError, not a 500.
+
+TASK B3.2 - Room CRUD views (@admin_required)
+  File: facilities/views.py (append)
+  - room_list    GET  /facilities/rooms/
+                 Filter by building, room_type, status; search by
+                 room_code/name; select_related("building")
+  - room_create  POST /facilities/rooms/new/
+  - room_update  POST /facilities/rooms/<pk>/edit/
+  - room_toggle  POST /facilities/rooms/<pk>/toggle/  (is_active)
+  Add routes to facilities/urls.py.
+
+TASK B3.3 - Building delete protection
+  Building/Room use on_delete=PROTECT. Do not add hard deletes. Use is_active
+  soft-delete and return a readable error if a protected delete is attempted.
+
+TASK B3.4 - JSON search endpoints for the guard POS screen
+  These replace the current full-page-reload search in borrow_dashboard and
+  are what the frontend POS screen will call.
+
+  - GET /api/borrowers/search/?q=      @guard_required
+      Returns: id, id_number, full_name, borrower_type, department code,
+               can_borrow (bool), active_transaction summary or null
+      Limit 20. Only is_active=True.
+  - GET /api/keys/search/?q=           @guard_required
+      Returns: id, key_code, room label (BLDG-ROOM), category name,
+               status, is_available
+      Limit 30. Only status=AVAILABLE.
+  - GET /api/keys/<pk>/                @guard_required
+      Single key detail for the POS confirm panel.
+  - GET /api/transactions/active/      @guard_required
+      Currently-out keys for the POS right-hand panel.
+
+  Rules for all endpoints:
+  - Return JsonResponse. Use select_related to avoid N+1 queries.
+  - Never expose password hashes, emails of users, or internal IDs beyond
+    what the UI needs.
+  - Return 403 (not 302) for unauthorized AJAX calls so the frontend can
+    handle it cleanly.
+
+
+-------------------------------------------------------------------------------
+SECTION 4 - GUARD: POS-STYLE BORROWING BACKEND
+-------------------------------------------------------------------------------
+The service layer (borrow_key / return_key) is already correct and
+transaction-safe. Do NOT rewrite it. Wrap it for POS use.
+
+TASK B4.1 - JSON borrow endpoint
+  POST /api/transactions/borrow/   @guard_required
+  - Body: borrower_id, key_id, purpose, expected_return_at (optional)
+  - Call the existing borrow_key() service
+  - Success 201: transaction_no, key_code, borrower name, borrowed_at,
+    new key status
+  - BorrowError -> 422 with {"error": "<message>"} (these are the business
+    rules: no shift, unauthorized borrower, already holding a key)
+  - Keep CSRF protection. Frontend must send X-CSRFToken.
+
+TASK B4.2 - JSON return endpoint
+  POST /api/transactions/<pk>/return/   @guard_required
+  - Body: remarks (optional), condition flag (optional)
+  - Call existing return_key()
+  - Success 200: transaction_no, returned_at, new key status
+  - Already-closed transaction -> 422
+
+TASK B4.3 - expected_return_at is never set
+  The field exists on BorrowTransaction but nothing populates it.
+  - Add an optional expected_return_at to the borrow flow.
+  - Default it from room schedule end time when the borrow is tied to a
+    scheduled class (see Section 5), otherwise allow the guard to pick.
+
+TASK B4.4 - Overdue detection (Status.OVERDUE exists but is never set)
+  - Add a management command: python manage.py mark_overdue
+  - Marks ACTIVE transactions past expected_return_at as OVERDUE and sets
+    the related Key.status to OVERDUE.
+  - Must be idempotent (safe to run repeatedly).
+  - The dashboard already counts overdue; it will always read 0 until this
+    exists.
+
+TASK B4.5 - Fix the hardcoded redirect
+  transactions/views.py:117 uses:
+     redirect(f"/transactions/borrow/?borrower_id={borrower_id}")
+  Replace with reverse() + urlencode.
+
+TASK B4.6 - Guard cannot edit history
+  Ensure there is no code path where a GUARD can update or delete a
+  BorrowTransaction after return_confirmed=True. Guards log records; they do
+  not amend them. Only ADMIN may correct a record, and corrections must be
+  written to the audit log (Section 6).
+
+
+-------------------------------------------------------------------------------
+SECTION 5 - ADMIN: ROOM SCHEDULING ALGORITHM (ENTIRELY NEW)
+-------------------------------------------------------------------------------
+No scheduling model exists. This is net-new work.
+
+TASK B5.1 - New app
+  python manage.py startapp scheduling
+  Add 'scheduling' to INSTALLED_APPS in config/settings.py.
+
+TASK B5.2 - Models
+  File: scheduling/models.py
+
+  Term
+    - name, start_date, end_date, is_active
+
+  Subject (optional but recommended)
+    - code, title, department FK
+
+  ScheduleBlock  (one recurring class/booking)
+    - term            FK Term
+    - room            FK facilities.Room (PROTECT)
+    - subject         FK Subject (nullable)
+    - title           CharField (e.g. "IT401 Lecture")
+    - instructor      FK accounts.Borrower (nullable) - the person expected
+                      to collect the key
+    - day_of_week     IntegerChoices 0=Mon .. 6=Sun
+    - start_time      TimeField
+    - end_time        TimeField
+    - is_active       BooleanField
+    - created_by      FK User (SET_NULL)
+    - created_at / updated_at
+
+    Meta constraints:
+    - CheckConstraint: end_time > start_time
+    - Index on (room, day_of_week, start_time) for fast conflict lookups
+
+  ScheduleException (one-off cancellation / room move / holiday)
+    - schedule_block FK, date, exception_type
+      (CANCELLED / MOVED / ROOM_CHANGE), replacement_room FK nullable, reason
+
+TASK B5.3 - THE CONFLICT DETECTION ALGORITHM (core deliverable)
+  File: scheduling/services.py
+
+  def find_conflicts(room, day_of_week, start_time, end_time, term,
+                     exclude_block_id=None) -> list[ScheduleBlock]
+
+  Overlap rule - two blocks conflict when:
+        existing.start_time < new.end_time
+    AND existing.end_time   > new.start_time
+  (Touching endpoints do NOT conflict: a 09:00-10:00 and a 10:00-11:00 block
+  are both valid. This is the classic off-by-one; get it right.)
+
+  Requirements:
+  - Must filter by the same room, same day_of_week, same term, is_active=True
+  - Must honor exclude_block_id so editing a block does not conflict with
+    itself
+  - Must be a single DB query, not a Python loop over all blocks
+  - Raise ScheduleConflictError listing every conflicting block
+
+  def validate_block(block) -> None
+    - end_time > start_time
+    - block falls inside the term date range
+    - no conflicts via find_conflicts()
+    - room.is_active and room.status != MAINTENANCE/INACTIVE
+
+TASK B5.4 - Schedule query helpers
+  File: scheduling/services.py
+  - get_room_timetable(room, term)          -> grid data for one room
+  - get_day_schedule(date)                  -> all blocks active on a date,
+                                               exceptions applied
+  - get_current_occupant(room, when=now)    -> who should hold this room's key
+                                               right now, or None
+  - find_free_rooms(day_of_week, start_time, end_time, term,
+                    building=None, room_type=None, min_capacity=None)
+                                            -> available rooms for a slot
+  - suggest_slots(room, duration_minutes, term) -> open gaps in a room's day
+
+TASK B5.5 - Link scheduling to key borrowing
+  This is the payoff that makes scheduling worth building.
+  - In the POS borrow flow, when a borrower requests a key, call
+    get_current_occupant() for that room.
+  - If the borrower IS the scheduled instructor -> allow, and auto-set
+    expected_return_at = schedule block end_time.
+  - If the room is scheduled to someone ELSE right now -> return a WARNING
+    (not a hard block). The guard may override with a typed reason, and that
+    override must be recorded in BorrowTransaction.remarks and the audit log.
+  - If the room has no schedule at this time -> allow normally.
+  - Make this behavior switchable via a settings flag
+    (SCHEDULE_ENFORCEMENT = "off" | "warn" | "block") so it can be rolled out
+    gradually.
+
+TASK B5.6 - Schedule CRUD views (@admin_required)
+  File: scheduling/views.py
+  - schedule_list      filter by term/building/room/day
+  - schedule_create    returns 422 + conflict list when validate_block fails
+  - schedule_update    same, with exclude_block_id
+  - schedule_toggle    is_active
+  - room_timetable     GET weekly grid for one room
+  - free_rooms         GET /api/scheduling/free-rooms/  (JSON, for the
+                       frontend room finder)
+  - conflict_check     POST /api/scheduling/check-conflict/ (JSON, called
+                       live as the admin fills the modal)
+
+TASK B5.7 - Bulk import (optional, high value)
+  Management command to import ScheduleBlocks from CSV
+  (room_code, day, start, end, subject, instructor_id). Must validate every
+  row and report conflicts without committing a partial import (use
+  transaction.atomic).
+
+TASK B5.8 - Tests for the algorithm (MANDATORY, not optional)
+  File: scheduling/tests.py
+  Cover at minimum:
+  - exact same time slot          -> conflict
+  - partial overlap at the start  -> conflict
+  - partial overlap at the end    -> conflict
+  - new block fully inside        -> conflict
+  - new block fully contains      -> conflict
+  - touching endpoints 09-10/10-11 -> NO conflict
+  - same time, different room     -> NO conflict
+  - same time, different day      -> NO conflict
+  - same time, inactive block     -> NO conflict
+  - editing a block against itself -> NO conflict
+
+
+-------------------------------------------------------------------------------
+SECTION 6 - AUDIT LOG (app exists, models.py is EMPTY)
+-------------------------------------------------------------------------------
+TASK B6.1 - ActivityLog model
+  File: audit/models.py (currently just a stub comment)
+  - user         FK User (SET_NULL, nullable - keep the log if user deleted)
+  - action       CharField choices: LOGIN, LOGOUT, CREATE, UPDATE, DELETE,
+                 BORROW, RETURN, APPROVE, REJECT, OVERRIDE
+  - model_name   CharField
+  - object_id    CharField
+  - description  TextField
+  - ip_address   GenericIPAddressField (nullable)
+  - user_agent   CharField (nullable)
+  - created_at   DateTimeField(auto_now_add=True)
+  Index on (created_at), (user, created_at).
+  THEN: python manage.py makemigrations audit && migrate
+  (this app currently reports "no migrations")
+
+TASK B6.2 - Logging helper + wiring
+  File: audit/services.py -> log_activity(user, action, obj=None,
+                                          description="", request=None)
+  Wire into:
+  - login / logout signals (extend transactions/signals.py or add audit ones)
+  - borrow_key() and return_key()
+  - all admin create/update/toggle views
+  - user approve/reject
+  - every schedule override by a guard (Section 5.5)
+
+TASK B6.3 - Audit log viewer (@admin_required)
+  GET /audit/logs/ - filter by user, action, date range, model_name.
+  Read-only. Must be paginated (this table grows fast).
+
+
+-------------------------------------------------------------------------------
+SECTION 7 - DATA, CONFIG, TESTS, HARDENING
+-------------------------------------------------------------------------------
+TASK B7.1 - Seed command (database is 100% empty right now)
+  python manage.py seed_demo
+  - 1 superuser + 1 ADMIN + 2 GUARD users (print credentials to console)
+  - 3-4 Departments
+  - 2-3 Buildings, 15-20 Rooms
+  - 3-4 KeyCategories, 25-30 Keys
+  - 10-15 Borrowers (faculty/staff/student mix)
+  - 1 active Term + 20-30 ScheduleBlocks WITH NO CONFLICTS
+  - A few historical BorrowTransactions (returned + one overdue)
+  Must be idempotent / support --flush.
+
+TASK B7.2 - Fix ALLOWED_HOSTS
+  config/settings.py - add "testserver" (and localhost, 127.0.0.1) or make it
+  env-driven. Django's test client currently gets HTTP 400 DisallowedHost,
+  which blocks all integration testing.
+
+TASK B7.3 - Write the missing tests (every tests.py is empty)
+  - accounts/tests.py:     role_required blocks each wrong role; PENDING user
+                           cannot log in; admin-created user is APPROVED
+  - transactions/tests.py: borrow without shift fails; double-borrow fails;
+                           unauthorized borrower fails; key status transitions
+                           AVAILABLE->BORROWED->AVAILABLE; transaction_no
+                           increments correctly per day
+  - scheduling/tests.py:   the 10 conflict cases from B5.8
+  - facilities/tests.py:   duplicate room_code in same building rejected,
+                           allowed in a different building
+  Target: every business rule in services.py has a test.
+
+TASK B7.4 - Security pass
+  - Confirm every POST view has CSRF protection (all AJAX must send
+    X-CSRFToken)
+  - Confirm @require_POST on all mutating endpoints (borrow_confirm and
+    return_confirm already have it; new endpoints need it too)
+  - Move SECRET_KEY and DEBUG to .env (.env and .env.example already exist)
+  - Set DEBUG=False checklist for deployment
+  - Add rate limiting on the login view
+
+TASK B7.5 - Query performance
+  - Add select_related/prefetch_related to all new list views
+  - Add django-debug-toolbar in dev and verify no N+1 on the POS screen and
+    the schedule grid
+
+TASK B7.6 - Reports/export (admin)
+  - CSV export for transaction history, overdue list, per-guard shift
+    activity, per-room key usage
+  - Date-range filtered
+
+
+-------------------------------------------------------------------------------
+SECTION 8 - KNOWN BUGS & DEFECTS FOUND IN CODE REVIEW (FIX THESE)
+-------------------------------------------------------------------------------
+These are confirmed defects in the CURRENT codebase, verified by reading the
+source and running the app. They are small, independent, and can be fixed in
+one sitting. Two are security issues - do those first.
+
+Note: B8.4 and B8.5 are the same items as B4.5 and B7.2, consolidated here so
+the whole defect list lives in one place. Fix them once.
+
+*** SECURITY ***
+
+TASK B8.1 - [SECURITY/HIGH] Open redirect in the login view
+  File: accounts/views.py:30
+  Current:  return redirect(request.GET.get("next") or "dashboard")
+  Problem:  The "next" parameter is taken straight from the query string and
+            passed to redirect() with NO validation. An attacker can send
+            /accounts/login/?next=https://evil.example.com - after a real
+            successful login the user is redirected off-site. This is a
+            textbook open-redirect / phishing vector.
+  Fix:      Validate the target before redirecting, using Django's helper:
+              from django.utils.http import url_has_allowed_host_and_scheme
+              nxt = request.POST.get("next") or request.GET.get("next")
+              if nxt and url_has_allowed_host_and_scheme(
+                      nxt, allowed_hosts={request.get_host()},
+                      require_https=request.is_secure()):
+                  return redirect(nxt)
+              return redirect("dashboard")
+  Also:     The login template (templates/accounts/login.html:31) does NOT
+            forward "next" in a hidden input, so the redirect target is lost
+            on POST anyway. Add <input type="hidden" name="next"> and read it
+            from request.POST too, or drop the feature entirely. Right now it
+            is both broken AND unsafe.
+  Test:     Assert that ?next=https://evil.example.com redirects to the
+            dashboard, and that ?next=/keys/ still works.
+
+TASK B8.2 - [SECURITY/MEDIUM] Logout accepts GET - CSRF-able
+  File: accounts/views.py:35-41
+  Current:  The view logs the user out on GET as well as POST, with a comment
+            calling it "guard convenience".
+  Problem:  A state-changing action on GET has no CSRF protection. Any
+            <img src="/accounts/logout/"> on any page logs the guard out.
+            Worse here than usual: logout FIRES THE user_logged_out SIGNAL,
+            which CLOSES THE GUARD SHIFT (transactions/signals.py). A drive-by
+            GET can therefore end a guard shift and block them from releasing
+            keys until they log in again.
+  Fix:      Make logout POST-only. Add @require_POST and delete the GET
+            fallback. templates/partials/logout_modal.html already submits a
+            proper POST form with {% csrf_token %}, so nothing in the UI
+            breaks. Remove any remaining GET logout links.
+  Test:     GET /accounts/logout/ returns 405 and the session stays alive.
+
+TASK B8.3 - [SECURITY/LOW] State-changing toggle not POST-guarded
+  File: accounts/views.py:84-92  (borrower_toggle)
+  Problem:  The body is wrapped in "if request.method == POST" so a GET is
+            harmless, but the view is not decorated @require_POST. It silently
+            redirects on GET instead of rejecting, which hides mistakes and
+            invites the same pattern to be copied into new toggle views
+            (user_toggle, room_toggle, schedule_toggle in Sections 2/3/5).
+  Fix:      Add @require_POST and drop the inner method check. Apply the same
+            decorator to EVERY new toggle/approve/reject view you write.
+            transactions/views.py:100 and :118 already do this correctly -
+            follow that pattern.
+
+*** CORRECTNESS ***
+
+TASK B8.4 - Hardcoded redirect URL
+  File: transactions/views.py:117
+  Current:  return redirect(f"/transactions/borrow/?borrower_id={borrower_id}")
+  Problem:  Hardcodes the URL path, bypassing the "transactions" namespace. It
+            breaks silently if the route changes, and borrower_id is
+            interpolated into the query string without encoding.
+  Fix:      from django.urls import reverse
+            from urllib.parse import urlencode
+            url = reverse("transactions:borrow_dashboard")
+            return redirect(f"{url}?{urlencode({'borrower_id': borrower_id})}")
+  Note:     Once the POS JSON API (Section 4) lands, this view may return JSON
+            instead of redirecting - but fix it now either way.
+
+TASK B8.5 - ALLOWED_HOSTS blocks all integration testing
+  File: config/settings.py:27 and .env / .env.example
+  Current:  ALLOWED_HOSTS = config("ALLOWED_HOSTS",
+                                   default="127.0.0.1,localhost", cast=Csv())
+  Problem:  Django's test Client sends Host: testserver, which is not in the
+            list, so EVERY test client request dies with
+            DisallowedHost -> HTTP 400. This was reproduced: a borrow POST
+            returned 400 purely because of this. It blocks all of Section 7.3.
+  Fix:      Preferred - a dedicated test settings module, or
+            @override_settings(ALLOWED_HOSTS=["testserver"]) on test classes.
+            Simplest - add "testserver" to the ALLOWED_HOSTS line in .env for
+            local dev and document it in .env.example.
+            Do NOT ship "testserver" in production config.
+
+TASK B8.6 - Dead view: home() is unreachable
+  File: accounts/views.py:11-14, template templates/home.html
+  Problem:  home() exists and templates/home.html exists, but NO url pattern
+            points at either one. config/urls.py maps "" directly to
+            txn_views.dashboard. The view and template are dead code.
+  Fix:      Decide one of:
+            (a) Delete home() and templates/home.html, or
+            (b) Route "" to home() as a public landing page and move the
+                dashboard to /dashboard/.
+            Option (b) pairs well with the role-aware landing router in
+            TASK B1.5 - an anonymous visitor gets home.html, an authenticated
+            one gets routed to the POS or the admin dashboard by role.
+
+TASK B8.7 - Admins are locked out of their own application
+  File: accounts/views.py:26-27
+  Current:  if not (user.is_superuser or user.role == "GUARD"):
+                error = "Only guard accounts can log in here. Admins use /admin/."
+  Problem:  A user with role=ADMIN who is NOT a superuser cannot log into the
+            app at all. Every admin feature in Sections 2, 3, 5 and 6 would be
+            unreachable for them. This hard-blocks the entire admin side of the
+            system you are about to build.
+  Fix:      Allow ADMIN (and any other staff role you intend to support) to log
+            in, then let the role-aware router in TASK B1.5 send them to the
+            right landing page. Remove the "Admins use /admin/" message -
+            Django built-in /admin/ is not the product.
+  Priority: Do this with Section 1. Nothing admin-facing can be tested until
+            it is fixed.
+
+TASK B8.8 - Duplicate STATIC_URL definition
+  File: config/settings.py:84 and config/settings.py:139
+  Problem:  STATIC_URL is assigned twice ("static/" both times, so no visible
+            bug today). The second assignment silently wins. The block at 136+
+            is leftover from django-admin startproject and sits after the
+            custom config, so a future edit to line 84 will appear to do
+            nothing - a nasty debugging trap.
+  Fix:      Delete the duplicate at line 139 and the stale comment block around
+            it. Keep one STATIC_URL next to STATIC_ROOT.
+
+TASK B8.9 - Guard shift post is hardcoded
+  File: transactions/signals.py
+        (GuardShift.objects.create(guard=user, post="Main Desk"))
+  Problem:  Every shift for every guard at every location is recorded as
+            "Main Desk". GuardShift.post is therefore useless for reporting -
+            you cannot tell which gate or building a guard was staffing.
+  Fix:      Covered by TASK B2.5 (admin-assigned guard post). Listed here so it
+            is not lost: the signal must read the assigned post instead of a
+            string literal.
+
+TASK B8.10 - Unused RoleRequiredMixin
+  File: accounts/mixins.py
+  Problem:  RoleRequiredMixin is fully written but referenced NOWHERE in the
+            codebase - every view is a function view using the decorator.
+  Fix:      Either delete it, or keep it and use it consistently if you convert
+            any view to a class-based view in Sections 2/3/5. Do not leave two
+            parallel permission mechanisms where one is dead - pick one.
+            If you keep it, note it has the same superuser bypass as the
+            decorator, which is correct.
+
+TASK B8.11 - No pagination anywhere - hard slice limits instead
+  Files: keys/views.py:22 keys[:200], transactions/views.py:137 shifts[:200],
+         transactions/views.py:149 txns[:200], transactions/views.py:85
+         borrowed[:100]
+  Problem:  Lists are truncated with a hard slice and NO pager. Past 200
+            transactions, older records become permanently invisible in the UI
+            with no indication anything was cut off. For an audit-oriented key
+            system that is a real data-integrity problem, not just cosmetics.
+  Fix:      Replace slices with django.core.paginator.Paginator on every list
+            view. Pass page_obj to the template. Frontend TASK F6.2/F6.3 builds
+            the pager UI and expects this.
+
+TASK B8.12 - Overdue status is never set (dashboard always reads 0)
+  Files: transactions/views.py:22 (overdue count), keys/models.py Status.OVERDUE,
+         transactions/models.py Status.OVERDUE + expected_return_at
+  Problem:  The dashboard counts OVERDUE transactions and the overdue status
+            exists on both models, but nothing in the codebase ever writes it,
+            and expected_return_at is never populated. The overdue card reads
+            zero in practice and the feature looks broken.
+  Fix:      Covered by TASK B4.3 (populate expected_return_at) and TASK B4.4
+            (mark_overdue management command). Repeated here because it reads
+            as a UI bug but the root cause is missing backend logic.
+
+TASK B8.13 - Pin the Lucide icon CDN version
+  File: templates/base.html (last lines)
+  Current:  <script src="https://unpkg.com/lucide@latest"></script>
+  Problem:  "@latest" means a third-party upstream release can change or break
+            every icon in the app with no deploy on your side. It is also an
+            unpinned external dependency on a page behind authentication.
+  Fix:      Pin an exact version (e.g. lucide@0.544.0) or vendor the file into
+            static/. Frontend TASK F6.9 also calls this out - coordinate so it
+            is only done once.
+
+*** HOUSEKEEPING ***
+
+TASK B8.14 - Empty app stubs
+  Files: audit/models.py, audit/views.py, notifications/models.py,
+         notifications/views.py
+  Problem:  Both apps are in INSTALLED_APPS (config/settings.py:43,45) but
+            contain only the generated "# Create your models here." comment and
+            report "(no migrations)". They are inert.
+  Fix:      audit/ gets implemented in Section 6. For notifications/, either
+            implement it or REMOVE it from INSTALLED_APPS until you do - an
+            empty installed app is a misleading signal to the next developer
+            about what the system actually does.
+
+TASK B8.15 - Correction to TASK B7.4
+  B7.4 asks you to move SECRET_KEY and DEBUG to .env. That is ALREADY DONE -
+  config/settings.py:22,25 read them via config() from python-decouple, and
+  .env/.env.example exist with .env correctly gitignored. Ignore that one
+  bullet. The rest of B7.4 (CSRF audit, @require_POST coverage, DEBUG=False
+  deployment checklist, login rate limiting) still stands.
+
+-------------------------------------------------------------------------------
+BACKEND BUILD ORDER (RECOMMENDED)
+-------------------------------------------------------------------------------
+  1. Section 8.1/8.2/8.3/8.7 - security bugs + admin login lockout
+                               (B8.7 blocks all admin work; B8.1/B8.2 are
+                                live vulnerabilities)
+  2. Section 1       - role separation           (blocks everything else)
+  3. Section 8 rest  - remaining defects         (small, independent)
+  4. Section 7.1/8.5 - seed data + ALLOWED_HOSTS (so you can actually test)
+  5. Section 2       - admin user/guard mgmt
+  6. Section 3       - room CRUD + JSON search endpoints
+  7. Section 4       - POS borrow/return JSON API
+  8. Section 6       - audit log (wire as you build, not after)
+  9. Section 5       - scheduling + algorithm
+ 10. Section 7.3-7.6 - tests, security, performance, reports
+
+===============================================================================
+END OF BACKEND TASK LIST
+===============================================================================

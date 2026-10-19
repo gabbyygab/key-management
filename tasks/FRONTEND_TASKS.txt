@@ -1,0 +1,691 @@
+===============================================================================
+KEYTRACK - KEY MANAGEMENT SYSTEM
+FRONTEND TASK LIST
+===============================================================================
+Project:   C:\Users\GabrielD\OneDrive\Documents\Desktop\IT401\key-management
+Stack:     Django templates, Tailwind CSS (django_tailwind_cli), Lucide icons,
+           vanilla JS (no framework, no build step beyond Tailwind)
+Date:      2026-10-19
+Audience:  Frontend developer
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+SECTION 0 - READ THIS FIRST: WHAT ALREADY EXISTS
+-------------------------------------------------------------------------------
+Existing templates (all functional, all rendering real DB data):
+
+  templates/base.html                      - layout shell, sidebar+navbar
+  templates/home.html
+  templates/dashboard.html                 - stat cards, building availability,
+                                             recent activity
+  templates/403.html
+  templates/accounts/login.html
+  templates/accounts/borrower_list.html
+  templates/accounts/borrower_form.html    - FULL PAGE form (to be modalized)
+  templates/facilities/building_list.html
+  templates/facilities/building_form.html  - FULL PAGE form (to be modalized)
+  templates/keys/key_list.html
+  templates/keys/key_form.html             - FULL PAGE form (to be modalized)
+  templates/keys/category_list.html
+  templates/transactions/borrow_dashboard.html - becomes the POS screen
+  templates/transactions/history.html
+  templates/transactions/shift_history.html
+  templates/partials/sidebar.html
+  templates/partials/navbar.html
+  templates/partials/messages.html
+  templates/partials/logout_modal.html     - *** THE MODAL PATTERN TO COPY ***
+  templates/partials/page_header.html
+  templates/partials/status_pill.html
+  templates/partials/stat_card.html
+
+ESTABLISHED DESIGN TOKENS (do not invent new ones - reuse these):
+  Dark green (sidebar/primary):  #0F2E1F
+  Button hover dark:             #143d28
+  Button primary:                #14342A
+  Accent / focus ring:           #1E6B4A
+  Page background:               #FAF7F0
+  Body text:                     stone-800
+  Muted text:                    stone-500 / stone-400
+  Card:        bg-white rounded-xl border border-stone-200 shadow-sm
+  Modal card:  bg-white rounded-2xl border border-stone-200 shadow-xl
+  Overlay:     bg-stone-900/60
+  Base text size: [13px] body, [15px] card title, [22px] page heading
+  Form input class (from accounts/forms.py TAILWIND constant):
+    w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]
+    focus:border-[#1E6B4A] focus:ring-[#1E6B4A]
+  Icons: Lucide via <i data-lucide="icon-name">, initialized by
+         lucide.createIcons() in base.html
+
+SEE ALSO: SECTION 7 at the end of this file lists confirmed template-level
+bugs found in code review (login form drops "next", sidebar mislabels admins
+as GUARD, broken {% if %} operator precedence on two nav links, no mobile nav,
+unpinned icon CDN). Fix those first - they are small.
+
+THE THREE BIG PROBLEMS TO FIX:
+  1. All add/edit screens are FULL PAGE navigations. They must become modals.
+  2. The sidebar is ONE hardcoded nav with zero role branching. Admin and
+     guard currently see the identical menu.
+  3. The guard borrow screen uses full-page-reload GET search. It must become
+     a fast, keyboard-driven POS interface.
+
+CRITICAL CONTEXT - ROLE SPLIT (backend is implementing this in parallel):
+  ADMIN: buildings, rooms, keys, categories, borrowers, guards/users, room
+         scheduling, reports, audit log
+  GUARD: ONLY the POS borrow/return screen + their own shift log + read-only
+         lookup. Guards do NOT get create/edit buttons for master data.
+  Do not build admin controls into guard templates. Gate with
+  {% if user.role == "ADMIN" %} as well - never rely on hiding alone, but do
+  hide so the UI is honest.
+
+
+-------------------------------------------------------------------------------
+SECTION 1 - REUSABLE MODAL SYSTEM (FOUNDATION - BUILD THIS FIRST)
+-------------------------------------------------------------------------------
+Everything in Sections 2-5 depends on this. templates/partials/logout_modal.html
+already contains a working, accessible modal (overlay click to close, Escape to
+close, focus management, focus restore). Generalize it - do not copy-paste it
+nine times.
+
+TASK F1.1 - Generic modal shell partial
+  File: templates/partials/modal.html (new)
+  - Accept via {% include %} with params: modal_id, title, icon, size
+    (sm/md/lg/xl), and a body block
+  - Structure: overlay div + centered card, role="dialog", aria-modal="true",
+    aria-labelledby
+  - Sizes: sm=max-w-sm, md=max-w-lg, lg=max-w-2xl, xl=max-w-4xl
+  - Sticky header with title + icon + close X button
+  - Scrollable body (max-h-[70vh] overflow-y-auto) for long forms
+  - Sticky footer slot for Cancel / Save buttons
+
+TASK F1.2 - Shared modal JavaScript
+  File: static/js/modal.js (new) - load it in base.html
+  Replace the per-modal inline script with ONE delegated controller:
+  - Open:  any element with [data-modal-open="<modal_id>"]
+  - Close: [data-modal-close], overlay click, Escape key
+  - Focus: trap Tab inside the open modal; focus first input on open;
+           restore focus to the trigger on close
+  - Lock body scroll while open (document.body overflow-hidden)
+  - Support stacked modals (confirm-inside-a-form-modal) with a z-index
+    counter
+  - Expose window.KeyTrackModal = { open(id), close(id) } so other scripts
+    can drive it
+  - MUST call lucide.createIcons() after injecting any AJAX content, or
+    icons render blank
+
+TASK F1.3 - AJAX form-in-modal helper
+  File: static/js/modal-form.js (new)
+  The pattern for every add/edit modal:
+  - Fetch the form HTML from the backend endpoint into the modal body
+    (GET ?modal=1 returns just the form partial)
+  - Submit via fetch() POST with X-CSRFToken header
+    (read csrftoken from the cookie - Django requires this)
+  - On 200/201: close modal, refresh the affected list region (or full reload
+    for v1), show a success toast
+  - On 422: re-render the form inside the modal WITH Django field errors
+    inline under each field - do NOT close the modal and do NOT lose the
+    user's typed input
+  - On 403: show "You do not have permission" and close
+  - Disable the submit button + show a spinner while in flight (prevents
+    double-submit, which matters a lot on the borrow action)
+
+TASK F1.4 - Toast notifications
+  File: templates/partials/toast.html + static/js/toast.js (new)
+  - Replace/supplement templates/partials/messages.html for AJAX actions
+  - Variants: success (green), error (red), warning (amber), info
+  - Auto-dismiss ~4s, manual close X, stack multiple, top-right placement
+  - Must still render Django's {% messages %} for non-AJAX page loads
+
+TASK F1.5 - Confirmation modal (generic)
+  File: templates/partials/confirm_modal.html (new)
+  - For destructive/irreversible actions: deactivate, reject user, cancel
+    schedule block, override a schedule warning
+  - Params: title, message, confirm label, confirm color, target form/action
+  - Danger variant must require the admin to see exactly what they are
+    affecting (name/code of the record)
+
+TASK F1.6 - Form field partial
+  File: templates/partials/form_field.html (new)
+  - Renders label + widget + help text + error list consistently
+  - Red border + red error text when the field has errors
+  - Required-field asterisk
+  - Use it for ALL modal forms so validation looks identical everywhere
+
+
+-------------------------------------------------------------------------------
+SECTION 2 - ROLE-AWARE NAVIGATION (SIDEBAR IS CURRENTLY HARDCODED)
+-------------------------------------------------------------------------------
+TASK F2.1 - Split the sidebar by role
+  File: templates/partials/sidebar.html (rewrite)
+  Current state: one flat nav, no {% if %} on role at all.
+
+  ADMIN sidebar:
+    WORKSPACE      Dashboard
+    SCHEDULING     Room Schedule, Room Finder, Conflicts
+    INVENTORY      Key Inventory, Key Categories, Buildings, Rooms
+    PEOPLE         Borrowers, Users & Guards, Pending Approvals (with count
+                   badge)
+    OVERSIGHT      Transaction History, Guard Shifts, Audit Log, Reports
+
+  GUARD sidebar (deliberately minimal - this is the whole point):
+    WORKSPACE      Key Transactions (POS)  <- their landing page
+    LOOKUP         Key Availability (read-only), Borrower Lookup (read-only)
+    MY RECORDS     My Shift Log, Today's Transactions
+
+  - Keep the existing active-state styling logic (it compares
+    request.resolver_match.url_name and namespace)
+  - Keep the user chip at the bottom; make the role label read from
+    user.get_role_display, and drop the current |default:"GUARD" fallback
+    which mislabels admins as guards
+  - Add a "pending approvals" badge for admin, driven by a context processor
+    (coordinate with backend)
+
+TASK F2.2 - Mobile navigation
+  The sidebar is `hidden md:flex` - there is NO mobile nav at all right now.
+  - Add a hamburger in navbar.html that opens the sidebar as a slide-over
+    drawer on < md
+  - Reuse the modal overlay/focus-trap behavior from F1.2
+  - Guards may well use a tablet at the desk - this matters
+
+TASK F2.3 - Navbar polish
+  File: templates/partials/navbar.html
+  - Breadcrumb or page title
+  - Admin: quick-add "+" dropdown (New Key / New Room / New Borrower /
+    New Schedule) that opens the relevant modal directly
+  - Guard: live shift indicator - "On duty since HH:MM" or a red
+    "No active shift" warning (borrowing is blocked without a shift, so this
+    must be unmissable)
+  - Server clock display for the POS screen
+
+
+-------------------------------------------------------------------------------
+SECTION 3 - GUARD: POS-STYLE KEY BORROWING SCREEN (FLAGSHIP)
+-------------------------------------------------------------------------------
+File: templates/transactions/borrow_dashboard.html (major rewrite)
+Current state: 3-step search via full-page GET reloads with ?q_borrower=,
+?borrower_id=, ?q_key= in the URL. Works, but it is slow and not POS-like.
+
+Target: a cashier-style terminal. Fast, keyboard-first, no page reloads.
+
+TASK F3.1 - POS layout
+  Three-pane, full-height, no page scroll:
+    LEFT   (~30%) Borrower search + result list
+    CENTER (~40%) Selected borrower card -> key search -> cart/confirm panel
+    RIGHT  (~30%) "Currently Out" live list with per-row Return button
+  On tablet/mobile: stack to tabs (Borrower | Key | Out).
+
+TASK F3.2 - Live borrower search
+  - Debounced (250-300ms) fetch to GET /api/borrowers/search/?q=
+  - Search by name OR ID number
+  - Each result row: name, ID number, type badge, department
+  - Visually flag: NOT AUTHORIZED (red) and ALREADY HOLDING A KEY (amber)
+    - backend returns can_borrow and active_transaction
+  - Arrow Up/Down to move through results, Enter to select
+  - Empty state, loading skeleton, "no results" state
+
+TASK F3.3 - Selected borrower card
+  - Photo placeholder/initials, name, ID, type, department
+  - Clear authorization status pill
+  - If they already hold a key: show that key + a prominent "Return First"
+    button, and HIDE the key-selection step entirely (backend enforces one
+    active key per borrower - the UI must not pretend otherwise)
+  - "Change borrower" clears the selection without a page reload
+
+TASK F3.4 - Key selection
+  - Debounced fetch to GET /api/keys/search/?q= (available keys only)
+  - Search by key code, room code, or building code
+  - Result row: key code (mono font), room label, category, status pill
+  - Quick filter chips by building
+  - Barcode/scanner support: a focused input that accepts a scanned key code
+    and auto-selects on Enter. Treat this as a real requirement - it is the
+    main speed win for a POS.
+
+TASK F3.5 - Confirm panel
+  - Shows borrower + key + room, purpose field (default "Room use"),
+    optional expected return time
+  - Big primary "RELEASE KEY" button
+  - Submit via POST /api/transactions/borrow/ with X-CSRFToken
+  - Button disables + spinner during the request (double-submit on a POS is
+    a real risk)
+  - On success: toast with the transaction number, clear all three panes,
+    refocus the borrower search, prepend the new row to "Currently Out"
+  - On 422: show the business-rule error inline and prominently. These are
+    expected, not crashes:
+      * "You must start a shift before releasing keys."
+      * "<name> already has key <code>. Return it first."
+      * "This borrower is not authorized to borrow keys."
+      * "Key <code> is not available."
+
+TASK F3.6 - Schedule conflict warning (depends on backend Section 5.5)
+  - When the selected room is scheduled to someone else at this moment, show
+    an amber warning panel: who is scheduled, the time block
+  - Guard may proceed only via the confirm modal with a TYPED reason
+    (required field, not just an OK button) - that reason is written to the
+    audit log
+  - When the borrower IS the scheduled instructor: show a green "Scheduled
+    holder" confirmation and auto-fill expected return time
+
+TASK F3.7 - Currently Out panel + return flow
+  - Live list: key code, borrower, room, time out, elapsed timer
+  - Overdue rows highlighted red; approaching-due in amber
+  - Search/filter within the panel
+  - "Return" opens a small confirm modal: key + borrower summary, optional
+    remarks, optional condition flag (OK / Damaged / Lost)
+  - POST /api/transactions/<pk>/return/
+  - On success: row animates out, toast, counters update
+  - Auto-refresh the panel every 30-60s (or on window focus)
+
+TASK F3.8 - No-active-shift blocking state
+  - Backend rejects all borrowing without an open GuardShift
+  - If no active shift: show a full-panel blocking message, disable the
+    release button, explain that the shift starts on login
+  - Do not let the guard fill the whole form and only then discover it fails
+
+TASK F3.9 - Keyboard shortcuts (make it feel like a real POS)
+  - F1 / "/" focus borrower search
+  - F2 focus key search
+  - Enter advance / confirm
+  - Esc clear current step or close modal
+  - Show a "?" shortcuts help modal
+  - Document the shortcuts visibly somewhere on screen
+
+
+-------------------------------------------------------------------------------
+SECTION 4 - MODALIZE ALL ADMIN CRUD (REPLACES FULL-PAGE FORMS)
+-------------------------------------------------------------------------------
+Every one of these replaces a full-page navigation with a modal. Pattern for
+all of them, using the Section 1 system:
+  - "+ Add" button on the list page -> opens empty modal form
+  - Row "Edit" -> opens modal pre-filled via AJAX GET
+  - Inline field errors on 422, modal stays open, input preserved
+  - Success -> close, toast, list region refreshes
+  - Keep the existing full-page form templates working as a no-JS fallback
+
+TASK F4.1 - Buildings
+  File: templates/facilities/building_list.html + new
+        templates/facilities/_building_form_modal.html
+  - Fields: code, name, description, is_active
+  - Current building_list.html is a thin one-line-per-row list - upgrade it
+    to a proper table with room count and key count columns
+  - Deactivate action via confirm modal (never hard delete - models use
+    on_delete=PROTECT)
+
+TASK F4.2 - Rooms (ENTIRELY NEW - no template exists at all)
+  Files: templates/facilities/room_list.html,
+         templates/facilities/_room_form_modal.html
+  - The Room model exists with no UI whatsoever. Build it from scratch.
+  - Table: room code, name, building, type, floor, capacity, status,
+    key count, active
+  - Filters: building, room_type, status + search
+  - Modal fields: building, room_code, name, room_type, floor, capacity,
+    status, is_active
+  - Status pills: AVAILABLE green / OCCUPIED blue / MAINTENANCE amber /
+    INACTIVE gray
+  - Surface the "duplicate room code in this building" validation error
+    cleanly (there is a DB unique constraint on building+room_code)
+  - Bulk-add helper: generate rooms 101-110 for a building in one modal
+    (big time-saver for setup)
+
+TASK F4.3 - Keys
+  Files: templates/keys/key_list.html,
+         templates/keys/_key_form_modal.html
+  - Modal fields: key_code, room, category, description, copy_number,
+    status, remarks
+  - Room select must be searchable (there will be hundreds) - grouped by
+    building
+  - Show the copy_number clearly; "Original" badge when copy_number == 1
+    (model has .is_original)
+  - Explain the unique constraint (one copy number per room+category) in the
+    error state
+  - Existing search/status filter already works - keep it, add building and
+    category filters
+  - Bulk "add N copies" action
+
+TASK F4.4 - Key Categories
+  Files: templates/keys/category_list.html,
+         templates/keys/_category_form_modal.html
+  - Simple modal: name, description
+  - Add a key-count column; block/warn on deactivating a category in use
+
+TASK F4.5 - Borrowers
+  Files: templates/accounts/borrower_list.html,
+         templates/accounts/_borrower_form_modal.html
+  - Modal fields: id_number, first_name, last_name, borrower_type,
+    department, contact_number, email, is_authorized, authorized_until,
+    is_active
+  - authorized_until uses a date input; show an "expired" badge when past
+  - Filters: type, department, authorization status + search
+  - Row actions: Edit (modal), Toggle active (confirm modal),
+    View history (drawer/modal showing that borrower's transactions)
+  - Flag borrowers currently holding a key
+
+TASK F4.6 - Users & Guards (ENTIRELY NEW)
+  Files: templates/accounts/user_list.html,
+         templates/accounts/_user_form_modal.html
+  - This is how the admin creates guards - currently only possible through
+    Django's /admin/
+  - Table: name, username, employee ID, role badge, department,
+    approval status, active, last login
+  - Create modal: username, first/last name, email, employee_id,
+    contact_number, role (select), department, password + confirm
+  - Role badges color-coded: ADMIN, FACILITIES, CUSTODIAN, GUARD,
+    FACULTY_STAFF
+  - Actions: Edit, Reset password (confirm modal), Toggle active
+    (must block self-deactivation in the UI too)
+  - Filters: role, approval status, department
+
+TASK F4.7 - Pending Approvals (ENTIRELY NEW)
+  File: templates/accounts/pending_users.html
+  - The User model has approval_status/approved_by/approved_at and nothing
+    writes to them yet
+  - Card or table list of PENDING users with their requested role
+  - Approve (confirm modal) / Reject (modal requiring a typed reason)
+  - Empty state: "No pending approvals"
+  - Count badge feeds the sidebar (F2.1)
+
+
+-------------------------------------------------------------------------------
+SECTION 5 - ADMIN: ROOM SCHEDULING UI (ENTIRELY NEW)
+-------------------------------------------------------------------------------
+No scheduling templates exist. Backend is building the models, conflict
+algorithm, and JSON endpoints in parallel (their Section 5).
+
+TASK F5.1 - Weekly timetable grid
+  File: templates/scheduling/room_timetable.html
+  - Classic timetable: days as columns (Mon-Sat), time as rows
+    (e.g. 07:00-21:00 in 30-min increments)
+  - Blocks positioned and sized by start/end time, colored by subject or
+    room type
+  - Room selector + term selector at the top
+  - Block shows: title/subject, instructor, time range
+  - Click a block -> edit modal; click an empty cell -> create modal
+    pre-filled with that day/time
+  - Must be readable at 1366x768 (typical lab monitor)
+  - Print stylesheet - admins will print timetables
+
+TASK F5.2 - Schedule block create/edit modal
+  File: templates/scheduling/_schedule_form_modal.html
+  - Fields: term, room, subject, title, instructor (searchable borrower
+    select), day_of_week, start_time, end_time, is_active
+  - LIVE CONFLICT CHECK: on change of room/day/start/end, debounced POST to
+    /api/scheduling/check-conflict/ and show the result inline:
+      * green "Slot available"
+      * red "Conflicts with: <title> (09:00-10:30, Mon)" listing every
+        conflict
+  - Disable Save while a conflict exists
+  - Client-side guard: end_time must be after start_time
+  - IMPORTANT: touching times are NOT a conflict (09:00-10:00 and
+    10:00-11:00 are both valid). Do not show a false warning for these.
+  - "Repeat on" day multi-select to create several blocks at once (optional)
+
+TASK F5.3 - Room Finder
+  File: templates/scheduling/free_rooms.html
+  - Form: day, start time, end time, building (optional), room type
+    (optional), min capacity (optional)
+  - Calls GET /api/scheduling/free-rooms/
+  - Results as cards: room code, building, type, capacity + "Schedule this"
+    button that opens F5.2 pre-filled
+  - This is the admin's highest-value daily tool - make it fast and obvious
+
+TASK F5.4 - Schedule list view
+  File: templates/scheduling/schedule_list.html
+  - Table alternative to the grid: term, room, subject, instructor, day,
+    time, active
+  - Filters: term, building, room, day, instructor
+  - Bulk activate/deactivate
+  - Row -> edit modal
+
+TASK F5.5 - Exceptions / cancellations
+  File: templates/scheduling/_exception_modal.html
+  - Mark a specific date's block CANCELLED / MOVED / ROOM_CHANGE with a
+    reason
+  - Show exception markers on the F5.1 grid (hatched or struck-through block)
+
+TASK F5.6 - "Today in this room" widget
+  - Small reusable partial: the current and next scheduled block for a room
+  - Embed on the room detail view AND surface on the guard POS screen when a
+    key for that room is selected (read-only there)
+
+
+-------------------------------------------------------------------------------
+SECTION 6 - DASHBOARDS, REPORTS, SHARED POLISH
+-------------------------------------------------------------------------------
+TASK F6.1 - Split the dashboard by role
+  File: templates/dashboard.html (currently one shared page)
+
+  ADMIN dashboard:
+    - Stat cards: total keys, available, borrowed, overdue, total rooms,
+      scheduled blocks today, pending approvals
+    - Keep the existing per-building availability bars (they work)
+    - Today's schedule overview
+    - Overdue keys table (needs the backend mark_overdue command to populate)
+    - Recent audit activity
+    - Guards currently on duty
+
+  GUARD dashboard (or skip it and land them straight on the POS):
+    - My shift status + elapsed time
+    - Keys I released this shift
+    - Currently out (all guards)
+    - Big "Go to Key Transactions" action
+
+TASK F6.2 - Transaction history
+  File: templates/transactions/history.html (upgrade)
+  - Existing search works. Add: date range, status filter, building filter,
+    guard filter
+  - PAGINATION - it currently slices [:200] with no pager at all
+  - Status pills, overdue highlighting
+  - Row -> detail modal (full timeline: released by, received by, shift,
+    remarks, schedule override reason if any)
+  - CSV export button (admin only)
+
+TASK F6.3 - Guard shift history
+  File: templates/transactions/shift_history.html (upgrade)
+  - Admin sees all shifts + guard filter; guard sees only their own
+  - Columns: guard, post, start, end, duration, transaction count, on-duty
+    pill
+  - Pagination
+
+TASK F6.4 - Audit log viewer (new, admin only)
+  File: templates/audit/log_list.html
+  - Filters: user, action type, date range, model
+  - Action-type icons and colors
+  - Pagination (this table grows fast)
+  - Read-only
+
+TASK F6.5 - Reports page (new, admin only)
+  File: templates/reports/index.html
+  - Key utilization, overdue report, per-guard activity, per-room usage,
+    borrower frequency
+  - Date-range pickers + CSV export buttons
+  - Simple charts are fine; do not add a heavy charting dependency without
+    asking
+
+TASK F6.6 - Shared component cleanup
+  - templates/partials/status_pill.html: extend to cover every status in the
+    system (key statuses, transaction statuses, room statuses, approval
+    statuses, user roles) with one consistent color map
+  - templates/partials/stat_card.html: support trend indicator + click-through
+    link + icon
+  - New: empty_state.html, loading_skeleton.html, pagination.html,
+    table_toolbar.html (search + filters + actions, used by every list page)
+
+TASK F6.7 - Accessibility & quality pass
+  - All modals: correct aria roles, focus trap, Escape, focus restore
+    (the logout modal already does this - match it everywhere)
+  - All icon-only buttons need aria-label (several currently lack one)
+  - Keyboard navigable: every action reachable without a mouse
+  - Visible focus rings (use the #1E6B4A accent)
+  - Check contrast on the amber/green pills against white
+  - Form inputs properly associated with labels
+  - Test the POS screen at 1366x768 and on a tablet
+
+TASK F6.8 - Loading & error states
+  - Skeletons for all AJAX lists (POS search, schedule grid)
+  - Debounce every live search (250-300ms) to avoid hammering the backend
+  - Network-failure toast with retry
+  - A visible "Session expired - please log in again" path on 403/redirect,
+    rather than a silently failing fetch
+
+TASK F6.9 - JS organization
+  - Current JS is inline in templates. Move to static/js/:
+      modal.js, modal-form.js, toast.js, pos.js, schedule-grid.js,
+      search.js (shared debounced search), csrf.js (cookie token helper)
+  - Load per-page via {% block extra_js %} (already exists in base.html)
+  - Remember: call lucide.createIcons() after ANY dynamic DOM injection or
+    icons will be invisible
+  - Pin the Lucide CDN version in base.html - it currently loads
+    "lucide@latest", which can break the UI without warning
+
+
+-------------------------------------------------------------------------------
+SECTION 7 - KNOWN TEMPLATE BUGS & DEFECTS (FIX THESE)
+-------------------------------------------------------------------------------
+Confirmed defects in the CURRENT templates, found by code review. Small and
+independent - knock them out alongside Section 1.
+
+TASK F7.1 - [SECURITY] Login form drops the "next" parameter
+  File: templates/accounts/login.html:31
+  Current:  <form method="post" class="mt-5 space-y-3">{% csrf_token %}
+  Problem:  The form has no action and no hidden "next" field. The view
+            (accounts/views.py:30) reads "next" from request.GET, but on POST
+            the query string is gone - so redirect-after-login silently never
+            works. Backend TASK B8.1 is also fixing an open-redirect hole in
+            that same line.
+  Fix:      Add inside the form:
+              <input type="hidden" name="next" value="{{ next|default:'' }}">
+            Coordinate with backend B8.1 - they will validate the value with
+            url_has_allowed_host_and_scheme and pass "next" into the template
+            context. Do NOT build your own redirect logic in JS.
+
+TASK F7.2 - Sidebar mislabels admins as guards
+  File: templates/partials/sidebar.html (user chip, near the bottom)
+  Current:  {{ user.role|default:"GUARD" }}
+  Problem:  The |default:"GUARD" filter means any user whose role is empty or
+            falsy displays as "GUARD". On an admin account that is actively
+            misleading in a system whose whole point is role separation.
+  Fix:      Use {{ user.get_role_display }} with no default. Django generates
+            that method from the Role.choices on the model, so it prints
+            "Admin" / "Guard" / "Faculty / Staff" properly.
+  Same file: the avatar initials fall back to "GU" - replace with initials
+            derived from the actual name, or a neutral placeholder.
+
+TASK F7.3 - Broken active-state logic in the sidebar
+  File: templates/partials/sidebar.html (Key Inventory and Key Categories
+        links)
+  Current:  {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}
+  Problem:  Django template {% if %} binds "and" tighter than "or", so this
+            parses as:
+              (ns == 'keys' AND current == 'key_list') OR current == 'key_create'
+              OR current == 'key_update'
+            The namespace check only applies to the first branch. Any future
+            view named key_create/key_update in a DIFFERENT namespace would
+            wrongly highlight this link. The Key Categories link has the same
+            bug.
+  Fix:      Group the url names explicitly, e.g.
+              {% if ns == 'keys' and current in 'key_list key_create key_update'|split %}
+            or simpler - test the namespace once and the name against a list.
+            Cleanest: compute an "active_nav" value in the view/context
+            processor and compare one string in the template. You are
+            rewriting this sidebar for roles in TASK F2.1 anyway - fix it as
+            part of that rewrite.
+
+TASK F7.4 - Keep logout POST-only (verification task, likely no change needed)
+  Files: templates/partials/sidebar.html:44, templates/partials/navbar.html:12
+         and :23
+  Status:  All three existing logout triggers are ALREADY correct - they are
+           [data-logout-open] buttons that open the modal, which posts with
+           {% csrf_token %}. Nothing is broken today.
+  Why it is listed: backend TASK B8.2 is making logout POST-only, so any
+           <a href="{% url 'accounts:logout' %}"> anchor added later will start
+           returning 405. Treat this as a standing rule rather than a fix:
+           never link to logout with a plain anchor; always trigger the modal.
+  Action:  Re-grep for logout anchors after the backend change lands, and add
+           the rule to whatever contributing notes the team keeps.
+
+TASK F7.5 - Unpin risk: Lucide loaded from @latest
+  File: templates/base.html (last lines)
+  Current:  <script src="https://unpkg.com/lucide@latest"></script>
+  Problem:  An upstream release can change or break every icon with no deploy
+            on your side.
+  Fix:      Pin an exact version or vendor into static/. Same item as backend
+            TASK B8.13 - do it once, do not both do it.
+
+TASK F7.6 - Lists silently truncate with no pager
+  Files: templates/keys/key_list.html, templates/transactions/history.html,
+         templates/transactions/shift_history.html,
+         templates/transactions/borrow_dashboard.html
+  Problem:  Views slice querysets at 200 (100 for the borrowed panel) with no
+            pagination UI at all. Records past the cut are invisible with no
+            indication anything was hidden.
+  Fix:      Backend TASK B8.11 switches these to Paginator and passes page_obj.
+            Build templates/partials/pagination.html (already listed in TASK
+            F6.6) and use it on every list page. Show "Showing X-Y of Z" so a
+            truncated list is never silently misleading.
+
+TASK F7.7 - Dead template: home.html is unreachable
+  File: templates/home.html
+  Problem:  No URL routes to it (config/urls.py maps "" to the dashboard). The
+            accounts.home() view that would render it is also unrouted.
+  Fix:      Backend TASK B8.6 decides whether to delete it or wire it as a
+            public landing page. If it stays, it needs a real design pass - it
+            is currently unstyled relative to the rest of the app. Confirm the
+            decision before investing effort here.
+
+TASK F7.8 - Overdue UI has nothing to display
+  Files: templates/dashboard.html (overdue stat card),
+         templates/transactions/history.html
+  Problem:  The overdue counter and any overdue styling will always render zero
+            because nothing in the backend ever sets Status.OVERDUE (backend
+            TASKS B4.3/B4.4/B8.12).
+  Fix:      Build the overdue states anyway - red row highlighting, overdue
+            pill, approaching-due amber - but test them against seeded overdue
+            data once backend ships mark_overdue. Ask them to include at least
+            one overdue transaction in seed_demo (their TASK B7.1).
+
+TASK F7.9 - No mobile navigation at all
+  File: templates/partials/sidebar.html
+  Problem:  The aside is "hidden md:flex" with no hamburger or drawer anywhere,
+            so below the md breakpoint there is NO navigation whatsoever - the
+            app is unusable on a phone and awkward on a tablet.
+  Fix:      Covered by TASK F2.2. Flagged here because it is a genuine defect,
+            not just a missing enhancement - guards may well work from a tablet
+            at the desk.
+
+TASK F7.10 - Inline per-modal JS will not scale
+  File: templates/partials/logout_modal.html (script block at the bottom)
+  Problem:  The modal controller is a self-contained IIFE bound to the single
+            id "logout-modal". The pattern works, but copying it for each of
+            the ~10 modals in Section 4 and 5 means ten near-identical
+            listeners, ten focus-management implementations, and no support for
+            stacked modals.
+  Fix:      Generalize it ONCE into static/js/modal.js (TASK F1.2) and reduce
+            logout_modal.html to markup only. Keep the behavior it already gets
+            right - overlay click, Escape, focus restore - those are the spec
+            for the shared version.
+
+-------------------------------------------------------------------------------
+FRONTEND BUILD ORDER (RECOMMENDED)
+-------------------------------------------------------------------------------
+  1. Section 7  - template bug fixes                  (small, do them first;
+                  F7.1/F7.2/F7.3 pair with the Section 1-2 work anyway)
+  2. Section 1  - modal system + toast + form field   (everything needs it)
+  3. Section 2  - role-aware sidebar                  (makes the split real)
+  4. Section 3  - POS borrow screen                   (highest user value)
+  5. Section 4  - admin CRUD modals (Rooms and Users first - both are
+                  entirely missing)
+  6. Section 5  - scheduling UI
+  7. Section 6  - dashboards, reports, polish
+
+COORDINATION NOTES WITH BACKEND
+  - Agree the JSON response shapes for all /api/ endpoints BEFORE building
+    Section 3. Those contracts are in the backend list Sections 3.4, 4.1,
+    4.2, 5.6.
+  - All AJAX POSTs must send X-CSRFToken from the csrftoken cookie.
+  - Agreed error convention: 422 = business-rule violation with
+    {"error": "message"} or {"field": ["errors"]}; 403 = wrong role.
+  - Ask backend to run their seed_demo command so you have realistic data to
+    build against - the database is currently completely empty.
+
+===============================================================================
+END OF FRONTEND TASK LIST
+===============================================================================
