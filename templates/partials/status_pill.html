@@ -1,9 +1,9 @@
-{% if status == 'ACTIVE' %}<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● ACTIVE</span>
-{% elif status == 'OVERDUE' %}<span class="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● OVERDUE</span>
-{% elif status == 'RETURNED' %}<span class="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● RETURNED</span>
-{% elif status == 'AVAILABLE' %}<span class="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● AVAILABLE</span>
-{% elif status == 'BORROWED' %}<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● BORROWED</span>
-{% elif status == 'LOST' %}<span class="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● LOST</span>
-{% elif status == 'DAMAGED' %}<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● DAMAGED</span>
-{% else %}<span class="inline-flex items-center gap-1 bg-stone-100 text-stone-600 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold">● {{ status }}</span>
+{% if status == 'ACTIVE' %}<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ACTIVE</span>
+{% elif status == 'OVERDUE' %}<span class="inline-flex items-center gap-1 bg-red-50 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> OVERDUE</span>
+{% elif status == 'RETURNED' %}<span class="inline-flex items-center gap-1 bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> RETURNED</span>
+{% elif status == 'AVAILABLE' %}<span class="inline-flex items-center gap-1 bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> AVAILABLE</span>
+{% elif status == 'BORROWED' %}<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> BORROWED</span>
+{% elif status == 'LOST' %}<span class="inline-flex items-center gap-1 bg-red-50 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> LOST</span>
+{% elif status == 'DAMAGED' %}<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> DAMAGED</span>
+{% else %}<span class="inline-flex items-center gap-1 bg-stone-100 text-stone-700 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> {{ status }}</span>
 {% endif %}

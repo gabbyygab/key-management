@@ -8,61 +8,92 @@
     <h1 class="text-[22px] font-extrabold tracking-tight">Key Transactions</h1>
     <p class="text-[13px] text-stone-500 mt-0.5">Search a borrower, release an available key, confirm returns.</p>
   </div>
-  <div id="shift">
+  {% comment %} role=status so a guard using a screen reader hears the shift state on load
+     and whenever it is re-rendered, instead of it being silent decoration. {% endcomment %}
+  <div id="shift" role="status">
     {% if shift %}
-      <span class="bg-green-50 text-green-800 border border-green-200 px-3 py-2 rounded-lg text-[13px] font-medium">● On duty: {{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</span>
+      <span class="inline-block bg-green-50 text-green-800 border border-green-200 px-3 py-2 rounded-lg text-[13px] font-medium">● On duty: {{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</span>
     {% else %}
-      <span class="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-2 rounded-lg text-[13px] font-medium">No active shift — log out and back in to start one.</span>
+      <span class="inline-block bg-amber-50 text-amber-800 border border-amber-200 px-3 py-2 rounded-lg text-[13px] font-medium">No active shift — log out and back in to start one.</span>
     {% endif %}
   </div>
 </div>
 
-<div class="grid xl:grid-cols-2 gap-3">
+{% comment %} F3.9 shortcuts live in pos.js. They were undiscoverable without a mouse, so
+   advertise them; hidden on touch-only screens where they do not apply. {% endcomment %}
+<p class="hidden md:block text-[12px] text-stone-500 mb-3">
+  Shortcuts:
+  <kbd class="font-mono bg-white border border-stone-300 rounded px-1.5 py-0.5 text-[11px]">/</kbd> or
+  <kbd class="font-mono bg-white border border-stone-300 rounded px-1.5 py-0.5 text-[11px]">F1</kbd> person search ·
+  <kbd class="font-mono bg-white border border-stone-300 rounded px-1.5 py-0.5 text-[11px]">F2</kbd> key search ·
+  <kbd class="font-mono bg-white border border-stone-300 rounded px-1.5 py-0.5 text-[11px]">Esc</kbd> clear field
+</p>
+
+{% comment %} 1366x768: xl: starts at 1280px, so two columns at 1366 gave each panel ~620px
+   and pushed "Currently borrowed" below the fold. lg: (1024px) splits earlier so
+   a 1366-wide guard station sees both panels, and a portrait tablet (768px)
+   stays single-column. {% endcomment %}
+<div class="grid lg:grid-cols-2 gap-3 items-start">
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
   <h2 class="font-bold text-[14px]">1 · Search person</h2>
-  <form method="get" class="mt-2 flex gap-2">
-    <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3">
-      <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2"></i>
-      <input name="q_borrower" value="{{ q_borrower }}" placeholder="Professor name or ID..." class="flex-1 bg-transparent outline-none py-2 text-[13px]">
+  <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search for a borrower">
+    {# The magnifier is decorative; the real name comes from the label. #}
+    <label for="pos-q-borrower" class="sr-only">Professor name or ID number</label>
+    <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+      <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+      <input id="pos-q-borrower" name="q_borrower" value="{{ q_borrower }}" placeholder="Professor name or ID..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
     </div>
-    <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
+    <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">Search</button>
   </form>
-  <div class="mt-2 divide-y divide-stone-100 max-h-56 overflow-auto">
+  <div class="mt-2 divide-y divide-stone-100 max-h-56 overflow-auto" role="region" aria-label="Borrower search results">
     {% for b in borrowers %}
-    <a href="/transactions/borrow/?q_borrower={{ q_borrower }}&borrower_id={{ b.pk }}" class="flex items-center justify-between py-2.5 hover:bg-stone-50 px-2 rounded-lg {% if selected and selected.pk == b.pk %}bg-emerald-50/60{% endif %}">
-      <span class="text-[13px]"><b>{{ b.last_name }}, {{ b.first_name }}</b> <span class="text-stone-400 font-mono text-[12px]">{{ b.id_number }}</span></span>
-      <i data-lucide="chevron-right" class="w-4 h-4 text-stone-300"></i>
+    <a href="/transactions/borrow/?q_borrower={{ q_borrower }}&borrower_id={{ b.pk }}" class="flex items-center justify-between py-2.5 hover:bg-stone-50 px-2 rounded-lg {% if selected and selected.pk == b.pk %}bg-emerald-50/60{% endif %}" {% if selected and selected.pk == b.pk %}aria-current="true"{% endif %}>
+      <span class="text-[13px]"><b>{{ b.last_name }}, {{ b.first_name }}</b> <span class="text-stone-500 font-mono text-[12px]">{{ b.id_number }}</span></span>
+      <i data-lucide="chevron-right" aria-hidden="true" class="w-4 h-4 text-stone-400 shrink-0"></i>
     </a>
-    {% empty %}<p class="text-[13px] text-stone-400 py-3">No person found.</p>{% endfor %}
+    {% empty %}<p class="text-[13px] text-stone-500 py-3">No person found.</p>{% endfor %}
   </div>
 
   {% if selected %}
   <div class="mt-3 border-t border-stone-100 pt-3">
     <h2 class="font-bold text-[14px]">2 · Release to {{ selected.full_name }}</h2>
     {% if not selected.can_borrow %}
-      <p class="text-red-700 text-[13px] mt-1 bg-red-50 border border-red-100 rounded-lg p-2">Not authorized to borrow.</p>
+      <p role="alert" class="text-red-700 text-[13px] mt-1 bg-red-50 border border-red-100 rounded-lg p-2">Not authorized to borrow.</p>
     {% elif active_txn %}
-      <p class="mt-2 text-[13px] bg-amber-50 border border-amber-200 rounded-lg p-2.5">Already has key <b class="font-mono">{{ active_txn.key.key_code }}</b> ({{ active_txn.transaction_no }}). Return it first.</p>
+      <p role="alert" class="mt-2 text-[13px] bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2.5">Already has key <b class="font-mono">{{ active_txn.key.key_code }}</b> ({{ active_txn.transaction_no }}). Return it first.</p>
     {% else %}
-      <form method="get" class="mt-2 flex gap-2">
+      {% comment %} Shown by pos.js applyShiftBlock() when no shift is open, so the guard
+         learns why Confirm is disabled before filling anything in. {% endcomment %}
+      <p data-pos-blocked-notice role="alert" class="hidden mt-2 text-[13px] bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2.5">
+        You must start a shift before releasing keys. Log out and back in to start one.
+      </p>
+      <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search available keys">
         <input type="hidden" name="borrower_id" value="{{ selected.pk }}">
         <input type="hidden" name="q_borrower" value="{{ q_borrower }}">
-        <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3">
-          <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2"></i>
-          <input name="q_key" value="{{ q_key }}" placeholder="Search key / RM303..." class="flex-1 bg-transparent outline-none py-2 text-[13px]">
+        <label for="pos-q-key" class="sr-only">Search available keys by code or room</label>
+        <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+          <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+          <input id="pos-q-key" name="q_key" value="{{ q_key }}" placeholder="Search key / RM303..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
         </div>
-        <button class="bg-white border border-stone-200 px-3 py-2 rounded-lg text-[13px]">Find</button>
+        <button class="bg-white border border-stone-200 hover:bg-stone-50 px-3 py-2 rounded-lg text-[13px] shrink-0">Find</button>
       </form>
-      <div class="mt-2 space-y-2 max-h-80 overflow-auto">
+      <div class="mt-2 space-y-2 max-h-80 overflow-auto" role="region" aria-label="Available keys">
       {% for k in available_keys %}
-        <form method="post" action="{% url 'transactions:borrow_confirm' %}" class="border border-stone-200 rounded-xl p-2.5 flex items-center justify-between gap-2">{% csrf_token %}
+        {% comment %} flex-wrap + a sm: breakpoint: at tablet width the purpose field and
+           Confirm used to be squeezed onto one line, leaving a ~40px input. {% endcomment %}
+        <form method="post" action="{% url 'transactions:borrow_confirm' %}" class="border border-stone-200 rounded-xl p-2.5 flex flex-wrap sm:flex-nowrap items-end justify-between gap-2">{% csrf_token %}
           <input type="hidden" name="borrower_id" value="{{ selected.pk }}">
           <input type="hidden" name="key_id" value="{{ k.pk }}">
-          <div class="text-[13px]"><b class="font-mono">{{ k.key_code }}</b> <span class="text-stone-500">· {{ k.room }}</span><br>
-            <input name="purpose" placeholder="Purpose (e.g. Lecture)" class="mt-1.5 rounded-lg border border-stone-300 bg-white text-[13px] w-full px-2 py-1.5"></div>
-          <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3 py-2 rounded-lg text-[13px] font-semibold whitespace-nowrap">Confirm</button>
+          <div class="text-[13px] flex-1 min-w-0 basis-full sm:basis-auto">
+            <b class="font-mono">{{ k.key_code }}</b> <span class="text-stone-500">· {{ k.room }}</span>
+            <label for="pos-purpose-{{ k.pk }}" class="sr-only">Purpose for key {{ k.key_code }}</label>
+            <input id="pos-purpose-{{ k.pk }}" name="purpose" placeholder="Purpose (e.g. Lecture)" class="mt-1.5 rounded-lg border border-stone-300 bg-white text-[13px] w-full px-2 py-1.5">
+          </div>
+          <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3 py-2 rounded-lg text-[13px] font-semibold whitespace-nowrap shrink-0">
+            Confirm<span class="sr-only"> release of key {{ k.key_code }} to {{ selected.full_name }}</span>
+          </button>
         </form>
-      {% empty %}<p class="text-[13px] text-stone-400">No available keys. Try another search or add keys.</p>{% endfor %}
+      {% empty %}<p class="text-[13px] text-stone-500">No available keys. Try another search or add keys.</p>{% endfor %}
       </div>
     {% endif %}
   </div>
@@ -71,20 +102,24 @@
 
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
   <div class="flex items-center justify-between">
-    <h2 class="font-bold text-[14px]">Currently borrowed <span class="ml-1 text-[11px] bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">{{ borrowed|length }}</span></h2>
-    <a href="{% url 'transactions:history' %}" class="text-[12px] font-medium inline-flex items-center gap-1">View all <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i></a>
+    <h2 class="font-bold text-[14px]">Currently borrowed <span class="ml-1 text-[11px] bg-blue-100 text-blue-800 rounded-full px-2 py-0.5">{{ borrowed|length }}</span></h2>
+    <a href="{% url 'transactions:history' %}" class="text-[12px] font-medium inline-flex items-center gap-1 hover:underline">View all <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i></a>
   </div>
-  <div class="mt-2 space-y-2 max-h-[36rem] overflow-auto">
+  {% comment %} Capped in vh rather than the old 36rem, which overflowed a 768px-tall
+     guard station once the header and shift banner were counted. {% endcomment %}
+  <div class="mt-2 space-y-2 max-h-[60vh] overflow-auto">
   {% for t in borrowed %}
-    <div class="border border-stone-200 rounded-xl p-2.5 text-[13px] flex justify-between gap-2">
-      <div><b class="font-mono">{{ t.key.key_code }}</b> <span class="text-stone-500">· {{ t.key.room }}</span><br>
-        {{ t.borrower.full_name }} <span class="text-stone-400">· {{ t.borrowed_at|date:"M d H:i" }}</span><br>
-        <span class="text-stone-400 font-mono text-[12px]">{{ t.transaction_no }}</span></div>
-      <form method="post" action="{% url 'transactions:return_confirm' t.pk %}">{% csrf_token %}
-        <button class="bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 rounded-lg text-[13px] font-semibold">Return</button>
+    <div class="border border-stone-200 rounded-xl p-2.5 text-[13px] flex flex-wrap sm:flex-nowrap justify-between items-start gap-2">
+      <div class="min-w-0"><b class="font-mono">{{ t.key.key_code }}</b> <span class="text-stone-500">· {{ t.key.room }}</span><br>
+        {{ t.borrower.full_name }} <span class="text-stone-500">· {{ t.borrowed_at|date:"M d H:i" }}</span><br>
+        <span class="text-stone-500 font-mono text-[12px]">{{ t.transaction_no }}</span></div>
+      <form method="post" action="{% url 'transactions:return_confirm' t.pk %}" class="shrink-0">{% csrf_token %}
+        <button class="bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 rounded-lg text-[13px] font-semibold">
+          Return<span class="sr-only"> key {{ t.key.key_code }} from {{ t.borrower.full_name }}</span>
+        </button>
       </form>
     </div>
-  {% empty %}<p class="text-[13px] text-stone-400">No keys out right now.</p>{% endfor %}
+  {% empty %}<p class="text-[13px] text-stone-500">No keys out right now.</p>{% endfor %}
   </div>
 </div>
 </div>
