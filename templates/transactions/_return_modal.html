@@ -1,0 +1,103 @@
+{% comment %}
+TASK F3.7 — return confirmation modal. Driven by static/js/currently_out.js
+through window.KeyTrackModal; the summary fields are filled from the row.
+{% endcomment %}
+<div id="return-key-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="return-key-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <form data-return-form
+        class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-green-50 border border-green-200 flex items-center justify-center shrink-0">
+        <i data-lucide="key-round" class="w-5 h-5 text-green-700"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="return-key-modal-title" class="text-[15px] font-bold text-stone-900">Confirm key return</h2>
+        <p class="text-[13px] text-stone-500 mt-0.5">Check the key and borrower before you record this.</p>
+      </div>
+    </div>
+
+    <dl class="mt-4 rounded-xl border border-stone-200 bg-[#FAF7F0] divide-y divide-stone-200 text-[13px]">
+      <div class="flex items-baseline justify-between gap-3 px-3 py-2">
+        <dt class="text-stone-500">Key</dt>
+        <dd class="font-mono font-bold text-right" data-return-key>—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-3 px-3 py-2">
+        <dt class="text-stone-500">Room</dt>
+        <dd class="text-right" data-return-room>—</dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-3 px-3 py-2">
+        <dt class="text-stone-500">Borrower</dt>
+        <dd class="text-right">
+          <span data-return-borrower>—</span>
+          <span class="block text-[12px] text-stone-400 font-mono" data-return-borrower-id></span>
+        </dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-3 px-3 py-2">
+        <dt class="text-stone-500">Out since</dt>
+        <dd class="text-right">
+          <span data-return-since>—</span>
+          <span class="block text-[12px] text-stone-400 tabular-nums" data-return-elapsed></span>
+        </dd>
+      </div>
+      <div class="flex items-baseline justify-between gap-3 px-3 py-2">
+        <dt class="text-stone-500">Transaction</dt>
+        <dd class="font-mono text-[12px] text-stone-500 text-right" data-return-txn-no>—</dd>
+      </div>
+    </dl>
+
+    <fieldset class="mt-4">
+      <legend class="text-[13px] font-semibold text-stone-700">Key condition</legend>
+      <div class="mt-1.5 grid grid-cols-3 gap-1.5" data-return-conditions>
+        <label class="cursor-pointer">
+          <input type="radio" name="condition" value="OK" class="sr-only peer" checked>
+          <span class="block text-center text-[13px] font-semibold px-2 py-2 rounded-lg border border-stone-200 bg-white text-stone-600
+                       peer-checked:bg-green-50 peer-checked:border-green-300 peer-checked:text-green-800
+                       peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A]">OK</span>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="condition" value="DAMAGED" class="sr-only peer">
+          <span class="block text-center text-[13px] font-semibold px-2 py-2 rounded-lg border border-stone-200 bg-white text-stone-600
+                       peer-checked:bg-amber-50 peer-checked:border-amber-300 peer-checked:text-amber-800
+                       peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A]">Damaged</span>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="condition" value="LOST" class="sr-only peer">
+          <span class="block text-center text-[13px] font-semibold px-2 py-2 rounded-lg border border-stone-200 bg-white text-stone-600
+                       peer-checked:bg-red-50 peer-checked:border-red-300 peer-checked:text-red-800
+                       peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A]">Lost</span>
+        </label>
+      </div>
+      <p data-return-condition-note
+         class="hidden mt-1.5 text-[12px] rounded-lg border px-2.5 py-1.5"></p>
+    </fieldset>
+
+    <div class="mt-3">
+      <label for="return-remarks" class="text-[13px] font-semibold text-stone-700">
+        Remarks <span class="font-normal text-stone-400">(optional)</span>
+      </label>
+      <textarea id="return-remarks" name="remarks" rows="2" data-return-remarks
+                placeholder="Anything worth recording about this return..."
+                class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></textarea>
+    </div>
+
+    <p data-return-error
+       class="hidden mt-3 text-[13px] bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2"
+       role="alert"></p>
+
+    <div class="flex items-center justify-end gap-2 mt-5">
+      <button type="button" data-modal-close
+              class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+        Cancel
+      </button>
+      <button type="submit" data-return-submit
+              class="px-4 py-2 rounded-lg bg-[#14342A] text-white text-[13px] font-semibold hover:bg-[#0F2E1F]
+                     disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2">
+        <i data-lucide="loader-2" class="w-4 h-4 animate-spin hidden" data-return-spinner></i>
+        <span data-return-submit-label>Confirm return</span>
+      </button>
+    </div>
+  </form>
+</div>

@@ -26,8 +26,12 @@
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
   {% endif %}
+  {% include "partials/toast.html" %}
   <script src="https://unpkg.com/lucide@latest"></script>
   <script>lucide.createIcons();</script>
+  <script src="{% static 'js/csrf.js' %}"></script>
+  <script src="{% static 'js/modal.js' %}"></script>
+  <script src="{% static 'js/toast.js' %}"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

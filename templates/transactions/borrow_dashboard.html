@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Key Transactions — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
@@ -67,23 +68,10 @@
   {% endif %}
 </div>
 
-<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-  <div class="flex items-center justify-between">
-    <h2 class="font-bold text-[14px]">Currently borrowed <span class="ml-1 text-[11px] bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">{{ borrowed|length }}</span></h2>
-    <a href="{% url 'transactions:history' %}" class="text-[12px] font-medium inline-flex items-center gap-1">View all <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i></a>
-  </div>
-  <div class="mt-2 space-y-2 max-h-[36rem] overflow-auto">
-  {% for t in borrowed %}
-    <div class="border border-stone-200 rounded-xl p-2.5 text-[13px] flex justify-between gap-2">
-      <div><b class="font-mono">{{ t.key.key_code }}</b> <span class="text-stone-500">· {{ t.key.room }}</span><br>
-        {{ t.borrower.full_name }} <span class="text-stone-400">· {{ t.borrowed_at|date:"M d H:i" }}</span><br>
-        <span class="text-stone-400 font-mono text-[12px]">{{ t.transaction_no }}</span></div>
-      <form method="post" action="{% url 'transactions:return_confirm' t.pk %}">{% csrf_token %}
-        <button class="bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 rounded-lg text-[13px] font-semibold">Return</button>
-      </form>
-    </div>
-  {% empty %}<p class="text-[13px] text-stone-400">No keys out right now.</p>{% endfor %}
-  </div>
+{% include "transactions/_currently_out_panel.html" %}
 </div>
-</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/currently_out.js' %}"></script>
 {% endblock %}
