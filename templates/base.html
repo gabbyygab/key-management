@@ -26,8 +26,21 @@
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
   {% endif %}
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script>lucide.createIcons();</script>
+  {# Version pinned deliberately: an unpinned CDN tag can change the icon set
+     or the API without warning and break the UI (F7.5 / B8.13). #}
+  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+
+  {# Shared, every page. csrf.js must come first — it defines window.KeyTrack. #}
+  <script src="{% static 'js/csrf.js' %}"></script>
+  <script src="{% static 'js/toast.js' %}"></script>
+  <script src="{% static 'js/modal.js' %}"></script>
+  <script src="{% static 'js/modal-form.js' %}"></script>
+  <script src="{% static 'js/search.js' %}"></script>
+
+  {# First icon pass. Anything injected later must call KeyTrack.refreshIcons(). #}
+  <script src="{% static 'js/init-icons.js' %}"></script>
+
+  {# Per-page scripts (pos.js, schedule-grid.js) load here, after the shared ones. #}
   {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -9,7 +9,7 @@
     <div class="flex-1"></div>
     <span class="hidden lg:inline text-[12px] text-stone-500">{% now "D, F j, Y" %}</span>
     <div class="w-8 h-8 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
-    <button type="button" data-logout-open title="Logout" aria-label="Log out" class="w-8 h-8 rounded-lg border border-stone-200 bg-white flex items-center justify-center hover:bg-stone-50">
+    <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out" class="w-8 h-8 rounded-lg border border-stone-200 bg-white flex items-center justify-center hover:bg-stone-50">
       <i data-lucide="log-out" class="w-4 h-4 text-stone-500"></i>
     </button>
   </div>
@@ -20,6 +20,6 @@
     <a href="{% url 'keys:key_list' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Keys</a>
     <a href="{% url 'accounts:borrower_list' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Borrowers</a>
     <a href="{% url 'transactions:history' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">History</a>
-    <button type="button" data-logout-open class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap text-red-700 font-medium">Log out</button>
+    <button type="button" data-modal-open="logout-modal" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap text-red-700 font-medium">Log out</button>
   </nav>
 </header>
