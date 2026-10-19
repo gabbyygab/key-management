@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Room Finder — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Room Finder</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Pick a day and time to see which rooms are free, then schedule one.</p>
+  </div>
+</div>
+
+<div class="mb-4 px-4 py-2.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 text-[13px] flex items-start gap-2">
+  <i data-lucide="flask-conical" class="w-4 h-4 mt-0.5 shrink-0"></i>
+  <span><b>Preview:</b> class schedules aren't stored yet, so every bookable room that matches your filters is listed. Booked rooms will drop out once scheduling ships.</span>
+</div>
+
+<form id="free-room-form" method="get" action="{% url 'scheduling:free_rooms' %}" data-api-url="{% url 'scheduling:free_rooms_api' %}" novalidate
+      class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-5 space-y-4">
+  <fieldset>
+    <legend class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Day</legend>
+    <div class="flex flex-wrap gap-1.5">
+      {% for value, label in form.fields.day.choices %}
+      <label class="cursor-pointer">
+        <input type="radio" name="day" value="{{ value }}" data-label="{{ label }}" class="peer sr-only" {% if form.day.value|stringformat:"s" == value|stringformat:"s" %}checked{% endif %}>
+        <span class="block px-3.5 py-1.5 rounded-lg border border-stone-300 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 peer-checked:bg-[#0F2E1F] peer-checked:border-[#0F2E1F] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A] peer-focus-visible:ring-offset-1">{{ label|slice:":3" }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p data-error-for="day" class="{% if not form.day.errors %}hidden {% endif %}text-[12px] text-red-600 mt-1">{{ form.day.errors|join:" " }}</p>
+  </fieldset>
+
+  <div class="grid grid-cols-2 md:grid-cols-[repeat(2,minmax(0,10rem))_1fr] gap-3 items-end">
+    <div>
+      <label for="{{ form.start.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">{{ form.start.label }}</label>
+      {{ form.start }}
+      <p data-error-for="start" class="{% if not form.start.errors %}hidden {% endif %}text-[12px] text-red-600 mt-1">{{ form.start.errors|join:" " }}</p>
+    </div>
+    <div>
+      <label for="{{ form.end.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">{{ form.end.label }}</label>
+      {{ form.end }}
+      <p data-error-for="end" class="{% if not form.end.errors %}hidden {% endif %}text-[12px] text-red-600 mt-1">{{ form.end.errors|join:" " }}</p>
+    </div>
+    <div class="col-span-2 md:col-span-1 flex flex-wrap items-center gap-1.5 md:pb-1.5">
+      <span class="text-[12px] text-stone-500 mr-1">Duration</span>
+      {% for minutes, label in durations %}
+      <button type="button" data-duration="{{ minutes }}" aria-pressed="false"
+              class="px-2.5 py-1 rounded-full border border-stone-300 text-[12px] font-semibold text-stone-600 hover:bg-stone-50 aria-pressed:bg-[#1E6B4A] aria-pressed:border-[#1E6B4A] aria-pressed:text-white">{{ label }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_10rem_auto] gap-3 items-end pt-3 border-t border-stone-100">
+    <div>
+      <label for="{{ form.building.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Building <span class="normal-case font-normal text-stone-400">(optional)</span></label>
+      {{ form.building }}
+    </div>
+    <div>
+      <label for="{{ form.room_type.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">{{ form.room_type.label }} <span class="normal-case font-normal text-stone-400">(optional)</span></label>
+      {{ form.room_type }}
+    </div>
+    <div>
+      <label for="{{ form.min_capacity.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">{{ form.min_capacity.label }}</label>
+      {{ form.min_capacity }}
+      <p data-error-for="min_capacity" class="{% if not form.min_capacity.errors %}hidden {% endif %}text-[12px] text-red-600 mt-1">{{ form.min_capacity.errors|join:" " }}</p>
+    </div>
+    <button type="submit" data-submit
+            class="inline-flex items-center justify-center gap-2 bg-[#14342A] hover:bg-[#0F2E1F] disabled:opacity-60 text-white px-5 py-2.5 rounded-lg text-[13px] font-semibold">
+      <span data-spinner class="hidden w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin"></span>
+      <i data-search-icon data-lucide="search" class="w-4 h-4"></i>
+      Find rooms
+    </button>
+  </div>
+  <p data-error-for="__all__" class="hidden text-[13px] text-red-600"></p>
+</form>
+
+<section aria-labelledby="free-room-summary">
+  <h2 id="free-room-summary" data-summary class="text-[15px] font-bold text-stone-900 mb-3" aria-live="polite">
+    {% if rooms is not None %}{{ rooms|length }} room{{ rooms|length|pluralize }} free{% else %}Results{% endif %}
+  </h2>
+
+  <div id="free-room-results" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 transition-opacity">
+    {% for room in rooms %}{% include "scheduling/_free_room_card.html" %}{% endfor %}
+  </div>
+
+  <div data-empty class="{% if rooms is None or rooms %}hidden {% endif %}bg-white rounded-xl border border-dashed border-stone-300 p-8 text-center">
+    <i data-lucide="search-x" class="w-8 h-8 mx-auto text-stone-400"></i>
+    <p class="text-[15px] font-semibold text-stone-700 mt-2">No free rooms for this slot</p>
+    <p class="text-[13px] text-stone-500 mt-1">Try another time, a different building, or a lower minimum capacity.</p>
+  </div>
+</section>
+
+<template id="free-room-card-template">{% include "scheduling/_free_room_card.html" with room=None %}</template>
+
+{# Fallback until the schedule editor (F5.2, #schedule-form-modal) exists. Native <dialog> gives Escape, a focus trap and an inert background. #}
+<dialog id="schedule-stub-dialog" aria-labelledby="schedule-stub-title"
+        class="m-auto p-0 bg-transparent backdrop:bg-stone-900/60 w-[calc(100%-2rem)] max-w-sm">
+  <div class="bg-white rounded-2xl border border-stone-200 shadow-xl p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center shrink-0 text-[#1E6B4A]">
+        <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="schedule-stub-title" class="text-[15px] font-bold text-stone-900">Schedule this room</h2>
+        <p class="text-[13px] text-stone-500 mt-1">The schedule editor isn't available yet. When it ships, this button opens it pre-filled with:</p>
+      </div>
+    </div>
+    <dl class="mt-4 grid grid-cols-[5rem_1fr] gap-y-1.5 text-[13px]">
+      <dt class="text-stone-500">Room</dt><dd class="font-mono font-semibold" data-prefill="room">—</dd>
+      <dt class="text-stone-500">Day</dt><dd class="font-semibold" data-prefill="day">—</dd>
+      <dt class="text-stone-500">Time</dt><dd class="font-semibold" data-prefill="time">—</dd>
+    </dl>
+    <div class="flex justify-end mt-5">
+      <button type="button" data-dialog-close autofocus class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Close</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/free_rooms.js' %}"></script>{% endblock %}

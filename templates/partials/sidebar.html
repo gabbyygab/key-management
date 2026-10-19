@@ -32,6 +32,10 @@
     <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Management</div>
     <a href="{% url 'transactions:history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <i data-lucide="chart-column" class="w-4 h-4"></i> Reports &amp; History</a>
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="search-check" class="w-4 h-4"></i> Room Finder</a>
+    {% endif %}
   </nav>
 
   <div class="p-3">
