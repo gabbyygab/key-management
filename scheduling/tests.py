@@ -3,8 +3,8 @@ from django.urls import reverse
 
 from accounts.models import User
 from facilities.models import Building, Room
-
-from .services import find_free_rooms
+from .models import ScheduleBlock, Term
+from .services import find_conflicts, find_free_rooms
 
 SLOT = {"day": "0", "start": "09:00", "end": "10:30"}
 
@@ -95,6 +95,92 @@ class FreeRoomsTests(TestCase):
         self.assertEqual(len(res.context["rooms"]), 2)
         self.assertContains(res, "2 rooms free")
 
+    def test_schedule_list_page_renders_for_admin(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(reverse("scheduling:schedule_list"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "id=\"schedule-list-form\"")
+        self.assertContains(res, 'data-modal-open="schedule-edit-modal"')
+
     def test_page_forbidden_for_guard(self):
         self.client.force_login(self.guard)
         self.assertEqual(self.client.get(self.page).status_code, 403)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class ScheduleConflictTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_user(
+            "sched_admin", "sched_admin@example.com", "x",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        cls.building = Building.objects.create(code="CCS", name="Computing")
+        cls.room = Room.objects.create(building=cls.building, room_code="204", capacity=30)
+        cls.other_room = Room.objects.create(building=cls.building, room_code="205", capacity=30)
+        cls.term = Term.objects.create(name="2026 Fall", start_date="2026-08-01", end_date="2026-12-20", is_active=True)
+
+    def add_block(self, *, start, end, room=None, day_of_week=0, is_active=True, title="Class"):
+        return ScheduleBlock.objects.create(
+            term=self.term,
+            room=room or self.room,
+            title=title,
+            day_of_week=day_of_week,
+            start_time=start,
+            end_time=end,
+            is_active=is_active,
+            created_by=self.admin,
+        )
+
+    def test_exact_same_slot_conflicts(self):
+        existing_a = self.add_block(start="09:00", end="10:00", title="A")
+        existing_b = self.add_block(start="09:00", end="10:00", title="B")
+        self.assertEqual(
+            list(find_conflicts(self.room, 0, "09:00", "10:00", self.term)),
+            [existing_a, existing_b],
+        )
+
+    def test_partial_overlap_at_start_conflicts(self):
+        self.add_block(start="09:00", end="10:30", title="A")
+        conflicts = find_conflicts(self.room, 0, "09:30", "11:00", self.term)
+        self.assertEqual(len(conflicts), 1)
+
+    def test_partial_overlap_at_end_conflicts(self):
+        self.add_block(start="09:30", end="11:00", title="A")
+        conflicts = find_conflicts(self.room, 0, "09:00", "10:30", self.term)
+        self.assertEqual(len(conflicts), 1)
+
+    def test_new_block_fully_inside_conflicts(self):
+        self.add_block(start="09:00", end="11:00", title="A")
+        conflicts = find_conflicts(self.room, 0, "09:30", "10:30", self.term)
+        self.assertEqual(len(conflicts), 1)
+
+    def test_new_block_fully_contains_conflicts(self):
+        self.add_block(start="09:30", end="10:30", title="A")
+        conflicts = find_conflicts(self.room, 0, "09:00", "11:00", self.term)
+        self.assertEqual(len(conflicts), 1)
+
+    def test_touching_endpoints_do_not_conflict(self):
+        existing = self.add_block(start="09:00", end="10:00", title="A")
+        conflicts = find_conflicts(self.room, 0, "10:00", "11:00", self.term)
+        self.assertNotIn(existing, conflicts)
+
+    def test_different_room_does_not_conflict(self):
+        existing = self.add_block(start="09:00", end="10:00", title="A")
+        conflicts = find_conflicts(self.other_room, 0, "09:00", "10:00", self.term)
+        self.assertNotIn(existing, conflicts)
+
+    def test_different_day_does_not_conflict(self):
+        existing = self.add_block(start="09:00", end="10:00", title="A", day_of_week=0)
+        conflicts = find_conflicts(self.room, 1, "09:00", "10:00", self.term)
+        self.assertNotIn(existing, conflicts)
+
+    def test_inactive_block_does_not_conflict(self):
+        existing = self.add_block(start="09:00", end="10:00", title="A", is_active=False)
+        conflicts = find_conflicts(self.room, 0, "09:00", "10:00", self.term)
+        self.assertNotIn(existing, conflicts)
+
+    def test_editing_block_ignores_itself(self):
+        existing = self.add_block(start="09:00", end="10:00", title="A")
+        conflicts = find_conflicts(self.room, 0, "09:00", "10:00", self.term, exclude_block_id=existing.pk)
+        self.assertEqual(conflicts, [])

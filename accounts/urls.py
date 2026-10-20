@@ -6,6 +6,7 @@ app_name = "accounts"
 urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
+    path("post-login/", views.post_login_router, name="post_login_router"),
     # Borrower = people who can borrow (professors/staff/students)
     path("borrowers/", views.borrower_list, name="borrower_list"),
     path("borrowers/new/", views.borrower_create, name="borrower_create"),
