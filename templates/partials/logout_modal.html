@@ -1,7 +1,7 @@
-{# Reusable logout confirmation modal.
+{% comment %} Reusable logout confirmation modal.
    Behavior (overlay click, Escape, focus trap, focus restore, scroll lock)
    comes from static/js/modal.js — this partial is markup only (F6.9).
-   Opened by any [data-modal-open="logout-modal"] button. #}
+   Opened by any [data-modal-open="logout-modal"] button. {% endcomment %}
 <div id="logout-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="logout-modal-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
 

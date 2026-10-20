@@ -12,7 +12,7 @@
   </div>
 </div>
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 divide-y divide-stone-100">
-{% for b in buildings %}<div class="py-2.5 text-[13px] flex justify-between"><span><b class="font-mono">{{ b.code }}</b> <span class="text-stone-500">· {{ b.name }}</span></span><a href="{% url 'facilities:building_update' b.pk %}" class="font-medium hover:underline inline-flex items-center gap-1">Edit <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i></a></div>
-{% empty %}<p class="text-stone-400 text-[13px]">No buildings yet.</p>{% endfor %}
+{% for b in buildings %}<div class="py-2.5 text-[13px] flex justify-between"><span><b class="font-mono">{{ b.code }}</b> <span class="text-stone-500">· {{ b.name }}</span></span><a href="{% url 'facilities:building_update' b.pk %}" class="font-medium hover:underline inline-flex items-center gap-1">Edit<span class="sr-only"> building {{ b.code }}</span> <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i></a></div>
+{% empty %}<p class="text-stone-500 text-[13px]">No buildings yet.</p>{% endfor %}
 </div>
 {% endblock %}

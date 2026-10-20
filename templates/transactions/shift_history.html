@@ -7,8 +7,9 @@
 </div>
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
 <table class="min-w-full text-[13px]">
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
-<th class="p-3 font-medium">Guard</th><th class="p-3 font-medium">Post</th><th class="p-3 font-medium">Start</th><th class="p-3 font-medium">End</th><th class="p-3 font-medium">Status</th></tr></thead>
+<caption class="sr-only">Guard shift history</caption>
+<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
+<th scope="col" class="p-3 font-medium">Guard</th><th scope="col" class="p-3 font-medium">Post</th><th scope="col" class="p-3 font-medium">Start</th><th scope="col" class="p-3 font-medium">End</th><th scope="col" class="p-3 font-medium">Status</th></tr></thead>
 <tbody class="divide-y divide-stone-100">
 {% for s in shifts %}
 <tr class="hover:bg-stone-50/60">
@@ -16,9 +17,9 @@
   <td class="p-3">{{ s.post }}</td>
   <td class="p-3 text-stone-500">{{ s.shift_start|date:"M j, Y, g:i A" }}</td>
   <td class="p-3 text-stone-500">{{ s.shift_end|date:"M j, Y, g:i A"|default:"—" }}</td>
-  <td class="p-3">{% if s.is_on_duty %}<span class="bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● ON DUTY</span>{% else %}<span class="bg-stone-100 text-stone-500 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold">● ENDED</span>{% endif %}</td>
+  <td class="p-3">{% if s.is_on_duty %}<span class="bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ON DUTY</span>{% else %}<span class="bg-stone-100 text-stone-700 border border-stone-300 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ENDED</span>{% endif %}</td>
 </tr>
-{% empty %}<tr><td colspan="5" class="p-6 text-center text-stone-400">No shifts yet. Log in to start one.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="5" class="p-6 text-center text-stone-500">No shifts yet. Log in to start one.</td></tr>{% endfor %}
 </tbody>
 </table>
 </div>
