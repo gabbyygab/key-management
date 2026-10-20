@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -7,17 +8,33 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from .decorators import role_required
 from .forms import BorrowerForm
 from .models import Borrower
+from .permissions import admin_required, guard_required
 
 
 def home(request):
     if request.user.is_authenticated:
-        return redirect("dashboard")
+        return redirect(get_post_login_redirect(request.user))
     return render(request, "home.html")
+
+
+def get_post_login_redirect(user):
+    if user.is_superuser or user.role == "ADMIN":
+        return "dashboard"
+    return "transactions:borrow_dashboard"
+
+
+def post_login_router(request):
+    return redirect(get_post_login_redirect(request.user))
+
+
+def permission_denied_view(request, exception=None):
+    required_role = getattr(exception, "required_role", None)
+    return render(request, "403.html", {"required_role": required_role}, status=403)
 
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect("dashboard")
+        return redirect(get_post_login_redirect(request.user))
     error = None
 
     # ?next= is only honoured if it points back at this site. Redirecting to a
@@ -34,11 +51,11 @@ def login_view(request):
         password = request.POST.get("password", "")
         user = authenticate(request, username=username, password=password)
         if user is not None:
-            if not (user.is_superuser or user.role == "GUARD"):
-                error = "Only guard accounts can log in here. Admins use /admin/."
+            if not (user.is_superuser or user.role in {"ADMIN", "GUARD"}):
+                error = "This account is not allowed to log in."
             else:
                 login(request, user)
-                return redirect(next_url or "dashboard")
+                return redirect(request.GET.get("next") or get_post_login_redirect(user))
         else:
             error = "Invalid credentials, or account not approved yet."
 
@@ -56,7 +73,7 @@ def logout_view(request):
     return redirect("accounts:login")
 
 
-@role_required("GUARD")
+@admin_required
 def borrower_list(request):
     q = request.GET.get("q", "").strip()
     borrowers = Borrower.objects.select_related("department").all()
@@ -68,7 +85,7 @@ def borrower_list(request):
                   {"borrowers": borrowers[:100], "q": q})
 
 
-@role_required("GUARD")
+@admin_required
 def borrower_create(request):
     if request.method == "POST":
         form = BorrowerForm(request.POST)
@@ -81,7 +98,7 @@ def borrower_create(request):
     return render(request, "accounts/borrower_form.html", {"form": form, "title": "Add user"})
 
 
-@role_required("GUARD")
+@admin_required
 def borrower_update(request, pk):
     obj = get_object_or_404(Borrower, pk=pk)
     if request.method == "POST":
@@ -95,7 +112,7 @@ def borrower_update(request, pk):
     return render(request, "accounts/borrower_form.html", {"form": form, "title": "Edit user"})
 
 
-@role_required("GUARD")
+@admin_required
 def borrower_toggle(request, pk):
     obj = get_object_or_404(Borrower, pk=pk)
     if request.method == "POST":

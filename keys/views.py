@@ -2,12 +2,12 @@ from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from accounts.decorators import role_required
 from accounts.forms import CategoryForm, KeyForm
+from accounts.permissions import admin_required
 from .models import Key, KeyCategory
 
 
-@role_required("GUARD")
+@admin_required
 def key_list(request):
     q = request.GET.get("q", "").strip()
     status = request.GET.get("status", "")
@@ -22,7 +22,7 @@ def key_list(request):
                    "statuses": Key.Status.choices})
 
 
-@role_required("GUARD")
+@admin_required
 def key_create(request):
     form = KeyForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -34,7 +34,7 @@ def key_create(request):
     return render(request, "keys/key_form.html", {"form": form, "title": "Add key"})
 
 
-@role_required("GUARD")
+@admin_required
 def key_update(request, pk):
     obj = get_object_or_404(Key, pk=pk)
     form = KeyForm(request.POST or None, instance=obj)
@@ -45,17 +45,28 @@ def key_update(request, pk):
     return render(request, "keys/key_form.html", {"form": form, "title": "Edit key"})
 
 
-@role_required("GUARD")
+@admin_required
 def category_list(request):
     return render(request, "keys/category_list.html",
                   {"categories": KeyCategory.objects.all()})
 
 
-@role_required("GUARD")
+@admin_required
 def category_create(request):
     form = CategoryForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "Category added.")
         return redirect("keys:category_list")
-    return render(request, "keys/key_form.html", {"form": form, "title": "Add category"})
+    return render(request, "keys/category_form.html", {"form": form, "title": "Add category"})
+
+
+@admin_required
+def category_update(request, pk):
+    obj = get_object_or_404(KeyCategory, pk=pk)
+    form = CategoryForm(request.POST or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Category updated.")
+        return redirect("keys:category_list")
+    return render(request, "keys/category_form.html", {"form": form, "title": "Edit category"})

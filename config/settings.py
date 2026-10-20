@@ -79,7 +79,7 @@ TEMPLATES = [
 ]
 
 LOGIN_URL = "accounts:login"
-LOGIN_REDIRECT_URL = "dashboard"
+LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 STATIC_URL = "static/"

@@ -75,3 +75,34 @@ class BuildingForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = Building
         fields = ("code", "name", "description", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, f in self.fields.items():
+            if isinstance(f.widget, forms.CheckboxInput):
+                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
+            else:
+                f.widget.attrs.setdefault("class", TAILWIND)
+
+
+class RoomForm(forms.ModelForm):
+    class Meta:
+        model = Room
+        fields = (
+            "building",
+            "room_code",
+            "name",
+            "room_type",
+            "floor",
+            "capacity",
+            "status",
+            "is_active",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, f in self.fields.items():
+            if isinstance(f.widget, forms.CheckboxInput):
+                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
+            else:
+                f.widget.attrs.setdefault("class", TAILWIND)
