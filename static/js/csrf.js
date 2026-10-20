@@ -49,9 +49,22 @@
    * Optionally scoped to one container so a big page does not re-walk
    * everything: KeyTrack.refreshIcons(modalBody).
    */
+  /* F6.7 note on icon accessibility: lucide 1.59 already puts
+   * aria-hidden="true" on every <svg> it generates UNLESS the source <i>
+   * carries an aria-*, role or title attribute — so decorative icons are
+   * announced-free by default, and an icon that must convey something on its
+   * own just needs role="img" + aria-label on the <i>.
+   *
+   * What it does NOT set is focusable="false", which legacy Edge/IE need to
+   * avoid a phantom tab stop inside every button. `attrs` is merged into each
+   * generated SVG, so it covers dynamically injected icons too. */
+  var ICON_ATTRS = { focusable: "false" };
+
   function refreshIcons(root) {
     if (typeof window.lucide === "undefined") return;
-    window.lucide.createIcons(root ? { root: root } : {});
+    window.lucide.createIcons(
+      root ? { root: root, attrs: ICON_ATTRS } : { attrs: ICON_ATTRS }
+    );
   }
 
   KeyTrack.getCsrfToken = getCsrfToken;

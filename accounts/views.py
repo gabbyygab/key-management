@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from .decorators import role_required
 from .forms import BorrowerForm
@@ -18,6 +19,16 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
     error = None
+
+    # ?next= is only honoured if it points back at this site. Redirecting to a
+    # raw query parameter is an open redirect: a crafted link could bounce a
+    # guard to an off-site look-alike straight after a real login.
+    next_url = request.GET.get("next", "")
+    if next_url and not url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        next_url = ""
+
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
@@ -27,10 +38,13 @@ def login_view(request):
                 error = "Only guard accounts can log in here. Admins use /admin/."
             else:
                 login(request, user)
-                return redirect(request.GET.get("next") or "dashboard")
+                return redirect(next_url or "dashboard")
         else:
             error = "Invalid credentials, or account not approved yet."
-    return render(request, "accounts/login.html", {"error": error})
+
+    # `next` goes back into the template so the form can carry it through the
+    # POST; the form used to drop it, which sent every guard to the dashboard.
+    return render(request, "accounts/login.html", {"error": error, "next": next_url})
 
 
 def logout_view(request):

@@ -5,17 +5,19 @@
   <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; History</h1>
   <p class="text-[13px] text-stone-500 mt-0.5">Every checkout and return, newest first.</p>
 </div>
-<form method="get" class="flex gap-2">
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3">
-    <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2"></i>
-    <input name="q" value="{{ q }}" placeholder="Search TXN, key, borrower..." class="flex-1 bg-transparent outline-none py-2 text-[13px]">
+<form method="get" class="flex gap-2" role="search" aria-label="Search transactions">
+  <label for="history-q" class="sr-only">Search transactions by number, key or borrower</label>
+  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="history-q" name="q" value="{{ q }}" placeholder="Search TXN, key, borrower..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
   <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
 </form>
 <div class="mt-3 bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
 <table class="min-w-full text-[13px]">
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
-<th class="p-3 font-medium">Transaction</th><th class="p-3 font-medium">Borrower</th><th class="p-3 font-medium">Key</th><th class="p-3 font-medium">Checkout</th><th class="p-3 font-medium">Status</th><th class="p-3 font-medium">Back</th></tr></thead>
+<caption class="sr-only">Transaction history, newest first</caption>
+<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
+<th scope="col" class="p-3 font-medium">Transaction</th><th scope="col" class="p-3 font-medium">Borrower</th><th scope="col" class="p-3 font-medium">Key</th><th scope="col" class="p-3 font-medium">Checkout</th><th scope="col" class="p-3 font-medium">Status</th><th scope="col" class="p-3 font-medium">Back</th></tr></thead>
 <tbody class="divide-y divide-stone-100">
 {% for t in txns %}
 <tr class="hover:bg-stone-50/60"><td class="p-3 font-mono text-[12px]">{{ t.transaction_no }}</td>
@@ -23,7 +25,7 @@
 <td class="p-3 text-stone-500">{{ t.borrowed_at|date:"M j, Y, g:i A" }}</td>
 <td class="p-3">{% include "partials/status_pill.html" with status=t.status %}</td>
 <td class="p-3 text-stone-500">{{ t.returned_at|date:"M j, H:i"|default:"—" }}</td></tr>
-{% empty %}<tr><td colspan="6" class="p-6 text-center text-stone-400">No transactions yet.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="6" class="p-6 text-center text-stone-500">No transactions yet.</td></tr>{% endfor %}
 </tbody>
 </table>
 </div>
