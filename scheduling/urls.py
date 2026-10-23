@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/scheduling/check-conflict/", views.conflict_check_api, name="conflict_check"),
     path("api/scheduling/blocks/", views.schedule_block_save_api, name="schedule_block_save"),
     path("api/scheduling/blocks/<int:pk>/delete/", views.schedule_block_delete_api, name="schedule_block_delete"),
+    path("api/scheduling/rooms/<int:pk>/today/", views.room_today_schedule_api, name="room_today_schedule_api"),
 ]

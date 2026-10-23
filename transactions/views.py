@@ -10,6 +10,7 @@ from audit.models import ActivityLog
 from facilities.models import Building, Room
 from keys.models import Key
 from scheduling.models import ScheduleBlock, ScheduleException
+from scheduling.services import get_room_today_schedule
 from .models import BorrowTransaction, GuardShift
 from .services import (
     BorrowError,
@@ -172,6 +173,7 @@ def borrow_dashboard(request):
     q_borrower = request.GET.get("q_borrower", "").strip()
     q_key = request.GET.get("q_key", "").strip()
     borrower_id = request.GET.get("borrower_id", "").strip()
+    key_id = request.GET.get("key_id", "").strip()
 
     borrowers = Borrower.objects.select_related("department").filter(is_active=True)
     if q_borrower:
@@ -183,6 +185,8 @@ def borrow_dashboard(request):
     selected = None
     active_txn = None
     available_keys = []
+    selected_key = None
+    selected_key_schedule = None
     if borrower_id:
         selected = Borrower.objects.filter(pk=borrower_id).first()
         if selected:
@@ -195,7 +199,17 @@ def borrow_dashboard(request):
                         Q(key_code__icontains=q_key) | Q(room__room_code__icontains=q_key)
                         | Q(room__building__code__icontains=q_key)
                         | Q(description__icontains=q_key))
-                available_keys = keys[:30]
+                available_keys = list(keys[:30])
+                room_schedules = {}
+                for k in available_keys:
+                    if k.room_id not in room_schedules:
+                        room_schedules[k.room_id] = get_room_today_schedule(k.room)
+                    k.today_schedule = room_schedules[k.room_id]
+
+            if key_id:
+                selected_key = Key.objects.select_related("room__building", "category").filter(pk=key_id).first()
+                if selected_key:
+                    selected_key_schedule = get_room_today_schedule(selected_key.room)
 
     borrowed = (BorrowTransaction.objects
                 .select_related("key__room__building", "borrower", "released_by")
@@ -207,6 +221,7 @@ def borrow_dashboard(request):
         "q_borrower": q_borrower, "q_key": q_key,
         "borrowers": borrowers, "selected": selected,
         "active_txn": active_txn, "available_keys": available_keys,
+        "selected_key": selected_key, "selected_key_schedule": selected_key_schedule,
         "borrowed": borrowed, "shift": shift,
     })
 

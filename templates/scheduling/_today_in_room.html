@@ -1,0 +1,122 @@
+{% load static %}
+<div class="today-in-room-widget bg-white rounded-xl border border-stone-200 shadow-xs p-3.5 {% if compact %}text-[12px]{% else %}text-[13px]{% endif %}" data-room-id="{{ schedule.room.pk }}" role="region" aria-label="Today's schedule for room {{ schedule.room.building.code }}-{{ schedule.room.room_code }}">
+  <!-- Widget Header -->
+  <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-stone-100 flex-wrap gap-2">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg bg-emerald-50 text-[#1E6B4A] flex items-center justify-center shrink-0">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+      </div>
+      <div>
+        <div class="font-bold text-stone-900 leading-tight">
+          Today in {{ schedule.room.building.code }}-{{ schedule.room.room_code }}
+        </div>
+        <div class="text-[11px] text-stone-500">
+          {{ schedule.day_name }}, {{ schedule.date_str }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Status pill -->
+    <div>
+      {% if schedule.is_occupied %}
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span> In session
+        </span>
+      {% elif schedule.has_schedule_today %}
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Free now
+        </span>
+      {% else %}
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-stone-400"></span> Free all day
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Widget Body: Current & Next Blocks -->
+  <div class="grid {% if compact %}grid-cols-1 gap-2{% else %}grid-cols-1 sm:grid-cols-2 gap-3{% endif %}">
+    <!-- Current Block Section -->
+    <div class="flex flex-col justify-between rounded-lg p-2.5 border {% if schedule.current_block %}bg-amber-50/50 border-amber-200{% else %}bg-stone-50/70 border-stone-200{% endif %}">
+      <div>
+        <div class="flex items-center justify-between text-[11px] font-semibold tracking-wider uppercase mb-1.5 {% if schedule.current_block %}text-amber-900{% else %}text-stone-500{% endif %}">
+          <span class="flex items-center gap-1">
+            <i data-lucide="clock" class="w-3.5 h-3.5"></i> Current Block
+          </span>
+          {% if schedule.current_block and schedule.current_block.time_remaining_min %}
+            <span class="text-[10px] font-normal lowercase bg-amber-100/80 px-1.5 py-0.5 rounded text-amber-900 font-mono">
+              ends in {{ schedule.current_block.time_remaining_min }}m
+            </span>
+          {% endif %}
+        </div>
+
+        {% if schedule.current_block %}
+          <div class="font-bold text-stone-900 text-[13px] leading-snug">
+            {{ schedule.current_block.display_title }}
+          </div>
+          <div class="font-mono text-[12px] text-amber-950 font-medium mt-0.5">
+            {{ schedule.current_block.time_display }}
+          </div>
+          <div class="flex items-center gap-1 text-[12px] text-stone-600 mt-1">
+            <i data-lucide="user" class="w-3.5 h-3.5 text-stone-400 shrink-0"></i>
+            <span class="truncate">{{ schedule.current_block.instructor_name }}</span>
+          </div>
+        {% else %}
+          <div class="text-stone-600 flex items-center gap-2 py-1">
+            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+            <span>No class currently in session.</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Next Block Section -->
+    <div class="flex flex-col justify-between rounded-lg p-2.5 border {% if schedule.next_block %}bg-sky-50/50 border-sky-200{% else %}bg-stone-50/70 border-stone-200{% endif %}">
+      <div>
+        <div class="flex items-center justify-between text-[11px] font-semibold tracking-wider uppercase mb-1.5 {% if schedule.next_block %}text-sky-900{% else %}text-stone-500{% endif %}">
+          <span class="flex items-center gap-1">
+            <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i> Next Scheduled
+          </span>
+          {% if schedule.next_block and schedule.next_block.time_until_start_min %}
+            <span class="text-[10px] font-normal lowercase bg-sky-100/80 px-1.5 py-0.5 rounded text-sky-900 font-mono">
+              in {{ schedule.next_block.time_until_start_min }}m
+            </span>
+          {% endif %}
+        </div>
+
+        {% if schedule.next_block %}
+          <div class="font-bold text-stone-900 text-[13px] leading-snug">
+            {{ schedule.next_block.display_title }}
+          </div>
+          <div class="font-mono text-[12px] text-sky-950 font-medium mt-0.5">
+            {{ schedule.next_block.time_display }}
+          </div>
+          <div class="flex items-center gap-1 text-[12px] text-stone-600 mt-1">
+            <i data-lucide="user" class="w-3.5 h-3.5 text-stone-400 shrink-0"></i>
+            <span class="truncate">{{ schedule.next_block.instructor_name }}</span>
+          </div>
+        {% else %}
+          <div class="text-stone-500 flex items-center gap-2 py-1">
+            {% if schedule.done_for_day %}
+              <i data-lucide="moon" class="w-4 h-4 text-stone-400 shrink-0"></i>
+              <span>Done for the day. No further blocks.</span>
+            {% else %}
+              <i data-lucide="calendar-off" class="w-4 h-4 text-stone-400 shrink-0"></i>
+              <span>No more classes scheduled today.</span>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Widget Footer -->
+  {% if not compact and not read_only and user.role == "ADMIN" %}
+    <div class="mt-2.5 pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
+      <span>{{ schedule.all_blocks|length }} block{{ schedule.all_blocks|length|pluralize }} scheduled today</span>
+      <a href="{% url 'scheduling:room_timetable' %}?room={{ schedule.room.pk }}" class="text-[#1E6B4A] hover:underline font-semibold inline-flex items-center gap-1">
+        Weekly timetable <i data-lucide="arrow-right" class="w-3 h-3"></i>
+      </a>
+    </div>
+  {% endif %}
+</div>

@@ -436,3 +436,269 @@ class RoomTimetableTests(TestCase):
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "No rooms available")
+
+
+from datetime import datetime, time
+from django.utils import timezone
+from .models import ScheduleException
+from .services import get_room_today_schedule, get_current_occupant
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class TodayInRoomServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_user(
+            "admin_test", "admin_test@example.com", "x",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        cls.building = Building.objects.create(code="SCI", name="Science")
+        cls.room = Room.objects.create(building=cls.building, room_code="101", capacity=30)
+        cls.other_room = Room.objects.create(building=cls.building, room_code="102", capacity=30)
+        cls.term = Term.objects.create(
+            name="2026 Fall Test",
+            start_date="2026-08-01",
+            end_date="2026-12-20",
+            is_active=True,
+        )
+        cls.instructor = Borrower.objects.create(
+            first_name="Marie",
+            last_name="Curie",
+            id_number="FAC-001",
+            borrower_type=Borrower.BorrowerType.FACULTY,
+        )
+        cls.subject = Subject.objects.create(code="PHY 101", title="Physics I")
+
+    def test_empty_schedule_returns_free_all_day(self):
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))  # Monday
+        schedule = get_room_today_schedule(self.room, when=when)
+        self.assertFalse(schedule["has_schedule_today"])
+        self.assertFalse(schedule["is_occupied"])
+        self.assertTrue(schedule["all_day_free"])
+        self.assertIsNone(schedule["current_block"])
+        self.assertIsNone(schedule["next_block"])
+
+    def test_current_block_in_session(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            subject=self.subject,
+            title="Physics Lecture",
+            instructor=self.instructor,
+            day_of_week=0,  # Monday
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))  # Monday 10:00
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertTrue(schedule["has_schedule_today"])
+        self.assertTrue(schedule["is_occupied"])
+        self.assertIsNotNone(schedule["current_block"])
+        self.assertEqual(schedule["current_block"]["id"], block.pk)
+        self.assertEqual(schedule["current_block"]["instructor_name"], "Marie Curie")
+        self.assertEqual(schedule["current_block"]["time_remaining_min"], 60)
+        self.assertIsNone(schedule["next_block"])
+
+    def test_next_block_upcoming(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            subject=self.subject,
+            title="Physics Afternoon Lab",
+            instructor=self.instructor,
+            day_of_week=0,  # Monday
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+            is_active=True,
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))  # Monday 10:00
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertTrue(schedule["has_schedule_today"])
+        self.assertFalse(schedule["is_occupied"])
+        self.assertIsNone(schedule["current_block"])
+        self.assertIsNotNone(schedule["next_block"])
+        self.assertEqual(schedule["next_block"]["id"], block.pk)
+        self.assertEqual(schedule["next_block"]["time_until_start_min"], 240)
+
+    def test_both_current_and_next_block(self):
+        b1 = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Morning Class",
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        b2 = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Afternoon Class",
+            day_of_week=0,
+            start_time=time(13, 0),
+            end_time=time(15, 0),
+            is_active=True,
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))  # Monday 10:00
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertTrue(schedule["is_occupied"])
+        self.assertEqual(schedule["current_block"]["id"], b1.pk)
+        self.assertEqual(schedule["next_block"]["id"], b2.pk)
+
+    def test_past_blocks_done_for_day(self):
+        ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Early Class",
+            day_of_week=0,
+            start_time=time(8, 0),
+            end_time=time(9, 30),
+            is_active=True,
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))  # Monday 10:00
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertTrue(schedule["has_schedule_today"])
+        self.assertFalse(schedule["is_occupied"])
+        self.assertIsNone(schedule["current_block"])
+        self.assertIsNone(schedule["next_block"])
+        self.assertTrue(schedule["done_for_day"])
+
+    def test_schedule_exception_cancelled_excluded(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Cancelled Class",
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        ScheduleException.objects.create(
+            schedule_block=block,
+            date=datetime(2026, 8, 3).date(),
+            exception_type=ScheduleException.ExceptionType.CANCELLED,
+            reason="Holiday",
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertFalse(schedule["has_schedule_today"])
+        self.assertFalse(schedule["is_occupied"])
+        self.assertIsNone(schedule["current_block"])
+
+    def test_schedule_exception_room_change_to_this_room(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.other_room,  # originally in other_room
+            title="Moved In Class",
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        ScheduleException.objects.create(
+            schedule_block=block,
+            date=datetime(2026, 8, 3).date(),
+            exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
+            replacement_room=self.room,  # moved to self.room
+            reason="Lab renovation",
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertTrue(schedule["has_schedule_today"])
+        self.assertTrue(schedule["is_occupied"])
+        self.assertEqual(schedule["current_block"]["id"], block.pk)
+
+    def test_schedule_exception_room_change_away_from_this_room(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Moved Away Class",
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        ScheduleException.objects.create(
+            schedule_block=block,
+            date=datetime(2026, 8, 3).date(),
+            exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
+            replacement_room=self.other_room,
+            reason="Relocated",
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))
+        schedule = get_room_today_schedule(self.room, when=when)
+
+        self.assertFalse(schedule["has_schedule_today"])
+        self.assertFalse(schedule["is_occupied"])
+
+    def test_get_current_occupant(self):
+        block = ScheduleBlock.objects.create(
+            term=self.term,
+            room=self.room,
+            title="Class",
+            instructor=self.instructor,
+            day_of_week=0,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            is_active=True,
+        )
+        when = timezone.make_aware(datetime(2026, 8, 3, 10, 0))
+        occupant = get_current_occupant(self.room, when=when)
+        self.assertEqual(occupant, self.instructor)
+
+        when_free = timezone.make_aware(datetime(2026, 8, 3, 12, 0))
+        self.assertIsNone(get_current_occupant(self.room, when=when_free))
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class RoomTodayScheduleApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_user(
+            "admin_api", "admin_api@example.com", "x",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        cls.guard = User.objects.create_user(
+            "guard_api", "guard_api@example.com", "x",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        cls.building = Building.objects.create(code="CCS", name="Computing")
+        cls.room = Room.objects.create(building=cls.building, room_code="301", capacity=40)
+        cls.url = reverse("scheduling:room_today_schedule_api", kwargs={"pk": cls.room.pk})
+
+    def test_guard_can_access_api(self):
+        self.client.force_login(self.guard)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["room_id"], self.room.pk)
+        self.assertEqual(data["room_code"], "301")
+        self.assertEqual(data["building_code"], "CCS")
+        self.assertIn("html", data)
+        self.assertIn("today-in-room-widget", data["html"])
+
+    def test_admin_can_access_api(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("is_occupied", data)
+        self.assertIn("current_block", data)
+        self.assertIn("next_block", data)
+
+    def test_anonymous_gets_403(self):
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_nonexistent_room_returns_404(self):
+        self.client.force_login(self.guard)
+        missing_url = reverse("scheduling:room_today_schedule_api", kwargs={"pk": 99999})
+        res = self.client.get(missing_url)
+        self.assertEqual(res.status_code, 404)

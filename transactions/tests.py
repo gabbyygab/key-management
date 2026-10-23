@@ -473,3 +473,75 @@ class RoleSplitDashboardTests(TestCase):
         self.assertIsNone(res.context["shift"])
         self.assertEqual(res.context["my_released_count"], 0)
         self.assertContains(res, "Off Duty")
+
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class PosTodayInRoomWidgetTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.guard = User.objects.create_user(
+            "guard_pos", "guard_pos@example.com", "x",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        cls.shift = GuardShift.objects.create(
+            guard=cls.guard,
+            shift_start=timezone.now(),
+            is_on_duty=True,
+            post="Main Desk",
+        )
+        cls.borrower = Borrower.objects.create(
+            first_name="Ada",
+            last_name="Lovelace",
+            id_number="FAC-ADA",
+            borrower_type=Borrower.BorrowerType.FACULTY,
+            is_authorized=True,
+            is_active=True,
+        )
+        cls.building = Building.objects.create(code="ENG", name="Engineering")
+        cls.room = Room.objects.create(building=cls.building, room_code="101", capacity=30)
+        cls.category = KeyCategory.objects.create(name="Master")
+        cls.key = Key.objects.create(
+            key_code="ENG-101-01",
+            room=cls.room,
+            category=cls.category,
+            copy_number=1,
+            status=Key.Status.AVAILABLE,
+        )
+
+    def test_available_keys_have_today_schedule_attached(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        keys = res.context["available_keys"]
+        self.assertGreater(len(keys), 0)
+        key_obj = keys[0]
+        self.assertTrue(hasattr(key_obj, "today_schedule"))
+        self.assertIsNotNone(key_obj.today_schedule)
+        self.assertEqual(key_obj.today_schedule["room"], self.room)
+
+        self.assertContains(res, f'data-pos-toggle-schedule="{self.key.pk}"')
+        self.assertIn("Today's schedule", res.content.decode("utf-8"))
+        self.assertContains(res, f'data-pos-schedule-panel="{self.key.pk}"')
+
+    def test_selected_key_surfaces_today_in_room_widget(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}&key_id={self.key.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["selected_key"], self.key)
+        self.assertIsNotNone(res.context["selected_key_schedule"])
+        self.assertContains(res, "today-in-room-widget")
+        self.assertContains(res, "Today in ENG-101")
+
+    def test_selected_key_widget_is_read_only_on_pos(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}&key_id={self.key.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        # Should not show admin edit or timetable management links
+        self.assertNotContains(res, "Weekly timetable")
