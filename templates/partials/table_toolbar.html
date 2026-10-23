@@ -1,0 +1,85 @@
+{# table_toolbar — Unified search, filters, and action buttons for list pages. #}
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
+  {# Search and Filters Form #}
+  <form method="get" action="{% if action_url %}{{ action_url }}{% endif %}" class="flex flex-1 flex-wrap items-center gap-2 min-w-0" role="search" aria-label="{{ aria_label|default:'Search and filter' }}">
+    {# Search input #}
+    {% if not hide_search %}
+    <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A] focus-within:ring-1 focus-within:ring-[#1E6B4A]">
+      <label for="{{ search_id|default:'toolbar-q' }}" class="sr-only">{{ search_label|default:'Search' }}</label>
+      <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+      <input id="{{ search_id|default:'toolbar-q' }}" name="{{ search_name|default:'q' }}" value="{% if q %}{{ q }}{% elif search_query %}{{ search_query }}{% endif %}" placeholder="{{ search_placeholder|default:'Search...' }}" autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] text-stone-800 placeholder-stone-400 min-w-0">
+    </div>
+    {% endif %}
+
+    {# Primary filter dropdown (e.g. status) #}
+    {% if filter_name and filter_options %}
+    <div>
+      <label for="{% if filter_id %}{{ filter_id }}{% else %}{{ filter_name }}{% endif %}" class="sr-only">{{ filter_label|default:'Filter' }}</label>
+      <select id="{% if filter_id %}{{ filter_id }}{% else %}{{ filter_name }}{% endif %}" name="{{ filter_name }}" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A] focus:outline-none">
+        <option value="">{{ filter_all_label|default:'All' }}</option>
+        {% for code, label in filter_options %}
+        <option value="{{ code }}" {% if filter_selected == code or filter_selected == code|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {# Secondary filter dropdown (e.g. category or building) #}
+    {% if filter2_name and filter2_options %}
+    <div>
+      <label for="{% if filter2_id %}{{ filter2_id }}{% else %}{{ filter2_name }}{% endif %}" class="sr-only">{{ filter2_label|default:'Secondary filter' }}</label>
+      <select id="{% if filter2_id %}{{ filter2_id }}{% else %}{{ filter2_name }}{% endif %}" name="{{ filter2_name }}" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A] focus:outline-none">
+        <option value="">{{ filter2_all_label|default:'All' }}</option>
+        {% for code, label in filter2_options %}
+        <option value="{{ code }}" {% if filter2_selected == code or filter2_selected == code|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {# Optional custom filters template include #}
+    {% if filters_template %}
+      {% include filters_template %}
+    {% endif %}
+
+    {# Submit button #}
+    <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {{ submit_label|default:"Filter" }}
+    </button>
+
+    {# Clear button (visible when query or filter is active, or clear_url provided) #}
+    {% if q or search_query or filter_selected or filter2_selected or clear_url or has_filters %}
+    <a href="{% if clear_url %}{{ clear_url }}{% elif request and request.path %}{{ request.path }}{% else %}?{% endif %}" class="bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      Clear
+    </a>
+    {% endif %}
+  </form>
+
+  {# Actions area #}
+  {% if primary_action_url or primary_action_label or primary_action_modal or secondary_action_url or actions_template %}
+  <div class="flex items-center gap-2 shrink-0">
+    {% if secondary_action_url and secondary_action_label %}
+    <a href="{{ secondary_action_url }}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {% if secondary_action_icon %}<i data-lucide="{{ secondary_action_icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+      <span>{{ secondary_action_label }}</span>
+    </a>
+    {% endif %}
+
+    {% if primary_action_url %}
+    <a href="{{ primary_action_url }}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {% if primary_action_icon %}<i data-lucide="{{ primary_action_icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+      <span>{{ primary_action_label }}</span>
+    </a>
+    {% elif primary_action_modal %}
+    <button type="button" data-modal-open="{{ primary_action_modal }}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {% if primary_action_icon %}<i data-lucide="{{ primary_action_icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+      <span>{{ primary_action_label }}</span>
+    </button>
+    {% endif %}
+
+    {% if actions_template %}
+      {% include actions_template %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>

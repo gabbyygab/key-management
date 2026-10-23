@@ -1,0 +1,42 @@
+{# empty_state — Reusable empty state for tables, lists, and cards. #}
+{% if colspan %}
+<tr class="empty-state-row">
+  <td colspan="{{ colspan }}" class="{% if compact %}p-4{% else %}p-8{% endif %} text-center">
+{% else %}
+<div class="{% if compact %}p-4{% else %}p-8{% endif %} text-center">
+{% endif %}
+
+  <div class="mx-auto {% if compact %}w-9 h-9 mb-2{% else %}w-12 h-12 mb-3{% endif %} rounded-full bg-stone-100 flex items-center justify-center text-stone-400" aria-hidden="true">
+    <i data-lucide="{{ icon|default:'inbox' }}" class="{% if compact %}w-4 h-4{% else %}w-6 h-6{% endif %}"></i>
+  </div>
+  <h3 class="{% if compact %}text-[13px]{% else %}text-[15px]{% endif %} font-bold text-stone-800">{{ title|default:"No records found" }}</h3>
+  <p class="text-[13px] text-stone-500 mt-1 max-w-sm mx-auto">{% if message %}{{ message }}{% elif description %}{{ description }}{% else %}There are no items to display at this time.{% endif %}</p>
+
+  {% if action_url or action_label or action_modal or secondary_url %}
+  <div class="mt-4 flex items-center justify-center gap-2 flex-wrap">
+    {% if action_url %}
+    <a href="{{ action_url }}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3.5 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {% if action_icon %}<i data-lucide="{{ action_icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+      <span>{{ action_label|default:"Add new" }}</span>
+    </a>
+    {% elif action_modal %}
+    <button type="button" data-modal-open="{{ action_modal }}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3.5 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {% if action_icon %}<i data-lucide="{{ action_icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+      <span>{{ action_label|default:"Add new" }}</span>
+    </button>
+    {% endif %}
+
+    {% if secondary_url and secondary_label %}
+    <a href="{{ secondary_url }}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      {{ secondary_label }}
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+{% if colspan %}
+  </td>
+</tr>
+{% else %}
+</div>
+{% endif %}

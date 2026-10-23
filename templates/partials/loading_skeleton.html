@@ -1,0 +1,70 @@
+{# loading_skeleton — Shared skeleton loader for tables, cards, and lists. #}
+{% if type == "table_rows" or type == "rows" %}
+  {% for _ in "12345"|make_list %}
+  <tr class="animate-pulse border-b border-stone-100" aria-hidden="true">
+    <td class="p-3"><div class="h-4 bg-stone-200 rounded w-16"></div></td>
+    <td class="p-3"><div class="h-4 bg-stone-200 rounded w-32"></div></td>
+    <td class="p-3"><div class="h-4 bg-stone-200 rounded w-24"></div></td>
+    {% if cols > 3 or not cols %}<td class="p-3"><div class="h-4 bg-stone-200 rounded w-28"></div></td>{% endif %}
+    {% if cols > 4 or not cols %}<td class="p-3"><div class="h-5 bg-stone-200 rounded-full w-20"></div></td>{% endif %}
+    {% if cols > 5 %}<td class="p-3"><div class="h-4 bg-stone-200 rounded w-12"></div></td>{% endif %}
+  </tr>
+  {% endfor %}
+
+{% elif type == "table" %}
+<div role="status" aria-busy="true" aria-label="{{ aria_label|default:'Loading table...' }}" class="animate-pulse bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+  <span class="sr-only">{{ aria_label|default:'Loading table...' }}</span>
+  <table class="min-w-full text-[13px]">
+    <thead>
+      <tr class="text-left text-[11px] uppercase tracking-wide text-stone-400 border-b border-stone-200 bg-stone-50/50">
+        <th class="p-3"><div class="h-3 bg-stone-200 rounded w-16"></div></th>
+        <th class="p-3"><div class="h-3 bg-stone-200 rounded w-28"></div></th>
+        <th class="p-3"><div class="h-3 bg-stone-200 rounded w-20"></div></th>
+        <th class="p-3"><div class="h-3 bg-stone-200 rounded w-24"></div></th>
+        <th class="p-3"><div class="h-3 bg-stone-200 rounded w-16"></div></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for _ in "12345"|make_list %}
+      <tr>
+        <td class="p-3"><div class="h-4 bg-stone-200 rounded w-16"></div></td>
+        <td class="p-3"><div class="h-4 bg-stone-200 rounded w-36"></div></td>
+        <td class="p-3"><div class="h-4 bg-stone-200 rounded w-24"></div></td>
+        <td class="p-3"><div class="h-4 bg-stone-200 rounded w-28"></div></td>
+        <td class="p-3"><div class="h-5 bg-stone-200 rounded-full w-20"></div></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% elif type == "card" %}
+<div role="status" aria-busy="true" aria-label="{{ aria_label|default:'Loading statistics...' }}" class="grid grid-cols-2 xl:grid-cols-4 gap-3 animate-pulse">
+  <span class="sr-only">{{ aria_label|default:'Loading statistics...' }}</span>
+  {% for _ in "1234"|make_list %}
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-start justify-between">
+      <div class="h-3.5 bg-stone-200 rounded w-24"></div>
+      <div class="w-8 h-8 rounded-lg bg-stone-100"></div>
+    </div>
+    <div class="h-7 bg-stone-200 rounded w-16 mt-2"></div>
+    <div class="h-3 bg-stone-200 rounded w-28 mt-2"></div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+{# Default list skeleton #}
+<div role="status" aria-busy="true" aria-label="{{ aria_label|default:'Loading content...' }}" class="animate-pulse bg-white rounded-xl border border-stone-200 shadow-sm p-4 divide-y divide-stone-100">
+  <span class="sr-only">{{ aria_label|default:'Loading content...' }}</span>
+  {% for _ in "12345"|make_list %}
+  <div class="py-3 flex items-center justify-between gap-4">
+    <div class="space-y-1.5 flex-1">
+      <div class="h-4 bg-stone-200 rounded w-1/3"></div>
+      <div class="h-3 bg-stone-200 rounded w-1/2"></div>
+    </div>
+    <div class="h-6 bg-stone-200 rounded-full w-16 shrink-0"></div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

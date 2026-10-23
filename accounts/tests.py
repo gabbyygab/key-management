@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from .test_components import SharedComponentsTests
+
 User = get_user_model()
 
 
