@@ -10,11 +10,14 @@
 </head>
 <body class="bg-[#FAF7F0] text-stone-800 min-h-screen">
   {% if user.is_authenticated %}
+  {% comment %} Keyboard users would otherwise tab through the whole sidebar nav on every
+     page before reaching the content (F6.7 / WCAG 2.4.1). {% endcomment %}
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="flex min-h-screen">
     {% include "partials/sidebar.html" %}
     <div class="flex-1 min-w-0 flex flex-col">
       {% include "partials/navbar.html" %}
-      <main class="flex-1 px-6 lg:px-8 py-6 max-w-[1400px] w-full mx-auto">
+      <main id="main-content" tabindex="-1" class="flex-1 px-6 lg:px-8 py-6 max-w-[1400px] w-full mx-auto">
         {% include "partials/messages.html" %}
         {% block content %}{% endblock %}
       </main>
@@ -26,12 +29,21 @@
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
   {% endif %}
-  {% include "partials/toast.html" %}
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script>lucide.createIcons();</script>
+  {% comment %} Version pinned deliberately: an unpinned CDN tag can change the icon set
+     or the API without warning and break the UI (F7.5 / B8.13). {% endcomment %}
+  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+
+  {# Shared, every page. csrf.js must come first — it defines window.KeyTrack. #}
   <script src="{% static 'js/csrf.js' %}"></script>
-  <script src="{% static 'js/modal.js' %}"></script>
   <script src="{% static 'js/toast.js' %}"></script>
+  <script src="{% static 'js/modal.js' %}"></script>
+  <script src="{% static 'js/modal-form.js' %}"></script>
+  <script src="{% static 'js/search.js' %}"></script>
+
+  {# First icon pass. Anything injected later must call KeyTrack.refreshIcons(). #}
+  <script src="{% static 'js/init-icons.js' %}"></script>
+
+  {# Per-page scripts (pos.js, schedule-grid.js) load here, after the shared ones. #}
   {% block extra_js %}{% endblock %}
 </body>
 </html>

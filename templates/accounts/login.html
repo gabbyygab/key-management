@@ -9,36 +9,37 @@
   <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-2xl overflow-hidden shadow-2xl">
     <div class="bg-[#0F2E1F] text-white p-8 flex flex-col justify-between">
       <div class="flex items-center gap-2">
-        <div class="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"><i data-lucide="key-round" class="w-5 h-5"></i></div>
+        <div class="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"><i data-lucide="key-round" aria-hidden="true" class="w-5 h-5"></i></div>
         <div class="leading-tight"><div class="font-extrabold tracking-wide">KEYTRACK</div>
-        <div class="text-[11px] text-white/60">University Key Management</div></div>
+        <div class="text-[11px] text-white/80">University Key Management</div></div>
       </div>
       <div class="mt-10">
         <h1 class="text-2xl font-extrabold">Guard<br>Workspace</h1>
-        <p class="text-[13px] text-white/60 mt-2">Release and receive keys, track who has what, and keep every room secure.</p>
+        <p class="text-[13px] text-white/80 mt-2">Release and receive keys, track who has what, and keep every room secure.</p>
         <div class="mt-6 space-y-2 text-[13px] text-white/70">
-          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> Search person, release key in seconds</div>
-          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> One active key per borrower</div>
-          <div class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> Shift starts on login, ends on logout</div>
+          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> Search person, release key in seconds</div>
+          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> One active key per borrower</div>
+          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> Shift starts on login, ends on logout</div>
         </div>
       </div>
-      <div class="text-[11px] text-white/40 mt-8">Campus Security · Facilities Office</div>
+      <div class="text-[11px] text-white/70 mt-8">Campus Security · Facilities Office</div>
     </div>
     <div class="bg-[#FAF7F0] p-8">
       <h2 class="text-xl font-extrabold">Welcome back</h2>
       <p class="text-[13px] text-stone-500 mt-1">Log in to start your shift.</p>
-      {% if error %}<div class="mt-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ error }}</div>{% endif %}
-      <form method="post" class="mt-5 space-y-3">{% csrf_token %}
-        <div><label class="text-[12px] font-semibold text-stone-600">USERNAME</label>
-          <input name="username" required autocomplete="username" class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></div>
-        <div><label class="text-[12px] font-semibold text-stone-600">PASSWORD</label>
-          <input name="password" type="password" required autocomplete="current-password" class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></div>
-        <button class="w-full bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2.5 rounded-lg font-semibold text-[14px] inline-flex items-center justify-center gap-2">Log in <i data-lucide="arrow-right" class="w-4 h-4"></i></button>
+      {% if error %}<div id="login-error" role="alert" class="mt-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ error }}</div>{% endif %}
+      <form method="post" action="{% if next %}?next={{ next|urlencode }}{% endif %}" class="mt-5 space-y-3">{% csrf_token %}
+        <div><label for="id_username" class="block text-[12px] font-semibold text-stone-600">USERNAME</label>
+          <input id="id_username" name="username" required autocomplete="username" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %} class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A]"></div>
+        <div><label for="id_password" class="block text-[12px] font-semibold text-stone-600">PASSWORD</label>
+          <input id="id_password" name="password" type="password" required autocomplete="current-password" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %} class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A]"></div>
+        <button class="w-full bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2.5 rounded-lg font-semibold text-[14px] inline-flex items-center justify-center gap-2">Log in <i data-lucide="arrow-right" aria-hidden="true" class="w-4 h-4"></i></button>
       </form>
-      <p class="text-[12px] text-stone-400 mt-4">No account? Ask an admin to create your guard account and approve it.</p>
+      <p class="text-[12px] text-stone-600 mt-4">No account? Ask an admin to create your guard account and approve it.</p>
     </div>
   </div>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script>lucide.createIcons();</script>
+  {# Standalone page — does not extend base.html, so it loads these itself. #}
+  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+  <script src="{% static 'js/init-icons.js' %}"></script>
 </body>
 </html>

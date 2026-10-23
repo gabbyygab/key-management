@@ -10,6 +10,8 @@ def role_required(*roles):
         def wrapper(request, *args, **kwargs):
             if request.user.is_superuser or request.user.role in roles:
                 return view(request, *args, **kwargs)
-            raise PermissionDenied
+            exc = PermissionDenied()
+            exc.required_role = "/".join(roles) if roles else "authorized role"
+            raise exc
         return wrapper
     return decorator

@@ -3,14 +3,14 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import role_required
+from accounts.permissions import admin_or_guard_required, guard_required
 from accounts.models import Borrower
 from keys.models import Key
 from .models import BorrowTransaction, GuardShift
 from .services import BorrowError, borrow_key, get_active_shift, return_key
 
 
-@role_required("GUARD")
+@admin_or_guard_required
 def dashboard(request):
     """KEYTRACK home: live stat cards + per-building availability + recent activity."""
     from django.db.models import Count
@@ -49,7 +49,7 @@ def dashboard(request):
     })
 
 
-@role_required("GUARD")
+@guard_required
 def borrow_dashboard(request):
     """Borrow Management: search person -> select -> search available key -> confirm.
     Right panel: currently borrowed keys with return button.
@@ -96,7 +96,7 @@ def borrow_dashboard(request):
     })
 
 
-@role_required("GUARD")
+@guard_required
 @require_POST
 def borrow_confirm(request):
     borrower_id = request.POST.get("borrower_id")
@@ -114,7 +114,7 @@ def borrow_confirm(request):
     return redirect(f"/transactions/borrow/?borrower_id={borrower_id}")
 
 
-@role_required("GUARD")
+@guard_required
 @require_POST
 def return_confirm(request, pk):
     remarks = request.POST.get("remarks", "").strip()
@@ -126,7 +126,7 @@ def return_confirm(request, pk):
     return redirect("transactions:borrow_dashboard")
 
 
-@role_required("GUARD")
+@admin_or_guard_required
 def shift_history(request):
     """Read-only shift list. Shifts start on login and end on logout."""
     if request.user.is_superuser:
@@ -136,7 +136,7 @@ def shift_history(request):
     return render(request, "transactions/shift_history.html", {"shifts": shifts})
 
 
-@role_required("GUARD")
+@admin_or_guard_required
 def transaction_history(request):
     q = request.GET.get("q", "").strip()
     txns = BorrowTransaction.objects.select_related(

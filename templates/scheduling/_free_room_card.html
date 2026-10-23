@@ -1,0 +1,20 @@
+{# One room finder result. Rendered server-side with `room`, and once with no room inside a <template> that free_rooms.js clones and fills via [data-field]. #}
+<article class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 flex flex-col gap-3 hover:border-[#1E6B4A]/50 hover:shadow transition">
+  <div class="flex items-start gap-3">
+    <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center shrink-0 text-[#1E6B4A]">
+      <i data-field="icon" data-lucide="{% if room.room_type == 'LABORATORY' %}flask-conical{% elif room.room_type == 'OFFICE' %}briefcase{% elif room.room_type == 'FACILITY' %}warehouse{% elif room.room_type == 'OTHER' %}door-open{% else %}presentation{% endif %}" class="w-5 h-5"></i>
+    </div>
+    <div class="min-w-0">
+      <h3 class="text-[15px] font-bold font-mono text-stone-900 truncate" data-field="room_code">{{ room.room_code }}</h3>
+      <p class="text-[13px] text-stone-500 truncate"><span class="font-semibold text-stone-700" data-field="building_code">{{ room.building.code }}</span> · <span data-field="building_name">{{ room.building.name }}</span></p>
+    </div>
+  </div>
+  <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 font-medium" data-field="room_type_display">{{ room.get_room_type_display }}</span>
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 font-medium"><i data-lucide="users" class="w-3.5 h-3.5"></i><span data-field="capacity">{% if room.capacity %}{{ room.capacity }} seats{% else %}Capacity n/a{% endif %}</span></span>
+  </div>
+  <button type="button" data-schedule-room data-room-id="{{ room.pk }}" data-room-label="{{ room|default:'' }}"
+          class="mt-auto w-full inline-flex items-center justify-center gap-2 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold focus:outline-none focus:ring-2 focus:ring-[#1E6B4A] focus:ring-offset-2">
+    <i data-lucide="calendar-plus" class="w-4 h-4"></i> Schedule this
+  </button>
+</article>

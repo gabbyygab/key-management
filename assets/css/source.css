@@ -1,0 +1,108 @@
+/* source.css — Tailwind entry point for KEYTRACK.
+ *
+  * Built to static/css/tailwind.css by:
+ *   python manage.py tailwind build
+ * Wired up via TAILWIND_CLI_SRC_CSS in config/settings.py. Before F6.7 there
+ * was no project-owned source file: django_tailwind_cli generated one at
+ * .django_tailwind_cli/source.css and overwrote it on every build, so there
+ * was nowhere to put a hand-written rule. Hence this file.
+ *
+ * Keep hand-written CSS to the accessibility baseline below. Everything that
+ * can be a utility class in a template should stay a utility class.
+ */
+@import "tailwindcss";
+
+/* Tailwind v4 scans templates for class names. The default scan root misses
+ * the Django app templates, so declare them explicitly or utilities used only
+ * in a template get dropped from the build. */
+@source "../../templates";
+@source "../../static/js";
+
+@theme {
+  /* The accent from FRONTEND_TASKS.txt "ESTABLISHED DESIGN TOKENS". Exposed as
+   * a token so focus rings and ring-[#1E6B4A] resolve to the same green. */
+  --color-accent: #1e6b4a;
+}
+
+@layer base {
+  /* Lucide icons are decorative: the control around them carries the label.
+   * `<i data-lucide>` is replaced by an <svg> at runtime, and lucide 1.59
+   * marks that svg aria-hidden itself, so this only stops the icon from
+   * swallowing clicks meant for the button around it. */
+  [data-lucide] {
+    pointer-events: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * F6.7 — visible focus rings.
+ *
+ * Several inputs carried `outline-none` with no focus replacement (the POS
+ * borrower/key search, and the key, borrower and history list search boxes),
+ * so a keyboard user tabbing through had no idea where they were: a WCAG
+ * 2.4.7 failure. This is a floor under every focusable element rather than a
+ * per-element class, so a new template cannot forget it.
+ *
+ * NOT in @layer base. Tailwind v4 declares `@layer theme, base, components,
+ * utilities`, and a later layer beats an earlier one no matter how specific
+ * the selector or whether it is !important — so a base-layer rule loses to
+ * the `.outline-none` utility sitting on those very inputs. Unlayered CSS
+ * outranks every layer, which is what makes this hold.
+ *
+ * :focus-visible, not :focus — a mouse click on a button should not leave a
+ * ring behind, but keyboard focus always shows one.
+ * ------------------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  /* Tailwind's outline-none sets outline-style via --tw-outline-style. */
+  outline-style: solid;
+}
+
+/* On the dark green sidebar a #1E6B4A ring is nearly invisible (1.5:1 against
+ * #0F2E1F). White clears 3:1 for non-text contrast. */
+aside :focus-visible {
+  outline-color: #ffffff;
+}
+
+/* Skip link: off-screen until focused, then pinned top-left above the sticky
+ * navbar (z-10). Unlayered for the same cascade reason, and it sets its own
+ * visible box so it does not depend on focus: utilities landing first. */
+.skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.skip-link:focus {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 60;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow: visible;
+  clip: auto;
+  background: #ffffff;
+  color: #0f2e1f;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: 1px solid #e7e5e4;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+}
+
+/* Respect "reduce motion" for the spinners in free_rooms / modal-form. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: none;
+  }
+}

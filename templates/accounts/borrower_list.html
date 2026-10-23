@@ -8,17 +8,19 @@
   </div>
   <a href="{% url 'accounts:borrower_create' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ Add user</a>
 </div>
-<form method="get" class="flex gap-2">
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3">
-    <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2"></i>
-    <input name="q" value="{{ q }}" placeholder="Search name or ID number..." class="flex-1 bg-transparent outline-none py-2 text-[13px]">
+<form method="get" class="flex gap-2" role="search" aria-label="Search borrowers">
+  <label for="borrower-q" class="sr-only">Search borrower name or ID number</label>
+  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="borrower-q" name="q" value="{{ q }}" placeholder="Search name or ID number..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
   <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
 </form>
 <div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
 <table class="min-w-full text-[13px]">
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
-<th class="p-3 font-medium">ID No</th><th class="p-3 font-medium">Name</th><th class="p-3 font-medium">Type</th><th class="p-3 font-medium">Contact</th><th class="p-3 font-medium">Authorized</th><th class="p-3 font-medium">Active</th><th class="p-3"></th></tr></thead>
+<caption class="sr-only">Borrowers</caption>
+<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
+<th scope="col" class="p-3 font-medium">ID No</th><th scope="col" class="p-3 font-medium">Name</th><th scope="col" class="p-3 font-medium">Type</th><th scope="col" class="p-3 font-medium">Contact</th><th scope="col" class="p-3 font-medium">Authorized</th><th scope="col" class="p-3 font-medium">Active</th><th scope="col" class="p-3"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody class="divide-y divide-stone-100">
 {% for b in borrowers %}
 <tr class="hover:bg-stone-50/60">
@@ -26,16 +28,16 @@
   <td class="p-3 font-semibold">{{ b.last_name }}, {{ b.first_name }}</td>
   <td class="p-3">{{ b.borrower_type }}</td>
   <td class="p-3">{{ b.contact_number|default:"—" }}</td>
-  <td class="p-3">{% if b.can_borrow %}<span class="bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● YES</span>{% else %}<span class="bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">● NO</span>{% endif %}</td>
+  <td class="p-3">{% if b.can_borrow %}<span class="bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> YES</span>{% else %}<span class="bg-red-50 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> NO</span>{% endif %}</td>
   <td class="p-3">{{ b.is_active|yesno:"Yes,No" }}</td>
   <td class="p-3 flex gap-2 whitespace-nowrap">
-    <a href="{% url 'accounts:borrower_update' b.pk %}" class="font-medium hover:underline">Edit</a>
+    <a href="{% url 'accounts:borrower_update' b.pk %}" class="font-medium hover:underline">Edit<span class="sr-only"> {{ b.last_name }}, {{ b.first_name }}</span></a>
     <form method="post" action="{% url 'accounts:borrower_toggle' b.pk %}">{% csrf_token %}
-      <button class="text-stone-500 hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+      <button class="text-stone-600 hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.last_name }}, {{ b.first_name }}</span></button>
     </form>
   </td>
 </tr>
-{% empty %}<tr><td colspan="7" class="p-6 text-center text-stone-400">No users found. Add one to allow borrowing.</td></tr>
+{% empty %}<tr><td colspan="7" class="p-6 text-center text-stone-500">No users found. Add one to allow borrowing.</td></tr>
 {% endfor %}
 </tbody>
 </table>

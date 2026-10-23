@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — KEYTRACK{% endblock %}
+{% block content %}
+<div class="max-w-2xl bg-white rounded-xl border border-stone-200 shadow-sm p-6">
+  <h1 class="text-[20px] font-extrabold">{{ title }}</h1>
+  <p class="text-[13px] text-stone-500">Set room details and availability.</p>
+  <form method="post" class="mt-4 space-y-3">{% csrf_token %}
+    {{ form.as_p }}
+    <div class="flex gap-2 pt-1">
+      <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Save</button>
+      <a href="{% url 'facilities:room_list' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px]">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

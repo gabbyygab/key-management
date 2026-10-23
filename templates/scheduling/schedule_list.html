@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Schedule List — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Schedule list</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Review active assignments and edit them without leaving the list.</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50">Room Finder</a>
+    <button type="button" data-modal-open="schedule-edit-modal" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ New schedule</button>
+  </div>
+</div>
+
+<form id="schedule-list-form" method="get" action="{% url 'scheduling:schedule_list' %}" class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-5">
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-end">
+    <div>
+      <label for="term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Term</label>
+      <select id="term" name="term" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        <option value="">All terms</option>
+        {% for value in terms %}
+        <option value="{{ value }}" {% if value == term %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="building" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Building</label>
+      <select id="building" name="building" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        <option value="">All buildings</option>
+        {% for b in buildings %}
+        <option value="{{ b.code }}" {% if b.code == building %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="room" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Room</label>
+      <select id="room" name="room" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        <option value="">All rooms</option>
+        {% for r in rooms %}
+        <option value="{{ r.code }}" {% if r.code == room %}selected{% endif %}>{{ r.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="day" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Day</label>
+      <select id="day" name="day" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        {% for value, label in days %}
+        <option value="{{ value }}" {% if value == day %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="instructor" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Instructor</label>
+      <input id="instructor" name="instructor" value="{{ instructor }}" placeholder="Search instructor" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+    </div>
+  </div>
+  <div class="mt-4 flex items-center justify-end gap-2">
+    <a href="{% url 'scheduling:schedule_list' %}" class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-medium text-stone-700 hover:bg-stone-50">Clear</a>
+    <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Apply filters</button>
+  </div>
+</form>
+
+<form method="post" action="{% url 'scheduling:schedule_list' %}">
+  {% csrf_token %}
+  <div class="mb-3 flex items-center justify-between gap-3 flex-wrap">
+    <div class="flex items-center gap-2">
+      <label for="bulk_action" class="text-[12px] font-semibold uppercase tracking-wider text-stone-500">Bulk action</label>
+      <select id="bulk_action" name="bulk_action" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+        <option value="">Choose action</option>
+        <option value="activate">Activate</option>
+        <option value="deactivate">Deactivate</option>
+      </select>
+      <button type="submit" class="bg-white border border-stone-200 px-3 py-2 rounded-lg text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Apply</button>
+    </div>
+    <div class="text-[12px] text-stone-500">{{ rows|length }} schedule block{{ rows|length|pluralize }}</div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
+          <th class="p-3 w-10"><input type="checkbox" id="select-all-schedules" class="rounded border-stone-300"></th>
+          <th class="p-3 font-medium">Term</th>
+          <th class="p-3 font-medium">Room</th>
+          <th class="p-3 font-medium">Subject</th>
+          <th class="p-3 font-medium">Instructor</th>
+          <th class="p-3 font-medium">Day</th>
+          <th class="p-3 font-medium">Time</th>
+          <th class="p-3 font-medium">Active</th>
+          <th class="p-3 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in rows %}
+        <tr class="hover:bg-stone-50/60 align-middle">
+          <td class="p-3"><input type="checkbox" name="selected_schedule" value="{{ row.pk }}" class="schedule-checkbox rounded border-stone-300"></td>
+          <td class="p-3 font-medium text-stone-700">{{ row.term }}</td>
+          <td class="p-3 font-mono font-semibold text-stone-800">{{ row.room }}</td>
+          <td class="p-3">
+            <div class="font-semibold text-stone-800">{{ row.subject }}</div>
+            <div class="text-stone-500 text-[11px]">{{ row.title }}</div>
+          </td>
+          <td class="p-3">{{ row.instructor }}</td>
+          <td class="p-3">{{ row.day_label }}</td>
+          <td class="p-3 font-medium">{{ row.start_time }}–{{ row.end_time }}</td>
+          <td class="p-3">
+            {% if row.is_active %}
+            <span class="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2.5 py-1 text-[11px] font-semibold">Active</span>
+            {% else %}
+            <span class="inline-flex items-center rounded-full bg-stone-200 text-stone-600 px-2.5 py-1 text-[11px] font-semibold">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="p-3 text-right">
+            <button type="button" data-modal-open="schedule-edit-modal" class="inline-flex items-center gap-1 text-[#14342A] font-semibold hover:underline">Edit <i data-lucide="pencil-line" class="w-3.5 h-3.5"></i></button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="p-8 text-center text-stone-500">No schedule blocks match your current filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<div id="schedule-edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="schedule-edit-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-2xl">
+    <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 flex items-center justify-center text-[#1E6B4A]">
+          <i data-lucide="calendar-days" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h2 id="schedule-edit-title" class="text-[15px] font-bold text-stone-900">Edit schedule</h2>
+          <p class="text-[12px] text-stone-500">Update room, timing, and instructor details.</p>
+        </div>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <div class="max-h-[70vh] overflow-y-auto p-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Term</span>
+          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+            <option>2026 Fall</option>
+            <option>2027 Spring</option>
+          </select>
+        </label>
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Room</span>
+          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+            <option>CCS-204</option>
+            <option>ENG-118</option>
+          </select>
+        </label>
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Subject</span>
+          <input type="text" value="CS 101" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+        </label>
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Instructor</span>
+          <input type="text" value="P. Nguyen" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+        </label>
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Day</span>
+          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+            <option>Monday</option>
+            <option selected>Wednesday</option>
+          </select>
+        </label>
+        <label class="text-[13px] text-stone-700">
+          <span class="mb-1 block font-medium">Time</span>
+          <input type="text" value="09:00–10:30" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
+        </label>
+        <label class="md:col-span-2 flex items-center gap-2 text-[13px] text-stone-700">
+          <input type="checkbox" checked class="h-4 w-4 rounded border-stone-300 text-[#1E6B4A] focus:ring-[#1E6B4A]">
+          Active schedule block
+        </label>
+      </div>
+    </div>
+
+    <div class="sticky bottom-0 border-t border-stone-200 bg-white px-5 py-3 flex items-center justify-end gap-2">
+      <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+      <button type="button" class="px-4 py-2 rounded-lg bg-[#14342A] hover:bg-[#0F2E1F] text-white text-[13px] font-semibold">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var main = document.getElementById('select-all-schedules');
+    var checks = document.querySelectorAll('.schedule-checkbox');
+    if (main) {
+      main.addEventListener('change', function () {
+        checks.forEach(function (checkbox) { checkbox.checked = main.checked; });
+      });
+    }
+  });
+</script>
+{% endblock %}

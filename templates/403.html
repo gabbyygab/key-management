@@ -3,7 +3,9 @@
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm border border-stone-200 p-8 text-center max-w-lg mx-auto">
   <h1 class="text-2xl font-extrabold">403 · Access denied</h1>
-  <p class="mt-2 text-stone-500 text-[13px]">Your role cannot access this page. Contact an admin.</p>
+  <p class="mt-2 text-stone-500 text-[13px]">
+    {% if required_role %}This page requires the {{ required_role }} role.{% else %}Your role cannot access this page. Contact an admin.{% endif %}
+  </p>
   <a href="{% url 'dashboard' %}" class="mt-4 inline-block bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Back to dashboard</a>
 </div>
 {% endblock %}

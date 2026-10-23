@@ -1,61 +1,135 @@
-/* Toast notifications (TASK F1.4). window.KeyTrackToast.show(message, variant).
- * Variants: success | error | warning | info. Stacks top-right, auto-dismisses.
- * Django's {% messages %} still renders normally for non-AJAX page loads.
+/* toast.js — transient notifications for AJAX actions (F1.4).
+ *
+ * Django's {% messages %} block (partials/messages.html) still handles
+ * non-AJAX page loads; this is the in-page equivalent for fetch() results.
+ *
+ *   KeyTrack.toast("Key RM303 released.", "success");
+ *   KeyTrack.toast("You do not have permission.", "error");
+ *
+ * Requires: csrf.js (window.KeyTrack, refreshIcons).
  */
 (function () {
+  "use strict";
+
+  var KeyTrack = (window.KeyTrack = window.KeyTrack || {});
+
   var AUTO_DISMISS_MS = 4000;
+
+  /* Design tokens per §5 — do not invent new ones. */
   var VARIANTS = {
-    success: { cls: "bg-green-50 border-green-200 text-green-800", icon: "check-circle" },
-    error: { cls: "bg-red-50 border-red-200 text-red-800", icon: "alert-circle" },
-    warning: { cls: "bg-amber-50 border-amber-200 text-amber-800", icon: "alert-triangle" },
-    info: { cls: "bg-white border-stone-200 text-stone-700", icon: "info" },
+    success: {
+      icon: "check-circle",
+      cls: "bg-green-50 border-green-200 text-green-800",
+      iconCls: "text-green-600",
+    },
+    error: {
+      icon: "alert-circle",
+      cls: "bg-red-50 border-red-200 text-red-800",
+      iconCls: "text-red-600",
+    },
+    warning: {
+      icon: "alert-triangle",
+      cls: "bg-amber-50 border-amber-200 text-amber-800",
+      iconCls: "text-amber-600",
+    },
+    info: {
+      icon: "info",
+      cls: "bg-white border-stone-200 text-stone-700",
+      iconCls: "text-stone-500",
+    },
   };
 
-  function host() {
-    var node = document.getElementById("toast-host");
-    if (!node) {
-      node = document.createElement("div");
-      node.id = "toast-host";
-      node.className = "fixed top-4 right-4 z-[100] w-80 max-w-[calc(100vw-2rem)] space-y-2";
-      node.setAttribute("aria-live", "polite");
-      node.setAttribute("aria-atomic", "true");
-      document.body.appendChild(node);
+  var container = null;
+
+  function getContainer() {
+    if (container && document.body.contains(container)) return container;
+    container = document.getElementById("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      container.className =
+        "fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[min(22rem,calc(100vw-2rem))]";
+      /* Polite, not assertive: a toast must not interrupt a screen reader
+       * mid-sentence. Errors that block the user belong inline, not here. */
+      container.setAttribute("aria-live", "polite");
+      container.setAttribute("aria-atomic", "false");
+      document.body.appendChild(container);
     }
-    return node;
+    return container;
   }
 
-  function dismiss(toast) {
-    toast.classList.add("opacity-0", "translate-x-2");
-    setTimeout(function () { toast.remove(); }, 200);
+  function dismiss(el) {
+    if (!el || el.dataset.leaving === "1") return;
+    el.dataset.leaving = "1";
+    el.classList.add("opacity-0", "translate-x-2");
+    window.setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 200);
   }
 
-  function show(message, variant) {
-    var spec = VARIANTS[variant] || VARIANTS.info;
-    var toast = document.createElement("div");
-    toast.className = "flex items-start gap-2 px-3.5 py-3 rounded-xl border shadow-sm text-[13px] "
-      + "transition-all duration-200 opacity-0 translate-x-2 " + spec.cls;
-    toast.setAttribute("role", variant === "error" ? "alert" : "status");
-    toast.innerHTML =
-      '<i data-lucide="' + spec.icon + '" class="w-4 h-4 mt-0.5 shrink-0"></i>'
-      + '<p class="flex-1 min-w-0"></p>'
-      + '<button type="button" aria-label="Dismiss" class="shrink-0 opacity-60 hover:opacity-100">'
-      + '<i data-lucide="x" class="w-3.5 h-3.5"></i></button>';
-    toast.querySelector("p").textContent = message;
-    toast.querySelector("button").addEventListener("click", function () { dismiss(toast); });
-    host().appendChild(toast);
-    if (window.lucide) lucide.createIcons();
-    requestAnimationFrame(function () {
-      toast.classList.remove("opacity-0", "translate-x-2");
+  /* message is inserted as TEXT, never HTML — 422 bodies echo user input. */
+  function toast(message, variant, options) {
+    var opts = options || {};
+    var v = VARIANTS[variant] || VARIANTS.info;
+
+    var el = document.createElement("div");
+    el.className =
+      "flex items-start gap-2.5 rounded-xl border px-4 py-2.5 shadow-sm text-[13px] " +
+      "transition duration-200 ease-out " +
+      v.cls;
+    el.setAttribute("role", variant === "error" ? "alert" : "status");
+
+    var icon = document.createElement("i");
+    icon.setAttribute("data-lucide", v.icon);
+    icon.className = "w-4 h-4 mt-0.5 shrink-0 " + v.iconCls;
+
+    var body = document.createElement("div");
+    body.className = "flex-1 min-w-0";
+    body.textContent = message == null ? "" : String(message);
+
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "shrink-0 opacity-50 hover:opacity-100 rounded";
+    close.setAttribute("aria-label", "Dismiss notification");
+    var closeIcon = document.createElement("i");
+    closeIcon.setAttribute("data-lucide", "x");
+    closeIcon.className = "w-3.5 h-3.5 pointer-events-none";
+    close.appendChild(closeIcon);
+    close.addEventListener("click", function () {
+      dismiss(el);
     });
-    setTimeout(function () { dismiss(toast); }, AUTO_DISMISS_MS);
-    return toast;
+
+    el.appendChild(icon);
+    el.appendChild(body);
+    el.appendChild(close);
+    getContainer().appendChild(el);
+
+    /* Freshly injected <i data-lucide> elements are inert until this runs. */
+    KeyTrack.refreshIcons(el);
+
+    var ms = opts.duration === undefined ? AUTO_DISMISS_MS : opts.duration;
+    if (ms > 0) {
+      var timer = window.setTimeout(function () {
+        dismiss(el);
+      }, ms);
+      /* Don't yank a message out from under someone reading it. */
+      el.addEventListener("mouseenter", function () {
+        window.clearTimeout(timer);
+      });
+    }
+
+    return el;
   }
 
+  KeyTrack.toast = toast;
+  KeyTrack.dismissToast = dismiss;
+
+  /* Compat alias for code written against window.KeyTrackToast (currently-out panel). */
   window.KeyTrackToast = {
-    show: show,
-    success: function (m) { return show(m, "success"); },
-    error: function (m) { return show(m, "error"); },
-    warning: function (m) { return show(m, "warning"); },
-    info: function (m) { return show(m, "info"); },
+    show: function (m, v) { return KeyTrack.toast(m, v); },
+    success: function (m) { return KeyTrack.toast(m, "success"); },
+    error: function (m) { return KeyTrack.toast(m, "error"); },
+    warning: function (m) { return KeyTrack.toast(m, "warning"); },
+    info: function (m) { return KeyTrack.toast(m, "info"); },
   };
 })();

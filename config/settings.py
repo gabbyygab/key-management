@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'audit',
     'transactions',
     'notifications',
+    'scheduling',
 ]
 
 MIDDLEWARE = [
@@ -78,12 +79,19 @@ TEMPLATES = [
 ]
 
 LOGIN_URL = "accounts:login"
-LOGIN_REDIRECT_URL = "dashboard"
+LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Tailwind source lives in the repo so hand-written CSS survives a rebuild.
+# Without this, django_tailwind_cli generates its own source at
+# .django_tailwind_cli/source.css and overwrites it on every build, which left
+# nowhere to define the F6.7 accessibility baseline (focus rings, skip link).
+TAILWIND_CLI_SRC_CSS = "assets/css/source.css"
+TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
