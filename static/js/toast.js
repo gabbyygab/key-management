@@ -1,10 +1,12 @@
-/* toast.js — transient notifications for AJAX actions (F1.4).
+/* toast.js — transient notifications for AJAX actions (F1.4, F6.8).
  *
  * Django's {% messages %} block (partials/messages.html) still handles
  * non-AJAX page loads; this is the in-page equivalent for fetch() results.
  *
  *   KeyTrack.toast("Key RM303 released.", "success");
  *   KeyTrack.toast("You do not have permission.", "error");
+ *   KeyTrack.networkErrorToast(retryFn, "Search failed.");
+ *   KeyTrack.sessionExpiredToast("/accounts/login/?next=...");
  *
  * Requires: csrf.js (window.KeyTrack, refreshIcons).
  */
@@ -14,6 +16,7 @@
   var KeyTrack = (window.KeyTrack = window.KeyTrack || {});
 
   var AUTO_DISMISS_MS = 4000;
+  var RETRY_DISMISS_MS = 10000;
 
   /* Design tokens per §5 — do not invent new ones. */
   var VARIANTS = {
@@ -48,7 +51,7 @@
       container = document.createElement("div");
       container.id = "toast-container";
       container.className =
-        "fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[min(22rem,calc(100vw-2rem))]";
+        "fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[min(24rem,calc(100vw-2rem))]";
       /* Polite, not assertive: a toast must not interrupt a screen reader
        * mid-sentence. Errors that block the user belong inline, not here. */
       container.setAttribute("aria-live", "polite");
@@ -85,11 +88,52 @@
 
     var body = document.createElement("div");
     body.className = "flex-1 min-w-0";
-    body.textContent = message == null ? "" : String(message);
+
+    var textSpan = document.createElement("span");
+    textSpan.textContent = message == null ? "" : String(message);
+    body.appendChild(textSpan);
+
+    /* F6.8: Retry action button for network failures */
+    if (typeof opts.onRetry === "function") {
+      var retryBtn = document.createElement("button");
+      retryBtn.type = "button";
+      retryBtn.className =
+        "ml-2 font-semibold underline hover:no-underline text-inherit focus:outline-none focus:ring-1 focus:ring-current rounded px-1 shrink-0 cursor-pointer";
+      retryBtn.textContent = opts.retryLabel || "Retry";
+      retryBtn.setAttribute("aria-label", opts.retryAriaLabel || "Retry failed request");
+      retryBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        dismiss(el);
+        opts.onRetry();
+      });
+      body.appendChild(retryBtn);
+    }
+
+    /* F6.8: Link or custom action (e.g. "Log in again") */
+    if (opts.action && opts.action.label) {
+      var actionEl;
+      if (opts.action.href) {
+        actionEl = document.createElement("a");
+        actionEl.href = opts.action.href;
+      } else {
+        actionEl = document.createElement("button");
+        actionEl.type = "button";
+      }
+      actionEl.className =
+        "ml-2 font-semibold underline hover:no-underline text-inherit focus:outline-none focus:ring-1 focus:ring-current rounded px-1 shrink-0 inline-flex items-center gap-1 cursor-pointer";
+      actionEl.textContent = opts.action.label;
+      if (opts.action.onClick) {
+        actionEl.addEventListener("click", function (e) {
+          dismiss(el);
+          opts.action.onClick(e);
+        });
+      }
+      body.appendChild(actionEl);
+    }
 
     var close = document.createElement("button");
     close.type = "button";
-    close.className = "shrink-0 opacity-50 hover:opacity-100 rounded";
+    close.className = "shrink-0 opacity-50 hover:opacity-100 rounded cursor-pointer";
     close.setAttribute("aria-label", "Dismiss notification");
     var closeIcon = document.createElement("i");
     closeIcon.setAttribute("data-lucide", "x");
@@ -105,9 +149,10 @@
     getContainer().appendChild(el);
 
     /* Freshly injected <i data-lucide> elements are inert until this runs. */
-    KeyTrack.refreshIcons(el);
+    if (KeyTrack.refreshIcons) KeyTrack.refreshIcons(el);
 
-    var ms = opts.duration === undefined ? AUTO_DISMISS_MS : opts.duration;
+    var defaultDuration = (typeof opts.onRetry === "function") ? RETRY_DISMISS_MS : AUTO_DISMISS_MS;
+    var ms = opts.duration === undefined ? defaultDuration : opts.duration;
     if (ms > 0) {
       var timer = window.setTimeout(function () {
         dismiss(el);
@@ -121,8 +166,41 @@
     return el;
   }
 
+  /* F6.8: Dedicated network failure toast with clickable retry option */
+  function networkErrorToast(onRetry, message) {
+    return toast(
+      message || "Network connection failed. Check your connection and try again.",
+      "error",
+      {
+        onRetry: onRetry,
+        duration: RETRY_DISMISS_MS,
+      }
+    );
+  }
+
+  /* F6.8: Session expired warning toast with direct login path */
+  function sessionExpiredToast(loginUrl) {
+    var next = window.location.pathname + window.location.search;
+    var url = loginUrl || ("/accounts/login/?next=" + encodeURIComponent(next));
+    return toast(
+      "Your session has expired. Please log in again.",
+      "warning",
+      {
+        duration: 0, /* persistent until user clicks or dismisses */
+        action: {
+          label: "Log in again",
+          href: url,
+        },
+      }
+    );
+  }
+
   KeyTrack.toast = toast;
   KeyTrack.dismissToast = dismiss;
+  KeyTrack.networkErrorToast = networkErrorToast;
+  KeyTrack.toastNetworkError = networkErrorToast;
+  KeyTrack.sessionExpiredToast = sessionExpiredToast;
+  KeyTrack.toastSessionExpired = sessionExpiredToast;
 
   /* Compat alias for code written against window.KeyTrackToast (currently-out panel). */
   window.KeyTrackToast = {
@@ -131,5 +209,7 @@
     error: function (m) { return KeyTrack.toast(m, "error"); },
     warning: function (m) { return KeyTrack.toast(m, "warning"); },
     info: function (m) { return KeyTrack.toast(m, "info"); },
+    networkError: networkErrorToast,
+    sessionExpired: sessionExpiredToast,
   };
 })();
