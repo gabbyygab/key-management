@@ -69,18 +69,6 @@ class PendingApprovalsWorkflowTests(TestCase):
         self.guard = User.objects.create_user(
             username="guard_user",
             email="guard_user@example.com",
-# ---------------------------------------------------------------------------
-# F2.3 — navbar context processor tests
-# ---------------------------------------------------------------------------
-
-@override_settings(ALLOWED_HOSTS=["testserver"])
-class NavbarContextTests(TestCase):
-    """The context processor must inject the right `navbar_shift` value."""
-
-    def setUp(self):
-        self.guard = User.objects.create_user(
-            username="guard_nb",
-            email="guard_nb@example.com",
             password="secret123",
             role=User.Role.GUARD,
             approval_status=User.Approval.APPROVED,
@@ -255,6 +243,24 @@ class NavbarContextTests(TestCase):
         guard_req.user = self.guard
         data = pending_approvals(guard_req)
         self.assertEqual(data["pending_approvals_count"], 0)
+
+
+# ---------------------------------------------------------------------------
+# F2.3 — navbar context processor tests
+# ---------------------------------------------------------------------------
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class NavbarContextTests(TestCase):
+    """The context processor must inject the right `navbar_shift` value."""
+
+    def setUp(self):
+        self.guard = User.objects.create_user(
+            username="guard_nb",
+            email="guard_nb@example.com",
+            password="secret123",
+            role=User.Role.GUARD,
+            approval_status=User.Approval.APPROVED,
+        )
         self.admin = User.objects.create_user(
             username="admin_nb",
             email="admin_nb@example.com",

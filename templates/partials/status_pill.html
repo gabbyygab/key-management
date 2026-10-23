@@ -5,5 +5,7 @@
 {% elif status == 'BORROWED' %}<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> BORROWED</span>
 {% elif status == 'LOST' %}<span class="inline-flex items-center gap-1 bg-red-50 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> LOST</span>
 {% elif status == 'DAMAGED' %}<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> DAMAGED</span>
+{% elif status == 'ON DUTY' or status == 'ON_DUTY' %}<span class="inline-flex items-center gap-1 bg-green-50 text-[#1E6B4A] border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ON DUTY</span>
+{% elif status == 'ENDED' or status == 'OFF_DUTY' or status == 'OFF DUTY' %}<span class="inline-flex items-center gap-1 bg-stone-100 text-stone-700 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ENDED</span>
 {% else %}<span class="inline-flex items-center gap-1 bg-stone-100 text-stone-700 border border-stone-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> {{ status }}</span>
 {% endif %}

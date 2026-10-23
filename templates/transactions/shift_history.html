@@ -1,26 +1,116 @@
 {% extends "base.html" %}
 {% block title %}Guard Shifts — KEYTRACK{% endblock %}
 {% block content %}
-<div class="mb-4">
-  <h1 class="text-[22px] font-extrabold tracking-tight">Guard Shifts</h1>
-  <p class="text-[13px] text-stone-500 mt-0.5">Shifts start automatically when you log in and end when you log out.</p>
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if is_admin %}Guard Shifts{% else %}My Shift History{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">
+      {% if is_admin %}
+        Monitor guard coverage, duty shifts, and key transaction volume across campus posts.
+      {% else %}
+        Shifts start automatically when you log in and end when you log out.
+      {% endif %}
+    </p>
+  </div>
+
+  {% if is_admin %}
+  {# Guard filter for admins #}
+  <form method="get" class="flex flex-wrap items-center gap-2" role="search" aria-label="Filter guard shifts">
+    <label for="guard-filter" class="text-[13px] font-medium text-stone-700">Guard:</label>
+    <div class="relative min-w-[200px]">
+      <select id="guard-filter" name="guard" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] text-stone-800 focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+        <option value="">All guards</option>
+        {% for g in guard_users %}
+          <option value="{{ g.id }}" {% if guard_filter == g.id|stringformat:"s" or guard_filter == g.username %}selected{% endif %}>
+            {{ g.get_full_name|default:g.username }} (@{{ g.username }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="inline-flex items-center gap-1.5 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3.5 py-2 rounded-lg text-[13px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+      <i data-lucide="filter" class="w-3.5 h-3.5" aria-hidden="true"></i>
+      Filter
+    </button>
+    {% if guard_filter %}
+      <a href="{% url 'transactions:shift_history' %}" class="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-[13px] font-medium text-stone-600 transition" title="Clear filter">
+        <i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i>
+        Clear
+      </a>
+    {% endif %}
+  </form>
+  {% endif %}
 </div>
-<div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
-<table class="min-w-full text-[13px]">
-<caption class="sr-only">Guard shift history</caption>
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
-<th scope="col" class="p-3 font-medium">Guard</th><th scope="col" class="p-3 font-medium">Post</th><th scope="col" class="p-3 font-medium">Start</th><th scope="col" class="p-3 font-medium">End</th><th scope="col" class="p-3 font-medium">Status</th></tr></thead>
-<tbody class="divide-y divide-stone-100">
-{% for s in shifts %}
-<tr class="hover:bg-stone-50/60">
-  <td class="p-3">{{ s.guard }}</td>
-  <td class="p-3">{{ s.post }}</td>
-  <td class="p-3 text-stone-500">{{ s.shift_start|date:"M j, Y, g:i A" }}</td>
-  <td class="p-3 text-stone-500">{{ s.shift_end|date:"M j, Y, g:i A"|default:"—" }}</td>
-  <td class="p-3">{% if s.is_on_duty %}<span class="bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ON DUTY</span>{% else %}<span class="bg-stone-100 text-stone-700 border border-stone-300 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> ENDED</span>{% endif %}</td>
-</tr>
-{% empty %}<tr><td colspan="5" class="p-6 text-center text-stone-500">No shifts yet. Log in to start one.</td></tr>{% endfor %}
-</tbody>
-</table>
+
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Guard shift history</caption>
+      <thead>
+        <tr class="bg-stone-50/75 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500 font-semibold">
+          <th scope="col" class="p-3">Guard</th>
+          <th scope="col" class="p-3">Post</th>
+          <th scope="col" class="p-3">Start</th>
+          <th scope="col" class="p-3">End</th>
+          <th scope="col" class="p-3">Duration</th>
+          <th scope="col" class="p-3 text-center">Transactions</th>
+          <th scope="col" class="p-3 text-center">Duty Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for s in shifts %}
+        <tr class="hover:bg-stone-50/60 transition-colors">
+          <td class="p-3">
+            <div class="font-medium text-stone-900">{{ s.guard.get_full_name|default:s.guard.username }}</div>
+            {% if s.guard.get_full_name %}
+              <div class="text-[11px] text-stone-400">@{{ s.guard.username }}</div>
+            {% endif %}
+          </td>
+          <td class="p-3 text-stone-700 font-medium">{{ s.post }}</td>
+          <td class="p-3 text-stone-600 tabular-nums whitespace-nowrap">{{ s.shift_start|date:"M j, Y, g:i A" }}</td>
+          <td class="p-3 text-stone-600 tabular-nums whitespace-nowrap">
+            {% if s.shift_end %}
+              {{ s.shift_end|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-400">—</span>
+            {% endif %}
+          </td>
+          <td class="p-3 font-mono text-[12px] text-stone-700 tabular-nums whitespace-nowrap">{{ s.duration_display }}</td>
+          <td class="p-3 text-center">
+            <span class="inline-flex items-center gap-1 font-mono text-[12px] font-semibold {% if s.transaction_count > 0 %}text-stone-800{% else %}text-stone-400{% endif %}">
+              <i data-lucide="key" class="w-3.5 h-3.5 text-stone-400" aria-hidden="true"></i>
+              {{ s.transaction_count }}
+            </span>
+          </td>
+          <td class="p-3 text-center whitespace-nowrap">
+            {% if s.is_on_duty %}
+              <span class="inline-flex items-center gap-1.5 bg-green-50 text-[#1E6B4A] border border-green-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#1E6B4A] animate-pulse" aria-hidden="true"></span>
+                ON DUTY
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1.5 bg-stone-100 text-stone-600 border border-stone-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <span class="w-1.5 h-1.5 rounded-full bg-stone-400" aria-hidden="true"></span>
+                ENDED
+              </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="p-8 text-center text-stone-500">
+            {% if is_admin and guard_filter %}
+              No shifts found for this guard filter.
+            {% elif is_admin %}
+              No guard shifts recorded yet.
+            {% else %}
+              No shifts yet. Log in to start one.
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/pagination.html" with page_obj=page_obj %}
 </div>
 {% endblock %}
