@@ -1,51 +1,166 @@
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.permissions import admin_or_guard_required, guard_required
-from accounts.models import Borrower
+from accounts.models import Borrower, User
+from audit.models import ActivityLog
+from facilities.models import Building, Room
 from keys.models import Key
+from scheduling.models import ScheduleBlock, ScheduleException
 from .models import BorrowTransaction, GuardShift
-from .services import BorrowError, borrow_key, get_active_shift, return_key
+from .services import (
+    BorrowError,
+    active_transactions,
+    borrow_key,
+    get_active_shift,
+    return_key,
+)
 
 
 @admin_or_guard_required
 def dashboard(request):
-    """KEYTRACK home: live stat cards + per-building availability + recent activity."""
-    from django.db.models import Count
-    from facilities.models import Building
-    from keys.models import Key
+    """KEYTRACK dashboard: Role-split view.
 
-    total_keys = Key.objects.count()
-    available = Key.objects.filter(status=Key.Status.AVAILABLE).count()
-    borrowed = Key.objects.filter(status=Key.Status.BORROWED).count()
-    overdue = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.OVERDUE).count()
-    buildings = Building.objects.filter(is_active=True).order_by("code")[:8]
+    - ADMIN: Live stat cards (total keys, available, borrowed, overdue,
+             rooms, scheduled blocks today, pending approvals),
+             per-building availability bars, today's schedule overview,
+             overdue keys table, recent audit activity, guards on duty.
+    - GUARD: Shift status + elapsed time, keys released this shift,
+             all keys currently out, quick action through to the POS.
+    """
+    is_admin = request.user.is_superuser or request.user.role == "ADMIN"
+    now = timezone.now()
+    today = timezone.localdate()
 
-    building_rows = []
-    for b in buildings:
-        qs = Key.objects.filter(room__building=b)
-        a = qs.filter(status=Key.Status.AVAILABLE).count()
-        br = qs.filter(status=Key.Status.BORROWED).count()
-        total = qs.count()
-        un = max(total - a - br, 0)
-        building_rows.append({"code": b.code, "available": a, "borrowed": br,
-                              "unavailable": un, "total": total or 1})
+    if is_admin:
+        total_keys = Key.objects.count()
+        available = Key.objects.filter(status=Key.Status.AVAILABLE).count()
+        borrowed = Key.objects.filter(status=Key.Status.BORROWED).count()
+        overdue = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.OVERDUE).count()
+        total_rooms = Room.objects.filter(is_active=True).count()
+        pending_approvals = User.objects.filter(approval_status=User.Approval.PENDING).count()
 
-    recent = (BorrowTransaction.objects
-              .select_related("key__room__building", "borrower", "released_by")
-              .all()[:6])
-    currently_out = (BorrowTransaction.objects
-                     .select_related("key__room__building", "borrower")
-                     .filter(status=BorrowTransaction.Status.ACTIVE)[:6])
+        # Schedule blocks for today
+        today_blocks_qs = (
+            ScheduleBlock.objects.filter(
+                is_active=True,
+                day_of_week=today.weekday(),
+                term__is_active=True,
+            )
+            .select_related("room__building", "subject", "instructor")
+        )
+        cancelled_block_ids = ScheduleException.objects.filter(
+            date=today,
+            exception_type=ScheduleException.ExceptionType.CANCELLED,
+        ).values_list("schedule_block_id", flat=True)
+        today_blocks = today_blocks_qs.exclude(id__in=cancelled_block_ids).order_by("start_time")
+        blocks_scheduled_today = today_blocks.count()
+        today_schedule = today_blocks[:10]
+
+        # Buildings availability bars
+        buildings = Building.objects.filter(is_active=True).order_by("code")[:8]
+        building_rows = []
+        for b in buildings:
+            qs = Key.objects.filter(room__building=b)
+            a = qs.filter(status=Key.Status.AVAILABLE).count()
+            br = qs.filter(status=Key.Status.BORROWED).count()
+            total = qs.count()
+            un = max(total - a - br, 0)
+            building_rows.append({
+                "code": b.code,
+                "available": a,
+                "borrowed": br,
+                "unavailable": un,
+                "total": total or 1,
+            })
+
+        # Guards currently on duty
+        guards_on_duty = (
+            GuardShift.objects.filter(is_on_duty=True)
+            .select_related("guard")
+            .order_by("-shift_start")
+        )
+
+        # Overdue keys
+        overdue_keys = (
+            BorrowTransaction.objects.filter(status=BorrowTransaction.Status.OVERDUE)
+            .select_related("key__room__building", "borrower__department", "released_by")
+            .order_by("-expected_return_at", "-borrowed_at")[:10]
+        )
+
+        # Recent audit activity
+        try:
+            recent_audit = (
+                ActivityLog.objects.select_related("user")
+                .order_by("-created_at")[:10]
+            )
+        except Exception:
+            recent_audit = []
+
+        recent = (
+            BorrowTransaction.objects
+            .select_related("key__room__building", "borrower", "released_by")
+            .order_by("-borrowed_at")[:6]
+        )
+
+        return render(request, "dashboard.html", {
+            "is_admin": True,
+            "total_keys": total_keys,
+            "available": available,
+            "borrowed": borrowed,
+            "overdue": overdue,
+            "total_rooms": total_rooms,
+            "blocks_scheduled_today": blocks_scheduled_today,
+            "pending_approvals": pending_approvals,
+            "today_schedule": today_schedule,
+            "today_date": today,
+            "today_name": today.strftime("%A"),
+            "building_rows": building_rows,
+            "building_count": buildings.count(),
+            "guards_on_duty": guards_on_duty,
+            "overdue_keys": overdue_keys,
+            "recent_audit": recent_audit,
+            "recent": recent,
+        })
+
+    # Guard Dashboard
     shift = get_active_shift(request.user)
+    shift_elapsed = ""
+    if shift:
+        delta = now - shift.shift_start
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes, _ = divmod(remainder, 60)
+        shift_elapsed = f"{hours}h {minutes:02d}m"
+
+    if shift:
+        my_released_txns = (
+            BorrowTransaction.objects.filter(guard_shift=shift)
+            .select_related("key__room__building", "borrower__department")
+            .order_by("-borrowed_at")
+        )
+    else:
+        my_released_txns = BorrowTransaction.objects.none()
+
+    currently_out = active_transactions()[:20]
+    currently_out_count = BorrowTransaction.objects.filter(
+        status__in=[BorrowTransaction.Status.ACTIVE, BorrowTransaction.Status.OVERDUE]
+    ).count()
+    overdue_count = BorrowTransaction.objects.filter(
+        status=BorrowTransaction.Status.OVERDUE
+    ).count()
 
     return render(request, "dashboard.html", {
-        "total_keys": total_keys, "available": available, "borrowed": borrowed,
-        "overdue": overdue, "building_rows": building_rows, "recent": recent,
-        "currently_out": currently_out, "shift": shift,
-        "building_count": buildings.count(),
+        "is_admin": False,
+        "shift": shift,
+        "shift_elapsed": shift_elapsed,
+        "my_released_txns": my_released_txns,
+        "my_released_count": my_released_txns.count(),
+        "currently_out": currently_out,
+        "currently_out_count": currently_out_count,
+        "overdue_count": overdue_count,
     })
 
 
