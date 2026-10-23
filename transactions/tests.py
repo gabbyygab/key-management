@@ -329,3 +329,147 @@ class ReturnEndpointTests(OutKeyFixture):
         self.assertEqual(res.status_code, 403)
         self.txn.refresh_from_db()
         self.assertEqual(self.txn.status, BorrowTransaction.Status.ACTIVE)
+
+
+from scheduling.models import ScheduleBlock, Term
+from audit.models import ActivityLog
+
+
+@TESTSERVER
+class RoleSplitDashboardTests(TestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(code="CCS", name="Computer Studies")
+        self.admin = User.objects.create_user(
+            username="admin_user", email="admin@example.edu", password="pw",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        self.guard = User.objects.create_user(
+            username="guard_user", email="guard@example.edu", password="pw",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        self.staff = User.objects.create_user(
+            username="staff_user", email="staff@example.edu", password="pw",
+            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED,
+        )
+        self.building = Building.objects.create(code="CCS", name="Computing")
+        self.room = Room.objects.create(building=self.building, room_code="101", capacity=30)
+        self.category = KeyCategory.objects.create(name="Classroom")
+        self.key = Key.objects.create(key_code="CCS-101-1", room=self.room, category=self.category)
+        self.url = reverse("dashboard")
+
+    def test_anonymous_redirected_to_login(self):
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("login", res.url)
+
+    def test_unauthorized_role_gets_403(self):
+        self.client.force_login(self.staff)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_admin_dashboard_renders_admin_view_and_stat_cards(self):
+        pending_user = User.objects.create_user(
+            username="pending_user", email="pending@example.edu", password="pw",
+            role=User.Role.GUARD, approval_status=User.Approval.PENDING,
+        )
+        today = timezone.localdate()
+        term = Term.objects.create(
+            name="2026 Term", start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=10), is_active=True,
+        )
+        block = ScheduleBlock.objects.create(
+            term=term, room=self.room, title="Algorithms",
+            day_of_week=today.weekday(), start_time="09:00", end_time="10:30",
+            created_by=self.admin,
+        )
+        guard_shift = GuardShift.objects.create(guard=self.guard, post="Gate 1", is_on_duty=True)
+        borrower = Borrower.objects.create(
+            id_number="ST-101", first_name="Juan", last_name="Luna",
+            borrower_type=Borrower.BorrowerType.STUDENT, department=self.dept,
+        )
+        overdue_txn = BorrowTransaction.objects.create(
+            transaction_no="TXN-OVERDUE-01", key=self.key, borrower=borrower,
+            room=self.room, released_by=self.guard, guard_shift=guard_shift,
+            status=BorrowTransaction.Status.OVERDUE,
+            expected_return_at=timezone.now() - timedelta(hours=2),
+        )
+        ActivityLog.objects.create(
+            user=self.admin, action=ActivityLog.Action.CREATE,
+            description="Created room 101",
+        )
+
+        self.client.force_login(self.admin)
+        # Login signal creates an active shift for the admin user; remove it so only the guard is on duty
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.context["is_admin"])
+        self.assertEqual(res.context["total_keys"], 1)
+        self.assertEqual(res.context["available"], 1)
+        self.assertEqual(res.context["overdue"], 1)
+        self.assertEqual(res.context["total_rooms"], 1)
+        self.assertEqual(res.context["blocks_scheduled_today"], 1)
+        self.assertEqual(res.context["pending_approvals"], 1)
+        self.assertEqual(len(res.context["guards_on_duty"]), 1)
+        self.assertEqual(len(res.context["today_schedule"]), 1)
+        self.assertEqual(len(res.context["overdue_keys"]), 1)
+        self.assertEqual(len(res.context["recent_audit"]), 1)
+
+        self.assertContains(res, "Admin Dashboard")
+        self.assertContains(res, "Key Availability by Building")
+        self.assertContains(res, "Guards on Duty")
+        self.assertContains(res, "Gate 1")
+        self.assertContains(res, "Today's Schedule Overview")
+        self.assertContains(res, "Algorithms")
+        self.assertContains(res, "Overdue Keys")
+        self.assertContains(res, "TXN-OVERDUE-01")
+        self.assertContains(res, "Recent Audit Activity")
+        self.assertContains(res, "Created room 101")
+
+    def test_guard_dashboard_renders_guard_view(self):
+        self.client.force_login(self.guard)
+        shift = GuardShift.objects.filter(guard=self.guard, is_on_duty=True).first()
+        shift.post = "Lobby Desk"
+        shift.save()
+
+        borrower = Borrower.objects.create(
+            id_number="FAC-202", first_name="Clara", last_name="Reyes",
+            borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept,
+        )
+        txn = BorrowTransaction.objects.create(
+            transaction_no="TXN-GUARD-01", key=self.key, borrower=borrower,
+            room=self.room, released_by=self.guard, guard_shift=shift,
+            status=BorrowTransaction.Status.ACTIVE,
+        )
+
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.context["is_admin"])
+        self.assertEqual(res.context["shift"], shift)
+        self.assertEqual(res.context["my_released_count"], 1)
+        self.assertEqual(res.context["currently_out_count"], 1)
+
+        self.assertContains(res, "Guard Dashboard")
+        self.assertContains(res, "Go to Key Transactions")
+        self.assertContains(res, "Lobby Desk")
+        self.assertContains(res, "On Duty")
+        self.assertContains(res, "Keys Released This Shift")
+        self.assertContains(res, "TXN-GUARD-01")
+        self.assertContains(res, "Currently Out (All Campus Keys)")
+        self.assertContains(res, "Clara Reyes")
+
+        self.assertNotContains(res, "Admin Dashboard")
+        self.assertNotContains(res, "Key Availability by Building")
+        self.assertNotContains(res, "Recent Audit Activity")
+
+    def test_guard_off_duty_state(self):
+        self.client.force_login(self.guard)
+        GuardShift.objects.filter(guard=self.guard).update(is_on_duty=False)
+
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.context["is_admin"])
+        self.assertIsNone(res.context["shift"])
+        self.assertEqual(res.context["my_released_count"], 0)
+        self.assertContains(res, "Off Duty")
