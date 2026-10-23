@@ -46,7 +46,11 @@
     <a href="{% url 'transactions:history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <i data-lucide="chart-column" class="w-4 h-4"></i> Reports &amp; History</a>
     {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+    <a href="{% url 'scheduling:room_timetable' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'room_timetable' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="calendar" class="w-4 h-4"></i> Room Timetable</a>
+    <a href="{% url 'scheduling:schedule_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'schedule_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="calendar-days" class="w-4 h-4"></i> Schedule List</a>
+    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'free_rooms' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <i data-lucide="search-check" class="w-4 h-4"></i> Room Finder</a>
     {% endif %}
   </nav>

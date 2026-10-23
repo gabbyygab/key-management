@@ -1,50 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — KEYTRACK{% endblock %}
+{% block title %}{% if is_admin %}Admin Dashboard{% else %}Guard Dashboard{% endif %} — KEYTRACK{% endblock %}
 {% block content %}
+{% if is_admin %}
+<!-- ========================================== -->
+<!-- ADMIN DASHBOARD                            -->
+<!-- ========================================== -->
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Dashboard</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Monitor university key inventory and daily operations.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Admin Dashboard</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Campus-wide key inventory, facilities, active schedules, and security overview.</p>
   </div>
   <div class="flex items-center gap-2">
-    <span class="bg-white border border-stone-200 rounded-lg px-3 py-2 text-[13px] text-stone-500">Last 7 days</span>
-    <a href="{% url 'transactions:history' %}" class="bg-white border border-stone-200 rounded-lg px-3 py-2 text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5"><i data-lucide="download" aria-hidden="true" class="w-4 h-4"></i> Export Report</a>
-    <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white rounded-lg px-3 py-2 text-[13px] font-semibold">+ Quick Action</a>
+    <a href="{% url 'keys:key_list' %}" class="bg-white border border-stone-200 rounded-lg px-3 py-2 text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5 text-stone-700">
+      <i data-lucide="key-round" aria-hidden="true" class="w-4 h-4"></i> Inventory
+    </a>
+    <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 rounded-lg px-3 py-2 text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5 text-stone-700">
+      <i data-lucide="search-check" aria-hidden="true" class="w-4 h-4"></i> Room Finder
+    </a>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white rounded-lg px-3.5 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="arrow-left-right" aria-hidden="true" class="w-4 h-4"></i> Key Transactions
+    </a>
   </div>
 </div>
 
-<!-- stat cards -->
-<div class="grid grid-cols-2 xl:grid-cols-5 gap-3">
-  {% include "partials/stat_card.html" with label="Total Keys" value=total_keys sub=building_count|add:" buildings"|add:" in inventory" icon="key-round" icon_bg="bg-emerald-50" %}
-  {% include "partials/stat_card.html" with label="Available Keys" value=available sub="of inventory" icon="check" icon_bg="bg-green-50" %}
+<!-- Admin Stat Cards (7 cards) -->
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
+  {% include "partials/stat_card.html" with label="Total Keys" value=total_keys sub=building_count|add:" buildings in inv." icon="key-round" icon_bg="bg-emerald-50" %}
+  {% include "partials/stat_card.html" with label="Available Keys" value=available sub="Ready for issue" icon="check" icon_bg="bg-green-50" %}
   {% include "partials/stat_card.html" with label="Currently Borrowed" value=borrowed sub="Active checkouts" icon="arrow-left-right" icon_bg="bg-blue-50" %}
   {% include "partials/stat_card.html" with label="Overdue Keys" value=overdue sub="Past expected return" icon="clock" icon_bg="bg-red-50" %}
-  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-start justify-between">
-      <div class="text-[13px] text-stone-500">My Shift</div>
-      <div class="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center"><i data-lucide="shield-check" aria-hidden="true" class="w-4 h-4"></i></div>
-    </div>
-    {% if shift %}
-      <div class="text-[15px] font-extrabold mt-1">On duty</div>
-      <div class="text-[12px] text-stone-500 mt-0.5">{{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</div>
-    {% else %}
-      <div class="text-[15px] font-extrabold mt-1">Off duty</div>
-      <div class="text-[12px] text-stone-500 mt-0.5">Log out and back in to start a shift</div>
-    {% endif %}
-  </div>
+  {% include "partials/stat_card.html" with label="Total Rooms" value=total_rooms sub="Monitored rooms" icon="door-closed" icon_bg="bg-stone-100" %}
+  {% include "partials/stat_card.html" with label="Scheduled Today" value=blocks_scheduled_today sub=today_name|add:" timetable" icon="calendar" icon_bg="bg-indigo-50" %}
+  {% include "partials/stat_card.html" with label="Pending Approvals" value=pending_approvals sub="Account signups" icon="user-check" icon_bg="bg-amber-50" %}
 </div>
 
-<div class="grid xl:grid-cols-3 gap-3 mt-3">
-  <!-- availability chart (CSS bars) -->
+<!-- Row 2: Building Availability Bars + Guards on Duty -->
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-4">
+  <!-- Per-building availability bars -->
   <section aria-labelledby="availability-heading" class="xl:col-span-2 bg-white rounded-xl border border-stone-200 shadow-sm p-4">
     <div class="flex items-center justify-between">
-      <h2 id="availability-heading" class="font-bold text-[14px]">Key Availability by Building</h2>
-      <span class="text-[12px] text-stone-500">Select a building to see its keys</span>
+      <div>
+        <h2 id="availability-heading" class="font-bold text-[14px]">Key Availability by Building</h2>
+        <p class="text-[12px] text-stone-500 mt-0.5">Select a building to see its keys</p>
+      </div>
+      <span class="text-[12px] text-stone-500 font-medium">{{ building_count }} active buildings</span>
     </div>
     <div class="mt-4 flex items-end gap-6 h-48">
       {% for r in building_rows %}
-      {% comment %} The bar itself is decorative (aria-hidden): the link's sr-only text
-         carries the same numbers that used to live only in title=. {% endcomment %}
       <a href="{% url 'keys:key_list' %}?q={{ r.code }}" class="flex-1 flex flex-col items-center gap-1 group rounded-md">
         <div aria-hidden="true" class="w-full max-w-[90px] flex flex-col-reverse rounded-t-md overflow-hidden border border-stone-100">
           <div style="height:{% widthratio r.available r.total 110 %}px" class="bg-[#1E6B4A] group-hover:opacity-90"></div>
@@ -65,52 +67,469 @@
     </div>
   </section>
 
-  <!-- currently out -->
-  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-center justify-between">
-      <h2 class="font-bold text-[14px]">Currently Out <span class="ml-1 text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{{ borrowed }}</span></h2>
-      <a href="{% url 'transactions:borrow_dashboard' %}" class="text-[12px] font-medium inline-flex items-center gap-1 hover:underline">View all<span class="sr-only"> keys currently out</span> <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i></a>
+  <!-- Guards on Duty (Who is on duty) -->
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 flex flex-col">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="font-bold text-[14px]">Guards on Duty</h2>
+        <p class="text-[12px] text-stone-500 mt-0.5">Active monitoring posts</p>
+      </div>
+      <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full {% if guards_on_duty %}bg-emerald-50 text-emerald-800 border border-emerald-200{% else %}bg-stone-100 text-stone-600 border border-stone-200{% endif %}">
+        {{ guards_on_duty|length }} Active
+      </span>
     </div>
-    <div class="mt-2 divide-y divide-stone-100">
-      {% for t in currently_out %}
-      <div class="py-2.5 text-[13px]">
-        <div class="font-semibold">{{ t.borrower.full_name }}</div>
-        <div class="text-stone-500 text-[12px] font-mono">{{ t.key.key_code }} · {{ t.key.room }}</div>
+    <div class="flex-1 overflow-y-auto divide-y divide-stone-100 max-h-56">
+      {% for g in guards_on_duty %}
+      <div class="py-2.5 flex items-center justify-between text-[13px]">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></div>
+          <div class="min-w-0">
+            <div class="font-semibold truncate">{{ g.guard.get_full_name|default:g.guard.username }}</div>
+            <div class="text-[12px] text-stone-500 truncate">{{ g.post }} · since {{ g.shift_start|date:"g:i A" }}</div>
+          </div>
+        </div>
+        <div class="text-[11px] text-stone-500 text-right shrink-0 ml-2">
+          {{ g.shift_start|timesince }}
+        </div>
       </div>
       {% empty %}
-      <p class="text-[13px] text-stone-500 py-4">No keys out right now.</p>
+      <div class="py-8 text-center text-stone-500 text-[13px]">
+        <i data-lucide="shield-alert" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-stone-400"></i>
+        <p class="font-medium">No guards on duty</p>
+        <p class="text-[12px] text-stone-500 mt-0.5">Shifts start when guards log in.</p>
+      </div>
       {% endfor %}
+    </div>
+    <div class="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between text-[12px]">
+      <a href="{% url 'transactions:shift_history' %}" class="text-stone-600 hover:text-stone-900 font-medium inline-flex items-center gap-1">
+        View Shift Log <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+      </a>
     </div>
   </div>
 </div>
 
-<!-- recent transactions -->
-<div class="mt-3 bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-  <div class="flex items-center justify-between mb-2">
-    <h2 class="font-bold text-[14px]">Recent Transactions</h2>
-    <a href="{% url 'transactions:history' %}" class="text-[12px] font-medium inline-flex items-center gap-1 hover:underline">View all<span class="sr-only"> transactions</span> <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i></a>
+<!-- Row 3: Today's Schedule Overview + Recent Audit Activity -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+  <!-- Today's Schedule Overview -->
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="font-bold text-[14px]">Today's Schedule Overview</h2>
+        <p class="text-[12px] text-stone-500 mt-0.5">{{ today_name }}, {{ today_date|date:"F j, Y" }}</p>
+      </div>
+      <a href="{% url 'scheduling:schedule_list' %}" class="text-[12px] font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1">
+        View timetable <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+      </a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-[13px]">
+        <caption class="sr-only">Today's scheduled classes and room reservations</caption>
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+            <th scope="col" class="pb-2 pr-3 font-medium">Time</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">Room</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">Subject / Title</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">Instructor</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {% for block in today_schedule %}
+          <tr>
+            <td class="py-2.5 pr-3 font-mono text-[12px] text-stone-700 whitespace-nowrap">{{ block.start_time|time:"H:i" }}–{{ block.end_time|time:"H:i" }}</td>
+            <td class="py-2.5 pr-3 font-semibold text-stone-800 whitespace-nowrap">{{ block.room }}</td>
+            <td class="py-2.5 pr-3 text-stone-800">
+              {% if block.subject %}<span class="font-medium text-stone-600">{{ block.subject.code }}</span> · {% endif %}{{ block.title }}
+            </td>
+            <td class="py-2.5 pr-3 text-stone-600 text-[12px] whitespace-nowrap">{{ block.instructor.full_name|default:"TBD" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="py-8 text-center text-stone-500 text-[13px]">
+              <i data-lucide="calendar-check" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-stone-400"></i>
+              <p class="font-medium">No scheduled blocks today</p>
+              <p class="text-[12px] text-stone-500 mt-0.5">All rooms are open for ad-hoc requests.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-  <div class="overflow-x-auto">
-  <table class="min-w-full text-[13px]">
-    <caption class="sr-only">Recent transactions</caption>
-    <thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
-      <th scope="col" class="py-2 pr-4 font-medium">Transaction</th><th scope="col" class="py-2 pr-4 font-medium">Borrower</th>
-      <th scope="col" class="py-2 pr-4 font-medium">Key</th><th scope="col" class="py-2 pr-4 font-medium">Checkout</th><th scope="col" class="py-2 pr-4 font-medium">Status</th>
-    </tr></thead>
-    <tbody class="divide-y divide-stone-100">
-    {% for t in recent %}
-    <tr>
-      <td class="py-2.5 pr-4 font-mono text-[12px]">{{ t.transaction_no }}</td>
-      <td class="py-2.5 pr-4">{{ t.borrower.full_name }}</td>
-      <td class="py-2.5 pr-4 font-mono">{{ t.key.key_code }}</td>
-      <td class="py-2.5 pr-4 text-stone-500">{{ t.borrowed_at|date:"M j, Y, g:i A" }}</td>
-      <td class="py-2.5 pr-4">{% include "partials/status_pill.html" with status=t.status %}</td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="5" class="py-6 text-center text-stone-500">No transactions yet. Use Key Transactions to release a key.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+
+  <!-- Recent Audit Activity -->
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="font-bold text-[14px]">Recent Audit Activity</h2>
+        <p class="text-[12px] text-stone-500 mt-0.5">System operations and access logs</p>
+      </div>
+      <span class="text-[12px] text-stone-500">Live feed</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-[13px]">
+        <caption class="sr-only">Recent audit events</caption>
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+            <th scope="col" class="pb-2 pr-3 font-medium">Action</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">User</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">Event / Target</th>
+            <th scope="col" class="pb-2 pr-3 font-medium">Time</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {% for log in recent_audit %}
+          <tr>
+            <td class="py-2.5 pr-3 whitespace-nowrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold
+                {% if log.action == 'BORROW' or log.action == 'CREATE' %}bg-blue-50 text-blue-800 border border-blue-200
+                {% elif log.action == 'RETURN' or log.action == 'APPROVE' %}bg-green-50 text-green-800 border border-green-200
+                {% elif log.action == 'DELETE' or log.action == 'REJECT' %}bg-red-50 text-red-800 border border-red-200
+                {% elif log.action == 'OVERRIDE' %}bg-amber-50 text-amber-800 border border-amber-200
+                {% else %}bg-stone-100 text-stone-700 border border-stone-200{% endif %}">
+                {{ log.action }}
+              </span>
+            </td>
+            <td class="py-2.5 pr-3 text-stone-800 font-medium whitespace-nowrap">
+              {{ log.user.get_full_name|default:log.user.username|default:"System" }}
+            </td>
+            <td class="py-2.5 pr-3 text-stone-600 text-[12px] truncate max-w-xs" title="{{ log.description|default:log.object_repr }}">
+              {{ log.description|default:log.object_repr|default:"—" }}
+            </td>
+            <td class="py-2.5 pr-3 text-stone-500 text-[12px] whitespace-nowrap">
+              {{ log.created_at|date:"g:i A" }}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="py-8 text-center text-stone-500 text-[13px]">
+              <i data-lucide="clipboard-list" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-stone-400"></i>
+              <p class="font-medium">No recent audit activity</p>
+              <p class="text-[12px] text-stone-500 mt-0.5">Administrative changes will be recorded here.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
+
+<!-- Row 4: Overdue Keys Table -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <h2 class="font-bold text-[14px]">Overdue Keys</h2>
+        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full {% if overdue_keys %}bg-red-50 text-red-800 border border-red-200{% else %}bg-stone-100 text-stone-600 border border-stone-200{% endif %}">
+          {{ overdue_keys|length }} Overdue
+        </span>
+      </div>
+      <p class="text-[12px] text-stone-500 mt-0.5">Keys not returned past their expected checkout deadline</p>
+    </div>
+    <a href="{% url 'transactions:history' %}?status=OVERDUE" class="text-[12px] font-medium text-stone-600 hover:text-stone-900 inline-flex items-center gap-1">
+      Transaction history <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+    </a>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Overdue key transactions</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+          <th scope="col" class="pb-2 pr-3 font-medium">Transaction</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Key Code</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Room</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Borrower</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Borrowed At</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Expected Return</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Released By</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for t in overdue_keys %}
+        <tr class="bg-red-50/30">
+          <td class="py-2.5 pr-3 font-mono text-[12px] text-stone-700 whitespace-nowrap">{{ t.transaction_no }}</td>
+          <td class="py-2.5 pr-3 font-mono font-semibold text-red-800 whitespace-nowrap">{{ t.key.key_code }}</td>
+          <td class="py-2.5 pr-3 text-stone-800 whitespace-nowrap">{{ t.key.room }}</td>
+          <td class="py-2.5 pr-3">
+            <div class="font-medium text-stone-800">{{ t.borrower.full_name }}</div>
+            <div class="text-[11px] text-stone-500 font-mono">{{ t.borrower.id_number }} · {{ t.borrower.department.code|default:t.borrower.get_borrower_type_display }}</div>
+          </td>
+          <td class="py-2.5 pr-3 text-stone-500 text-[12px] whitespace-nowrap">{{ t.borrowed_at|date:"M j, g:i A" }}</td>
+          <td class="py-2.5 pr-3 text-red-700 font-medium text-[12px] whitespace-nowrap">
+            {% if t.expected_return_at %}
+              {{ t.expected_return_at|date:"M j, g:i A" }}
+            {% else %}
+              Overdue
+            {% endif %}
+          </td>
+          <td class="py-2.5 pr-3 text-stone-600 text-[12px] whitespace-nowrap">{{ t.released_by.get_full_name|default:t.released_by.username }}</td>
+          <td class="py-2.5 pr-3 whitespace-nowrap">
+            {% include "partials/status_pill.html" with status=t.status %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="py-8 text-center text-stone-500 text-[13px]">
+            <i data-lucide="check-circle" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-emerald-600"></i>
+            <p class="font-medium text-stone-700">No overdue keys</p>
+            <p class="text-[12px] text-stone-500 mt-0.5">All active checkouts are within their expected return window.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Row 5: Recent Transactions Table -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+  <div class="flex items-center justify-between mb-2">
+    <div>
+      <h2 class="font-bold text-[14px]">Recent Transactions</h2>
+      <p class="text-[12px] text-stone-500 mt-0.5">Latest key checkout and return records</p>
+    </div>
+    <a href="{% url 'transactions:history' %}" class="text-[12px] font-medium inline-flex items-center gap-1 hover:underline text-stone-600 hover:text-stone-900">
+      View all<span class="sr-only"> transactions</span> <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+    </a>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Recent transactions</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+          <th scope="col" class="py-2 pr-4 font-medium">Transaction</th>
+          <th scope="col" class="py-2 pr-4 font-medium">Borrower</th>
+          <th scope="col" class="py-2 pr-4 font-medium">Key</th>
+          <th scope="col" class="py-2 pr-4 font-medium">Checkout</th>
+          <th scope="col" class="py-2 pr-4 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for t in recent %}
+        <tr>
+          <td class="py-2.5 pr-4 font-mono text-[12px] text-stone-700">{{ t.transaction_no }}</td>
+          <td class="py-2.5 pr-4 font-medium text-stone-800">{{ t.borrower.full_name }}</td>
+          <td class="py-2.5 pr-4 font-mono font-medium">{{ t.key.key_code }}</td>
+          <td class="py-2.5 pr-4 text-stone-500">{{ t.borrowed_at|date:"M j, Y, g:i A" }}</td>
+          <td class="py-2.5 pr-4">{% include "partials/status_pill.html" with status=t.status %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="py-6 text-center text-stone-500">No transactions recorded yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<!-- ========================================== -->
+<!-- GUARD DASHBOARD                            -->
+<!-- ========================================== -->
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Guard Dashboard</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Shift operations, key releases, and active checkout monitor.</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'transactions:shift_history' %}" class="bg-white border border-stone-200 rounded-lg px-3 py-2 text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5 text-stone-700">
+      <i data-lucide="shield-check" aria-hidden="true" class="w-4 h-4"></i> My Shifts
+    </a>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white rounded-lg px-3.5 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="arrow-left-right" aria-hidden="true" class="w-4 h-4"></i> Open POS
+    </a>
+  </div>
+</div>
+
+<!-- Big Hero Action Banner through to POS -->
+<div class="bg-[#0F2E1F] rounded-xl text-white p-5 mb-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-[#1E6B4A]/30">
+  <div class="max-w-xl">
+    <div class="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/10 px-2.5 py-1 rounded-full text-emerald-200 mb-2 border border-white/10">
+      <i data-lucide="key-round" aria-hidden="true" class="w-3.5 h-3.5"></i> University Key Operations
+    </div>
+    <h2 class="text-[18px] font-extrabold tracking-tight">Key Transactions (POS)</h2>
+    <p class="text-[13px] text-white/80 mt-1">Issue keys to verified students and faculty, inspect borrowing records, or process returns.</p>
+  </div>
+  <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#FAF7F0] hover:bg-white text-[#0F2E1F] px-5 py-3 rounded-xl font-bold text-[14px] inline-flex items-center gap-2 shadow transition shrink-0">
+    <i data-lucide="arrow-left-right" aria-hidden="true" class="w-5 h-5 text-[#1E6B4A]"></i> Go to Key Transactions
+  </a>
+</div>
+
+<!-- Guard Stat Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+  <!-- My Shift Status Card -->
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-start justify-between">
+      <div class="text-[13px] text-stone-500">My Shift Status</div>
+      <div aria-hidden="true" class="w-8 h-8 rounded-lg flex items-center justify-center {% if shift %}bg-emerald-50 text-emerald-700{% else %}bg-stone-100 text-stone-500{% endif %}">
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+      </div>
+    </div>
+    {% if shift %}
+      <div class="text-[20px] font-extrabold text-emerald-800 mt-1 flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span> On Duty
+      </div>
+      <div class="text-[12px] text-stone-500 mt-1">
+        <span class="font-medium text-stone-700">{{ shift.post }}</span> · <span class="font-mono text-stone-800">{{ shift_elapsed }}</span> elapsed
+      </div>
+    {% else %}
+      <div class="text-[20px] font-extrabold text-stone-600 mt-1">Off Duty</div>
+      <div class="text-[12px] text-stone-500 mt-1">Log out and in to start shift</div>
+    {% endif %}
+  </div>
+
+  <!-- Keys Released This Shift -->
+  {% include "partials/stat_card.html" with label="Released This Shift" value=my_released_count sub="Keys issued on your shift" icon="key-round" icon_bg="bg-blue-50" %}
+
+  <!-- Currently Out (Campus-wide) -->
+  {% include "partials/stat_card.html" with label="Currently Out (Campus)" value=currently_out_count sub="Active keys with borrowers" icon="arrow-left-right" icon_bg="bg-amber-50" %}
+
+  <!-- Overdue Keys -->
+  {% include "partials/stat_card.html" with label="Overdue Keys" value=overdue_count sub="Exceeded expected return time" icon="clock" icon_bg="bg-red-50" %}
+</div>
+
+<!-- Keys Released This Shift Table -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <h2 class="font-bold text-[14px]">Keys Released This Shift</h2>
+        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+          {{ my_released_count }} Issued
+        </span>
+      </div>
+      <p class="text-[12px] text-stone-500 mt-0.5">Transactions processed by you during this active shift</p>
+    </div>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="text-[12px] font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1">
+      + Release another key <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+    </a>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Keys released by you during current shift</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+          <th scope="col" class="pb-2 pr-3 font-medium">Transaction</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Key Code</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Room</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Borrower</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Released At</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Status</th>
+          <th scope="col" class="pb-2 pr-3 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for t in my_released_txns %}
+        <tr>
+          <td class="py-2.5 pr-3 font-mono text-[12px] text-stone-700 whitespace-nowrap">{{ t.transaction_no }}</td>
+          <td class="py-2.5 pr-3 font-mono font-semibold text-stone-800 whitespace-nowrap">{{ t.key.key_code }}</td>
+          <td class="py-2.5 pr-3 text-stone-800 whitespace-nowrap">{{ t.key.room }}</td>
+          <td class="py-2.5 pr-3 whitespace-nowrap">
+            <div class="font-medium text-stone-800">{{ t.borrower.full_name }}</div>
+            <div class="text-[11px] text-stone-500 font-mono">{{ t.borrower.id_number }}</div>
+          </td>
+          <td class="py-2.5 pr-3 text-stone-500 text-[12px] whitespace-nowrap">{{ t.borrowed_at|date:"g:i A" }}</td>
+          <td class="py-2.5 pr-3 whitespace-nowrap">
+            {% include "partials/status_pill.html" with status=t.status %}
+          </td>
+          <td class="py-2.5 pr-3 text-right whitespace-nowrap">
+            {% if t.status == 'ACTIVE' or t.status == 'OVERDUE' %}
+            <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-stone-100 hover:bg-stone-200 text-stone-800 px-2.5 py-1 rounded text-[12px] font-medium inline-flex items-center gap-1">
+              Return in POS
+            </a>
+            {% else %}
+            <span class="text-stone-400 text-[12px]">Closed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="py-8 text-center text-stone-500 text-[13px]">
+            <i data-lucide="key-round" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-stone-400"></i>
+            <p class="font-medium">No keys released this shift</p>
+            <p class="text-[12px] text-stone-500 mt-0.5">Use Key Transactions to release a key to an authorized borrower.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Currently Out (All Guards) Table -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <h2 class="font-bold text-[14px]">Currently Out (All Campus Keys)</h2>
+        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+          {{ currently_out_count }} Out
+        </span>
+      </div>
+      <p class="text-[12px] text-stone-500 mt-0.5">All keys currently in possession of borrowers campus-wide</p>
+    </div>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="text-[12px] font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1">
+      View all in POS <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5"></i>
+    </a>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">All currently borrowed keys</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+          <th scope="col" class="pb-2 pr-3 font-medium">Key Code</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Room</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Borrower</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Released By</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Borrowed At</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Expected Return</th>
+          <th scope="col" class="pb-2 pr-3 font-medium">Status</th>
+          <th scope="col" class="pb-2 pr-3 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for t in currently_out %}
+        <tr {% if t.status == 'OVERDUE' %}class="bg-red-50/30"{% endif %}>
+          <td class="py-2.5 pr-3 font-mono font-semibold {% if t.status == 'OVERDUE' %}text-red-700{% else %}text-stone-800{% endif %} whitespace-nowrap">
+            {{ t.key.key_code }}
+          </td>
+          <td class="py-2.5 pr-3 text-stone-800 whitespace-nowrap">{{ t.key.room }}</td>
+          <td class="py-2.5 pr-3 whitespace-nowrap">
+            <div class="font-medium text-stone-800">{{ t.borrower.full_name }}</div>
+            <div class="text-[11px] text-stone-500 font-mono">{{ t.borrower.id_number }} · {{ t.borrower.department.code|default:t.borrower.get_borrower_type_display }}</div>
+          </td>
+          <td class="py-2.5 pr-3 text-stone-600 text-[12px] whitespace-nowrap">
+            {{ t.released_by.get_full_name|default:t.released_by.username }}
+          </td>
+          <td class="py-2.5 pr-3 text-stone-500 text-[12px] whitespace-nowrap">
+            {{ t.borrowed_at|date:"M j, g:i A" }}
+          </td>
+          <td class="py-2.5 pr-3 text-[12px] whitespace-nowrap {% if t.status == 'OVERDUE' %}text-red-700 font-semibold{% else %}text-stone-600{% endif %}">
+            {{ t.expected_return_at|date:"g:i A"|default:"End of shift" }}
+          </td>
+          <td class="py-2.5 pr-3 whitespace-nowrap">
+            {% include "partials/status_pill.html" with status=t.status %}
+          </td>
+          <td class="py-2.5 pr-3 text-right whitespace-nowrap">
+            <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-stone-100 hover:bg-stone-200 text-stone-800 px-2.5 py-1 rounded text-[12px] font-medium inline-flex items-center gap-1">
+              Process in POS
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="py-8 text-center text-stone-500 text-[13px]">
+            <i data-lucide="check-circle" aria-hidden="true" class="w-6 h-6 mx-auto mb-1 text-emerald-600"></i>
+            <p class="font-medium">No keys currently out</p>
+            <p class="text-[12px] text-stone-500 mt-0.5">All campus keys are safely stored in their cabinets.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
