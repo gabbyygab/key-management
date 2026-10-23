@@ -147,6 +147,53 @@
     });
   }
 
+  /* ---- responsive transaction panes ------------------------------- */
+
+  function bindPosTabs() {
+    var tabs = Array.prototype.slice.call(
+      root.querySelectorAll("[data-pos-tab]")
+    );
+    if (!tabs.length) return;
+
+    var initial = root.dataset.selectedBorrower === "1" ? "release" : "borrowers";
+
+    function activate(name, focusTab) {
+      tabs.forEach(function (tab) {
+        var selected = tab.getAttribute("data-pos-tab") === name;
+        tab.setAttribute("aria-selected", selected ? "true" : "false");
+        tab.tabIndex = selected ? 0 : -1;
+        if (focusTab && selected) tab.focus();
+      });
+
+      root.querySelectorAll("[data-pos-panel]").forEach(function (panel) {
+        panel.classList.toggle(
+          "hidden",
+          panel.getAttribute("data-pos-panel") !== name
+        );
+      });
+    }
+
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener("click", function () {
+        activate(tab.getAttribute("data-pos-tab"), false);
+      });
+      tab.addEventListener("keydown", function (event) {
+        var nextIndex = index;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = tabs.length - 1;
+        else return;
+
+        event.preventDefault();
+        var next = tabs[nextIndex];
+        activate(next.getAttribute("data-pos-tab"), true);
+      });
+    });
+
+    activate(initial, false);
+  }
+
   /* ---- seams for the F3.2 / F3.4 live-search rewrite ---------------- */
 
   /* Debounced borrower search. onResults receives the parsed JSON body.
@@ -219,5 +266,6 @@
     applyShiftBlock();
     guardDoubleSubmit();
     bindShortcuts();
+    if (root) bindPosTabs();
   });
 })();

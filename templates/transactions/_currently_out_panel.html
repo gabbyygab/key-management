@@ -4,7 +4,7 @@ GET /api/transactions/active/ (static/js/currently_out.js); the no-script
 block below keeps the old full-page POST return working without JS.
 {% endcomment %}
 <section id="currently-out"
-         class="bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col min-h-0"
+         class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm"
          data-active-url="{% url 'transactions_api:active' %}"
          data-return-url="{% url 'transactions_api:return' 0 %}"
          data-refresh-ms="30000">
@@ -57,7 +57,7 @@ block below keeps the old full-page POST return working without JS.
     </div>
   </div>
 
-  <div data-out-list class="p-3 space-y-2 overflow-y-auto flex-1 min-h-0 max-h-[36rem]"
+  <div data-out-list class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
        aria-live="polite" aria-busy="true">
     {# loading skeleton; replaced on first fetch #}
     {% for _ in "123" %}
@@ -69,7 +69,7 @@ block below keeps the old full-page POST return working without JS.
   </div>
 
   <noscript>
-    <div class="p-3 space-y-2 overflow-y-auto max-h-[36rem] border-t border-stone-100">
+    <div class="max-h-full space-y-2 overflow-y-auto border-t border-stone-100 p-3">
       <p class="text-[12px] text-stone-500">
         JavaScript is off — live timers and the return modal are unavailable.
         Returns below are recorded as condition OK.
@@ -93,5 +93,3 @@ block below keeps the old full-page POST return working without JS.
     </div>
   </noscript>
 </section>
-
-{% include "transactions/_return_modal.html" %}
