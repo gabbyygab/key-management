@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block title %}Pending Approvals — KEYTRACK{% endblock %}
+{% block crumb %}Pending Approvals{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <div class="flex items-center gap-2.5">
+      <h1 class="text-[22px] font-extrabold tracking-tight">Pending Approvals</h1>
+      {% if pending_users %}
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+        {{ pending_users|length }} Pending
+      </span>
+      {% endif %}
+    </div>
+    <p class="text-[13px] text-stone-500 mt-0.5">Review and approve new user account registrations before they can access the system.</p>
+  </div>
+</div>
+
+<!-- Filters & Search -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-3 mb-4">
+  <form method="get" class="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center" role="search" aria-label="Filter pending users">
+    <div class="flex-1 flex items-center bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+      <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+      <input type="text" name="q" value="{{ q }}" placeholder="Search name, username, email, ID..." autocomplete="off"
+             class="flex-1 bg-transparent outline-none py-2 text-[13px] text-stone-800 placeholder-stone-400 min-w-0">
+    </div>
+
+    <div class="flex gap-2 items-center flex-wrap">
+      <select name="role" aria-label="Filter by requested role"
+              class="rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-2 text-[13px] text-stone-700 focus:border-[#1E6B4A] focus:outline-none">
+        <option value="">All Requested Roles</option>
+        {% for r_val, r_label in roles %}
+        <option value="{{ r_val }}" {% if role_filter == r_val %}selected{% endif %}>{{ r_label }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="department" aria-label="Filter by department"
+              class="rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-2 text-[13px] text-stone-700 focus:border-[#1E6B4A] focus:outline-none">
+        <option value="">All Departments</option>
+        {% for dept in departments %}
+        <option value="{{ dept.id }}" {% if dept_filter == dept.id|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+        {% endfor %}
+      </select>
+
+      <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors">
+        Filter
+      </button>
+
+      {% if q or role_filter or dept_filter %}
+      <a href="{% url 'accounts:pending_user_list' %}" class="px-3 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-medium text-stone-600 hover:bg-stone-50">
+        Reset
+      </a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+{% if pending_users %}
+<!-- Desktop table view -->
+<div class="hidden md:block bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Pending user registrations</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 bg-stone-50/75 border-b border-stone-200">
+          <th scope="col" class="p-3.5 font-semibold">User</th>
+          <th scope="col" class="p-3.5 font-semibold">Requested Role</th>
+          <th scope="col" class="p-3.5 font-semibold">Department</th>
+          <th scope="col" class="p-3.5 font-semibold">Contact Info</th>
+          <th scope="col" class="p-3.5 font-semibold">Registered</th>
+          <th scope="col" class="p-3.5 text-right font-semibold"><span class="sr-only">Actions</span>Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for u in pending_users %}
+        <tr class="hover:bg-stone-50/60 transition-colors">
+          <td class="p-3.5">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                {{ u.username|slice:":2"|upper }}
+              </div>
+              <div class="min-w-0">
+                <div class="font-semibold text-stone-900">{{ u.full_name }}</div>
+                <div class="text-[12px] text-stone-500 font-mono">@{{ u.username }} {% if u.employee_id %}· ID: {{ u.employee_id }}{% endif %}</div>
+              </div>
+            </div>
+          </td>
+          <td class="p-3.5 whitespace-nowrap">
+            {% if u.role == "ADMIN" %}
+              <span class="inline-flex items-center gap-1 bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <i data-lucide="shield" class="w-3 h-3"></i> {{ u.get_role_display }}
+              </span>
+            {% elif u.role == "FACILITIES" %}
+              <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <i data-lucide="wrench" class="w-3 h-3"></i> {{ u.get_role_display }}
+              </span>
+            {% elif u.role == "CUSTODIAN" %}
+              <span class="inline-flex items-center gap-1 bg-cyan-50 text-cyan-800 border border-cyan-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <i data-lucide="key" class="w-3 h-3"></i> {{ u.get_role_display }}
+              </span>
+            {% elif u.role == "GUARD" %}
+              <span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <i data-lucide="shield-check" class="w-3 h-3"></i> {{ u.get_role_display }}
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1 bg-stone-100 text-stone-800 border border-stone-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                <i data-lucide="user" class="w-3 h-3"></i> {{ u.get_role_display }}
+              </span>
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-stone-700">
+            {% if u.department %}
+              <div class="font-medium">{{ u.department.name }}</div>
+              <div class="text-[11px] text-stone-400 font-mono">{{ u.department.code }}</div>
+            {% else %}
+              <span class="text-stone-400">—</span>
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-[12px]">
+            <div class="text-stone-800">{{ u.email }}</div>
+            {% if u.contact_number %}
+            <div class="text-stone-500">{{ u.contact_number }}</div>
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-stone-500 whitespace-nowrap text-[12px]">
+            <div>{{ u.date_joined|date:"M j, Y" }}</div>
+            <div class="text-[11px] text-stone-400">{{ u.date_joined|date:"g:i A" }}</div>
+          </td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="flex items-center justify-end gap-2">
+              <button type="button"
+                      data-modal-open="approve-modal"
+                      data-action="approve-user"
+                      data-user-id="{{ u.pk }}"
+                      data-user-name="{{ u.full_name }}"
+                      data-user-username="{{ u.username }}"
+                      data-user-role="{{ u.get_role_display }}"
+                      data-url="{% url 'accounts:user_approve' u.pk %}"
+                      class="px-3 py-1.5 rounded-lg bg-[#1E6B4A] hover:bg-[#143d28] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                Approve
+              </button>
+              <button type="button"
+                      data-modal-open="reject-modal"
+                      data-action="reject-user"
+                      data-user-id="{{ u.pk }}"
+                      data-user-name="{{ u.full_name }}"
+                      data-user-username="{{ u.username }}"
+                      data-user-role="{{ u.get_role_display }}"
+                      data-url="{% url 'accounts:user_reject' u.pk %}"
+                      class="px-3 py-1.5 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-700 text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                Reject
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Mobile card list view -->
+<div class="md:hidden space-y-3">
+  {% for u in pending_users %}
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 space-y-3">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold shrink-0">
+          {{ u.username|slice:":2"|upper }}
+        </div>
+        <div>
+          <div class="font-bold text-[14px] text-stone-900">{{ u.full_name }}</div>
+          <div class="text-[12px] text-stone-500 font-mono">@{{ u.username }}</div>
+        </div>
+      </div>
+      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-stone-100 text-stone-800 border border-stone-200">
+        {{ u.get_role_display }}
+      </span>
+    </div>
+
+    <div class="text-[12px] text-stone-600 space-y-1 bg-[#FAF7F0] rounded-lg p-2.5 border border-stone-100">
+      <div class="flex justify-between">
+        <span class="text-stone-400">Department:</span>
+        <span class="font-medium text-stone-800">{{ u.department.name|default:"—" }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-stone-400">Email:</span>
+        <span class="text-stone-800">{{ u.email }}</span>
+      </div>
+      {% if u.employee_id %}
+      <div class="flex justify-between">
+        <span class="text-stone-400">Employee ID:</span>
+        <span class="font-mono text-stone-800">{{ u.employee_id }}</span>
+      </div>
+      {% endif %}
+      <div class="flex justify-between">
+        <span class="text-stone-400">Registered:</span>
+        <span class="text-stone-800">{{ u.date_joined|date:"M j, Y, g:i A" }}</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 pt-1">
+      <button type="button"
+              data-modal-open="approve-modal"
+              data-action="approve-user"
+              data-user-id="{{ u.pk }}"
+              data-user-name="{{ u.full_name }}"
+              data-user-username="{{ u.username }}"
+              data-user-role="{{ u.get_role_display }}"
+              data-url="{% url 'accounts:user_approve' u.pk %}"
+              class="flex-1 justify-center py-2 rounded-lg bg-[#1E6B4A] hover:bg-[#143d28] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors">
+        <i data-lucide="check" class="w-4 h-4"></i>
+        Approve
+      </button>
+      <button type="button"
+              data-modal-open="reject-modal"
+              data-action="reject-user"
+              data-user-id="{{ u.pk }}"
+              data-user-name="{{ u.full_name }}"
+              data-user-username="{{ u.username }}"
+              data-user-role="{{ u.get_role_display }}"
+              data-url="{% url 'accounts:user_reject' u.pk %}"
+              class="flex-1 justify-center py-2 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-red-700 text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors">
+        <i data-lucide="x" class="w-4 h-4"></i>
+        Reject
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<!-- Empty state -->
+<div class="bg-white rounded-2xl border border-stone-200 shadow-sm p-12 text-center my-6">
+  <div class="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-[#1E6B4A] flex items-center justify-center mx-auto mb-4 shadow-sm">
+    <i data-lucide="user-check" class="w-7 h-7"></i>
+  </div>
+  <h2 class="text-[17px] font-bold text-stone-900">No pending approvals</h2>
+  <p class="text-[13px] text-stone-500 max-w-md mx-auto mt-1.5">
+    {% if q or role_filter or dept_filter %}
+      No pending user registrations match your search or filter settings.
+    {% else %}
+      All user registrations have been reviewed. When new users register, their accounts will appear here for administrator verification.
+    {% endif %}
+  </p>
+  {% if q or role_filter or dept_filter %}
+  <div class="mt-4">
+    <a href="{% url 'accounts:pending_user_list' %}" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[13px] font-semibold transition-colors">
+      <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Clear filters
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Approve Confirmation Modal -->
+<div id="approve-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="approve-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-md p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-green-50 border border-green-200 flex items-center justify-center shrink-0">
+        <i data-lucide="check-circle-2" class="w-5 h-5 text-green-700"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="approve-modal-title" class="text-[15px] font-bold text-stone-900">Approve User Registration?</h2>
+        <p class="text-[13px] text-stone-500 mt-1">This will activate the user account and grant immediate login access to KEYTRACK.</p>
+      </div>
+    </div>
+
+    <!-- User detail chip -->
+    <div class="mt-4 p-3 bg-[#FAF7F0] border border-stone-200 rounded-xl">
+      <div class="text-[13px] font-bold text-stone-900" id="approve-user-name">—</div>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="text-[12px] font-mono text-stone-500" id="approve-user-username">—</span>
+        <span class="text-stone-300">·</span>
+        <span class="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" id="approve-user-role">—</span>
+      </div>
+    </div>
+
+    <form id="approve-user-form" method="post" action="">
+      {% csrf_token %}
+      <div class="flex items-center justify-end gap-2 mt-5">
+        <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-[#1E6B4A] hover:bg-[#143d28] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          Approve User
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reject Modal (Requires Typed Reason) -->
+<div id="reject-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="reject-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-md p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+        <i data-lucide="user-x" class="w-5 h-5 text-red-600"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="reject-modal-title" class="text-[15px] font-bold text-stone-900">Reject User Registration</h2>
+        <p class="text-[13px] text-stone-500 mt-1">Please provide a reason for rejecting this registration request.</p>
+      </div>
+    </div>
+
+    <!-- User detail chip -->
+    <div class="mt-4 p-3 bg-[#FAF7F0] border border-stone-200 rounded-xl">
+      <div class="text-[13px] font-bold text-stone-900" id="reject-user-name">—</div>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="text-[12px] font-mono text-stone-500" id="reject-user-username">—</span>
+        <span class="text-stone-300">·</span>
+        <span class="text-[12px] text-stone-600" id="reject-user-role">—</span>
+      </div>
+    </div>
+
+    <form id="reject-user-form" method="post" action="" class="mt-4">
+      {% csrf_token %}
+      <div>
+        <label for="reject-reason-input" class="block text-[13px] font-semibold text-stone-700 mb-1">
+          Rejection Reason <span class="text-red-600">*</span>
+        </label>
+        <textarea id="reject-reason-input"
+                  name="reason"
+                  rows="3"
+                  required
+                  minlength="3"
+                  data-modal-autofocus
+                  placeholder="Enter the specific reason for rejecting this registration (e.g. Unverified employee ID, duplicate account, incorrect role)..."
+                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] placeholder-stone-400 focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-colors"></textarea>
+        <p id="reject-reason-error" class="hidden text-[12px] text-red-600 mt-1">Please provide a valid reason for rejection.</p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 mt-5">
+        <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit" id="reject-submit-btn" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm">
+          <i data-lucide="user-x" class="w-4 h-4"></i>
+          Reject Registration
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  "use strict";
+
+  document.addEventListener("click", function(e) {
+    // Approve user action
+    var approveTrigger = e.target.closest("[data-action='approve-user']");
+    if (approveTrigger) {
+      var url = approveTrigger.getAttribute("data-url");
+      var name = approveTrigger.getAttribute("data-user-name") || "—";
+      var username = approveTrigger.getAttribute("data-user-username") || "";
+      var role = approveTrigger.getAttribute("data-user-role") || "—";
+
+      var form = document.getElementById("approve-user-form");
+      if (form && url) form.action = url;
+
+      var nameEl = document.getElementById("approve-user-name");
+      if (nameEl) nameEl.textContent = name;
+
+      var userEl = document.getElementById("approve-user-username");
+      if (userEl) userEl.textContent = username ? "@" + username : "";
+
+      var roleEl = document.getElementById("approve-user-role");
+      if (roleEl) roleEl.textContent = role;
+    }
+
+    // Reject user action
+    var rejectTrigger = e.target.closest("[data-action='reject-user']");
+    if (rejectTrigger) {
+      var url = rejectTrigger.getAttribute("data-url");
+      var name = rejectTrigger.getAttribute("data-user-name") || "—";
+      var username = rejectTrigger.getAttribute("data-user-username") || "";
+      var role = rejectTrigger.getAttribute("data-user-role") || "—";
+
+      var form = document.getElementById("reject-user-form");
+      if (form && url) form.action = url;
+
+      var nameEl = document.getElementById("reject-user-name");
+      if (nameEl) nameEl.textContent = name;
+
+      var userEl = document.getElementById("reject-user-username");
+      if (userEl) userEl.textContent = username ? "@" + username : "";
+
+      var roleEl = document.getElementById("reject-user-role");
+      if (roleEl) roleEl.textContent = role;
+
+      var reasonInput = document.getElementById("reject-reason-input");
+      if (reasonInput) {
+        reasonInput.value = "";
+        reasonInput.classList.remove("border-red-500");
+      }
+
+      var errorEl = document.getElementById("reject-reason-error");
+      if (errorEl) errorEl.classList.add("hidden");
+    }
+  });
+
+  // Client-side guard on empty whitespace reason
+  var rejectForm = document.getElementById("reject-user-form");
+  if (rejectForm) {
+    rejectForm.addEventListener("submit", function(e) {
+      var reasonInput = document.getElementById("reject-reason-input");
+      var errorEl = document.getElementById("reject-reason-error");
+      if (reasonInput && (!reasonInput.value || !reasonInput.value.trim())) {
+        e.preventDefault();
+        reasonInput.classList.add("border-red-500");
+        if (errorEl) errorEl.classList.remove("hidden");
+        reasonInput.focus();
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

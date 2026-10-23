@@ -12,4 +12,8 @@ urlpatterns = [
     path("borrowers/new/", views.borrower_create, name="borrower_create"),
     path("borrowers/<int:pk>/edit/", views.borrower_update, name="borrower_update"),
     path("borrowers/<int:pk>/toggle/", views.borrower_toggle, name="borrower_toggle"),
+    # User Approvals
+    path("users/pending/", views.pending_user_list, name="pending_user_list"),
+    path("users/<int:pk>/approve/", views.user_approve, name="user_approve"),
+    path("users/<int:pk>/reject/", views.user_reject, name="user_reject"),
 ]

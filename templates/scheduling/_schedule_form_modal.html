@@ -1,0 +1,129 @@
+<div id="schedule-form-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+    
+    <!-- Modal Header -->
+    <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 flex items-center justify-center text-[#1E6B4A] shrink-0">
+          <i data-lucide="calendar" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h2 id="schedule-modal-title" class="text-[15px] font-bold text-stone-900">Add Schedule Block</h2>
+          <p id="schedule-modal-desc" class="text-[12px] text-stone-500">Create or update recurring room schedule.</p>
+        </div>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Modal Form Body -->
+    <form id="schedule-block-form" method="post" action="{% url 'scheduling:room_timetable' %}" class="flex-1 overflow-y-auto p-5 space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="block_id" id="modal-block-id" value="">
+      
+      <!-- Room and Term inputs -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label for="modal-room" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Room</label>
+          <select id="modal-room" name="room" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+            {% for r in rooms %}
+            <option value="{{ r.pk }}" {% if selected_room and r.pk == selected_room.pk %}selected{% endif %}>
+              {{ r.building.code }} - {{ r.room_code }} ({{ r.get_room_type_display }})
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="modal-term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Term</label>
+          <select id="modal-term" name="term" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+            {% for t in terms %}
+            <option value="{{ t.pk }}" {% if selected_term and t.pk == selected_term.pk %}selected{% endif %}>
+              {{ t.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Title & Subject -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="sm:col-span-2">
+          <label for="modal-title" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Title / Class Name <span class="text-red-500">*</span></label>
+          <input type="text" id="modal-title" name="title" required placeholder="e.g. IT401 Lecture or CS 101 Lab" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        </div>
+        <div class="sm:col-span-2">
+          <label for="modal-subject" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Subject <span class="normal-case font-normal text-stone-400">(optional)</span></label>
+          <select id="modal-subject" name="subject" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+            <option value="">No subject assigned</option>
+            {% for s in subjects %}
+            <option value="{{ s.pk }}">{{ s.code }} — {{ s.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Instructor -->
+      <div>
+        <label for="modal-instructor" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Instructor / Borrower <span class="normal-case font-normal text-stone-400">(optional)</span></label>
+        <select id="modal-instructor" name="instructor" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+          <option value="">No instructor assigned</option>
+          {% for b in borrowers %}
+          <option value="{{ b.pk }}">{{ b.last_name }}, {{ b.first_name }} ({{ b.id_number }}) - {{ b.get_borrower_type_display }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Timing: Day, Start, End -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label for="modal-day" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Day of Week</label>
+          <select id="modal-day" name="day_of_week" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+            <option value="0">Monday</option>
+            <option value="1">Tuesday</option>
+            <option value="2">Wednesday</option>
+            <option value="3">Thursday</option>
+            <option value="4">Friday</option>
+            <option value="5">Saturday</option>
+          </select>
+        </div>
+        <div>
+          <label for="modal-start-time" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Start Time</label>
+          <input type="time" id="modal-start-time" name="start_time" required step="300" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        </div>
+        <div>
+          <label for="modal-end-time" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">End Time</label>
+          <input type="time" id="modal-end-time" name="end_time" required step="300" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        </div>
+      </div>
+
+      <!-- Active Checkbox -->
+      <div class="flex items-center gap-2 pt-1">
+        <input type="checkbox" id="modal-is-active" name="is_active" checked class="h-4 w-4 rounded accent-[#1E6B4A]">
+        <label for="modal-is-active" class="text-[13px] text-stone-700 font-medium">Active recurring schedule block</label>
+      </div>
+
+      <!-- Live Conflict Detection Status Container -->
+      <div id="schedule-conflict-container" class="hidden"></div>
+      <div id="modal-error-alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800"></div>
+    </form>
+
+    <!-- Modal Footer -->
+    <div class="sticky bottom-0 z-10 border-t border-stone-200 bg-white px-5 py-3 flex items-center justify-between gap-3">
+      <div>
+        <button type="button" id="modal-delete-btn" class="hidden text-red-600 hover:text-red-700 font-semibold text-[13px] hover:underline inline-flex items-center gap-1.5">
+          <i data-lucide="trash-2" class="w-4 h-4"></i> Delete block
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+        <button type="button" id="modal-save-btn" class="px-5 py-2 rounded-lg bg-[#14342A] hover:bg-[#0F2E1F] text-white text-[13px] font-semibold inline-flex items-center gap-2">
+          <span id="modal-save-spinner" class="hidden w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin"></span>
+          <span id="modal-save-label">Save block</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
