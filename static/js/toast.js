@@ -43,12 +43,12 @@
 
   function getContainer() {
     if (container && document.body.contains(container)) return container;
-    container = document.getElementById("toast-container");
+    container = document.getElementById("toast-host");
     if (!container) {
       container = document.createElement("div");
-      container.id = "toast-container";
+      container.id = "toast-host";
       container.className =
-        "fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[min(22rem,calc(100vw-2rem))]";
+        "fixed top-4 right-4 z-[100] w-80 max-w-[calc(100vw-2rem)] space-y-2";
       /* Polite, not assertive: a toast must not interrupt a screen reader
        * mid-sentence. Errors that block the user belong inline, not here. */
       container.setAttribute("aria-live", "polite");
@@ -70,14 +70,17 @@
   /* message is inserted as TEXT, never HTML — 422 bodies echo user input. */
   function toast(message, variant, options) {
     var opts = options || {};
-    var v = VARIANTS[variant] || VARIANTS.info;
+    var variantName = Object.prototype.hasOwnProperty.call(VARIANTS, variant)
+      ? variant
+      : "info";
+    var v = VARIANTS[variantName];
 
     var el = document.createElement("div");
     el.className =
       "flex items-start gap-2.5 rounded-xl border px-4 py-2.5 shadow-sm text-[13px] " +
       "transition duration-200 ease-out " +
       v.cls;
-    el.setAttribute("role", variant === "error" ? "alert" : "status");
+    el.setAttribute("role", variantName === "error" ? "alert" : "status");
 
     var icon = document.createElement("i");
     icon.setAttribute("data-lucide", v.icon);
@@ -109,13 +112,34 @@
 
     var ms = opts.duration === undefined ? AUTO_DISMISS_MS : opts.duration;
     if (ms > 0) {
-      var timer = window.setTimeout(function () {
-        dismiss(el);
-      }, ms);
-      /* Don't yank a message out from under someone reading it. */
-      el.addEventListener("mouseenter", function () {
+      var remaining = ms;
+      var timer = null;
+      var startedAt = 0;
+      function resumeTimer() {
+        if (timer || el.dataset.leaving === "1") return;
+        startedAt = Date.now();
+        timer = window.setTimeout(function () {
+          timer = null;
+          dismiss(el);
+        }, remaining);
+      }
+      function pauseTimer() {
+        if (!timer) return;
         window.clearTimeout(timer);
+        timer = null;
+        remaining = Math.max(0, remaining - (Date.now() - startedAt));
+      }
+
+      /* Pause while hovered or keyboard-focused so the close button remains usable. */
+      el.addEventListener("mouseenter", function () {
+        pauseTimer();
       });
+      el.addEventListener("mouseleave", resumeTimer);
+      el.addEventListener("focusin", pauseTimer);
+      el.addEventListener("focusout", function (event) {
+        if (!el.contains(event.relatedTarget)) resumeTimer();
+      });
+      resumeTimer();
     }
 
     return el;
