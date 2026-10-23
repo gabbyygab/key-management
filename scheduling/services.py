@@ -5,7 +5,8 @@ from django.db.models import Q
 
 from facilities.models import Room
 
-from .models import ScheduleBlock
+from django.utils import timezone
+from .models import ScheduleBlock, ScheduleException, Term
 
 
 class ScheduleConflictError(ValueError):
@@ -270,3 +271,167 @@ def get_room_timetable(room, term):
         "total_blocks": len(processed_blocks),
         "total_hours": round(total_minutes / 60, 1),
     }
+
+
+def _format_block_summary(block, when):
+    """Format a schedule block with timing metrics relative to when."""
+    current_time = when.time()
+    current_minutes = current_time.hour * 60 + current_time.minute
+    start_minutes = block.start_time.hour * 60 + block.start_time.minute
+    end_minutes = block.end_time.hour * 60 + block.end_time.minute
+
+    is_current = (block.start_time <= current_time < block.end_time)
+    is_upcoming = (block.start_time > current_time)
+    is_past = (block.end_time <= current_time)
+
+    time_remaining_min = max(0, end_minutes - current_minutes) if is_current else 0
+    time_until_start_min = max(0, start_minutes - current_minutes) if is_upcoming else 0
+
+    instructor_name = "Unassigned"
+    if block.instructor:
+        instructor_name = block.instructor.full_name or str(block.instructor)
+
+    subject_code = block.subject.code if block.subject else ""
+    subject_title = block.subject.title if block.subject else ""
+
+    display_title = block.title
+    if subject_code and subject_code.lower() not in block.title.lower():
+        display_title = f"{subject_code} · {block.title}"
+
+    return {
+        "id": block.pk,
+        "title": block.title,
+        "subject_code": subject_code,
+        "subject_title": subject_title,
+        "display_title": display_title,
+        "instructor_name": instructor_name,
+        "instructor_id": block.instructor_id,
+        "start_time": block.start_time,
+        "end_time": block.end_time,
+        "start_time_str": block.start_time.strftime("%H:%M"),
+        "end_time_str": block.end_time.strftime("%H:%M"),
+        "time_display": f"{block.start_time.strftime('%H:%M')} – {block.end_time.strftime('%H:%M')}",
+        "is_current": is_current,
+        "is_upcoming": is_upcoming,
+        "is_past": is_past,
+        "time_remaining_min": time_remaining_min,
+        "time_until_start_min": time_until_start_min,
+        "raw_block": block,
+    }
+
+
+def get_room_today_schedule(room, when=None):
+    """
+    Return today's schedule for a room, identifying current and next scheduled blocks.
+
+    Parameters:
+        room: Room instance or room primary key
+        when: datetime object (defaults to timezone.localtime())
+
+    Returns dict with room, dates, current_block, next_block, all_blocks, occupancy flags.
+    """
+    if room is None:
+        return None
+
+    if not isinstance(room, Room):
+        room = Room.objects.select_related("building").filter(pk=room).first()
+        if not room:
+            return None
+
+    if when is None:
+        when = timezone.localtime()
+
+    target_date = when.date()
+    target_weekday = target_date.weekday()
+    current_time = when.time()
+
+    # Active blocks for today's weekday
+    blocks_qs = ScheduleBlock.objects.filter(
+        is_active=True,
+        day_of_week=target_weekday,
+        term__is_active=True,
+    )
+
+    # If term bounds match target_date, prioritize that term
+    term_in_range = blocks_qs.filter(
+        term__start_date__lte=target_date,
+        term__end_date__gte=target_date,
+    )
+    if term_in_range.exists():
+        blocks_qs = term_in_range
+
+    # Exceptions for today
+    cancelled_ids = list(ScheduleException.objects.filter(
+        date=target_date,
+        exception_type=ScheduleException.ExceptionType.CANCELLED,
+    ).values_list("schedule_block_id", flat=True))
+
+    moved_away_ids = list(ScheduleException.objects.filter(
+        date=target_date,
+        exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
+        schedule_block__room=room,
+    ).exclude(replacement_room=room).values_list("schedule_block_id", flat=True))
+
+    exclude_ids = set(cancelled_ids + moved_away_ids)
+
+    direct_blocks = blocks_qs.filter(room=room)
+    if exclude_ids:
+        direct_blocks = direct_blocks.exclude(id__in=exclude_ids)
+
+    # Blocks moved to this room today
+    moved_to_ids = list(ScheduleException.objects.filter(
+        date=target_date,
+        exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
+        replacement_room=room,
+    ).values_list("schedule_block_id", flat=True))
+
+    moved_to_blocks = blocks_qs.filter(id__in=moved_to_ids)
+
+    combined = (direct_blocks | moved_to_blocks).select_related(
+        "subject", "instructor", "term", "room", "room__building"
+    ).order_by("start_time", "end_time").distinct()
+
+    formatted_blocks = []
+    current_block = None
+    next_block = None
+
+    for block in combined:
+        summary = _format_block_summary(block, when)
+        formatted_blocks.append(summary)
+
+        if summary["is_current"] and current_block is None:
+            current_block = summary
+        elif summary["is_upcoming"] and next_block is None:
+            next_block = summary
+
+    has_schedule_today = len(formatted_blocks) > 0
+    is_occupied = current_block is not None
+    done_for_day = has_schedule_today and not is_occupied and not next_block
+
+    return {
+        "room": room,
+        "when": when,
+        "date": target_date,
+        "date_str": target_date.strftime("%b %d, %Y"),
+        "day_name": target_date.strftime("%A"),
+        "current_time": current_time,
+        "current_time_str": current_time.strftime("%H:%M"),
+        "current_block": current_block,
+        "next_block": next_block,
+        "all_blocks": formatted_blocks,
+        "is_occupied": is_occupied,
+        "has_schedule_today": has_schedule_today,
+        "all_day_free": not has_schedule_today,
+        "done_for_day": done_for_day,
+    }
+
+
+def get_current_occupant(room, when=None):
+    """Return the Borrower scheduled to occupy this room right now, or None."""
+    schedule = get_room_today_schedule(room, when=when)
+    if schedule and schedule.get("current_block"):
+        cb = schedule["current_block"]
+        raw = cb.get("raw_block")
+        if raw and raw.instructor:
+            return raw.instructor
+    return None
