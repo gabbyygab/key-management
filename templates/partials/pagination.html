@@ -1,58 +1,62 @@
-{# pagination — Standard accessible pagination controls with 'Showing X-Y of Z'. #}
-{% if page_obj or total_count %}
-<nav aria-label="Pagination" class="flex items-center justify-between flex-wrap gap-3 py-3 px-4 border-t border-stone-200 bg-white rounded-b-xl text-[13px]">
-  <div class="text-stone-500 text-[12px]">
-    {% if page_obj %}
-      {% if page_obj.paginator.count > 0 %}
-        Showing <span class="font-semibold text-stone-700">{{ page_obj.start_index }}</span>–<span class="font-semibold text-stone-700">{{ page_obj.end_index }}</span> of <span class="font-semibold text-stone-700">{{ page_obj.paginator.count }}</span> {{ item_label|default:"results" }}
-      {% else %}
-        Showing <span class="font-semibold text-stone-700">0</span> {{ item_label|default:"results" }}
-      {% endif %}
-    {% elif total_count %}
-      Showing <span class="font-semibold text-stone-700">{% if start_index and end_index %}{{ start_index }}–{{ end_index }} of {% endif %}{{ total_count }}</span> {{ item_label|default:"results" }}
-    {% endif %}
+{% if page_obj and page_obj.paginator.count > 0 %}
+<nav aria-label="Pagination Navigation" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-stone-200 bg-white rounded-b-xl text-[13px]">
+  <div class="text-stone-500">
+    Showing <span class="font-semibold text-stone-800">{{ page_obj.start_index }}</span> to <span class="font-semibold text-stone-800">{{ page_obj.end_index }}</span> of <span class="font-semibold text-stone-800">{{ page_obj.paginator.count }}</span> results
   </div>
 
-  {% if page_obj and page_obj.paginator.num_pages > 1 or num_pages and num_pages > 1 %}
-  <div class="flex items-center gap-1.5">
-    {# Previous page link #}
+  {% if page_obj.has_other_pages %}
+  <div class="flex items-center gap-1">
+    {# Previous page button #}
     {% if page_obj.has_previous %}
-      <a href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[12px] font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
-        <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i> Previous
-      </a>
-    {% elif has_previous %}
-      <a href="?page={{ previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[12px] font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
-        <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i> Previous
+      <a href="?page={{ page_obj.previous_page_number }}{% if querystring %}&amp;{{ querystring }}{% endif %}"
+         class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 font-medium transition-colors"
+         aria-label="Previous page">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        <span>Prev</span>
       </a>
     {% else %}
-      <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-[12px] font-medium text-stone-400 cursor-not-allowed" aria-disabled="true">
-        <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i> Previous
+      <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50 text-stone-300 font-medium cursor-not-allowed"
+            aria-disabled="true">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        <span>Prev</span>
       </span>
     {% endif %}
 
-    {# Page number buttons #}
-    {% if page_obj %}
-      {% for num in page_obj.paginator.page_range %}
-        {% if num == page_obj.number %}
-          <span aria-current="page" class="w-8 h-8 flex items-center justify-center rounded-lg bg-[#14342A] text-white text-[12px] font-semibold">{{ num }}</span>
-        {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
-          <a href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}" class="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 text-[12px] font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">{{ num }}</a>
+    {# Page numbers with elided range #}
+    <div class="hidden md:flex items-center gap-1">
+      {% for num in page_obj.paginator.get_elided_page_range %}
+        {% if num == page_obj.paginator.ELLIPSIS %}
+          <span class="px-2.5 py-1 text-stone-400 font-medium select-none">…</span>
+        {% elif num == page_obj.number %}
+          <span class="px-3 py-1.5 rounded-lg bg-[#14342A] text-white font-semibold shadow-sm"
+                aria-current="page">{{ num }}</span>
+        {% else %}
+          <a href="?page={{ num }}{% if querystring %}&amp;{{ querystring }}{% endif %}"
+             class="px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 font-medium transition-colors">
+            {{ num }}
+          </a>
         {% endif %}
       {% endfor %}
-    {% endif %}
+    </div>
 
-    {# Next page link #}
+    {# Mobile current page indicator #}
+    <span class="md:hidden text-stone-500 px-2 font-medium">
+      Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+
+    {# Next page button #}
     {% if page_obj.has_next %}
-      <a href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[12px] font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
-        Next <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
-      </a>
-    {% elif has_next %}
-      <a href="?page={{ next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[12px] font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
-        Next <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
+      <a href="?page={{ page_obj.next_page_number }}{% if querystring %}&amp;{{ querystring }}{% endif %}"
+         class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 font-medium transition-colors"
+         aria-label="Next page">
+        <span>Next</span>
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
       </a>
     {% else %}
-      <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-[12px] font-medium text-stone-400 cursor-not-allowed" aria-disabled="true">
-        Next <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
+      <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-stone-100 bg-stone-50 text-stone-300 font-medium cursor-not-allowed"
+            aria-disabled="true">
+        <span>Next</span>
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
       </span>
     {% endif %}
   </div>

@@ -270,6 +270,7 @@ class NavbarContextTests(TestCase):
             approval_status=User.Approval.APPROVED,
         )
 
+
     # -- guard with no open shift ----------------------------------------
 
     def test_guard_no_shift_context_is_none(self):
