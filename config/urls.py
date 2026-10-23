@@ -13,5 +13,6 @@ urlpatterns = [
     path('facilities/', include('facilities.urls')),
     path('keys/', include('keys.urls')),
     path('transactions/', include('transactions.urls')),
+    path('api/transactions/', include('transactions.api_urls')),
     path('', include('scheduling.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

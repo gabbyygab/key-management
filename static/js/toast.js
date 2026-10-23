@@ -123,4 +123,13 @@
 
   KeyTrack.toast = toast;
   KeyTrack.dismissToast = dismiss;
+
+  /* Compat alias for code written against window.KeyTrackToast (currently-out panel). */
+  window.KeyTrackToast = {
+    show: function (m, v) { return KeyTrack.toast(m, v); },
+    success: function (m) { return KeyTrack.toast(m, "success"); },
+    error: function (m) { return KeyTrack.toast(m, "error"); },
+    warning: function (m) { return KeyTrack.toast(m, "warning"); },
+    info: function (m) { return KeyTrack.toast(m, "info"); },
+  };
 })();

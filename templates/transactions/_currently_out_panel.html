@@ -1,0 +1,97 @@
+{% comment %}
+TASK F3.7 — "Currently Out" live panel. Rows and counters come from
+GET /api/transactions/active/ (static/js/currently_out.js); the no-script
+block below keeps the old full-page POST return working without JS.
+{% endcomment %}
+<section id="currently-out"
+         class="bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col min-h-0"
+         data-active-url="{% url 'transactions_api:active' %}"
+         data-return-url="{% url 'transactions_api:return' 0 %}"
+         data-refresh-ms="30000">
+
+  <div class="p-4 pb-3 border-b border-stone-100">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="font-bold text-[14px] inline-flex items-center gap-2">
+        Currently Out
+        <span data-out-count
+              class="text-[11px] bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 font-semibold">0</span>
+      </h2>
+      <div class="flex items-center gap-2">
+        <button type="button" data-out-refresh
+                class="inline-flex items-center gap-1 text-[12px] text-stone-500 hover:text-stone-800"
+                title="Refresh now">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5" data-out-spinner></i>
+          <span data-out-updated class="tabular-nums">just now</span>
+        </button>
+        <a href="{% url 'transactions:history' %}"
+           class="text-[12px] font-medium inline-flex items-center gap-1 text-stone-600 hover:text-stone-900">
+          View all <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5 mt-2" data-out-counters>
+      <span data-out-overdue-pill
+            class="hidden items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold">
+        <i data-lucide="alert-circle" class="w-3 h-3"></i>
+        <span data-out-overdue>0</span> overdue
+      </span>
+      <span data-out-due-soon-pill
+            class="hidden items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[11px] font-semibold">
+        <i data-lucide="clock" class="w-3 h-3"></i>
+        <span data-out-due-soon>0</span> due soon
+      </span>
+    </div>
+
+    <div class="mt-2.5 flex items-center bg-[#FAF7F0] border border-stone-200 rounded-lg px-3
+                focus-within:border-[#1E6B4A] focus-within:ring-1 focus-within:ring-[#1E6B4A]">
+      <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+      <label for="out-search" class="sr-only">Search keys that are out</label>
+      <input id="out-search" data-out-search type="search" autocomplete="off"
+             placeholder="Filter by key, room, borrower or ID..."
+             class="flex-1 bg-transparent outline-none py-2 text-[13px]">
+      <button type="button" data-out-search-clear
+              class="hidden text-stone-400 hover:text-stone-700 ml-1" aria-label="Clear filter">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+  </div>
+
+  <div data-out-list class="p-3 space-y-2 overflow-y-auto flex-1 min-h-0 max-h-[36rem]"
+       aria-live="polite" aria-busy="true">
+    {# loading skeleton; replaced on first fetch #}
+    {% for _ in "123" %}
+    <div class="border border-stone-200 rounded-xl p-2.5 animate-pulse">
+      <div class="h-3 w-24 bg-stone-200 rounded"></div>
+      <div class="h-3 w-40 bg-stone-100 rounded mt-2"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <noscript>
+    <div class="p-3 space-y-2 overflow-y-auto max-h-[36rem] border-t border-stone-100">
+      <p class="text-[12px] text-stone-500">
+        JavaScript is off — live timers and the return modal are unavailable.
+        Returns below are recorded as condition OK.
+      </p>
+      {% for t in borrowed %}
+      <div class="border border-stone-200 rounded-xl p-2.5 text-[13px] flex justify-between gap-2">
+        <div>
+          <b class="font-mono">{{ t.key.key_code }}</b>
+          <span class="text-stone-500">· {{ t.key.room }}</span><br>
+          {{ t.borrower.full_name }}
+          <span class="text-stone-400">· out {{ t.borrowed_at|date:"M d H:i" }}</span><br>
+          <span class="text-stone-400 font-mono text-[12px]">{{ t.transaction_no }}</span>
+        </div>
+        <form method="post" action="{% url 'transactions:return_confirm' t.pk %}">{% csrf_token %}
+          <button class="bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 rounded-lg text-[13px] font-semibold">
+            Return
+          </button>
+        </form>
+      </div>
+      {% empty %}<p class="text-[13px] text-stone-400">No keys out right now.</p>{% endfor %}
+    </div>
+  </noscript>
+</section>
+
+{% include "transactions/_return_modal.html" %}

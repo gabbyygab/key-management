@@ -75,3 +75,13 @@
   /* Backwards-compatible bare global, as spelled in GUIDE.md §5. */
   window.getCsrfToken = getCsrfToken;
 })();
+
+/* postJson: fetch() with the headers Django expects on a JSON POST.
+ * Used by the currently-out panel / return flow. Built on KeyTrack.jsonHeaders. */
+function postJson(url, payload) {
+  return fetch(url, {
+    method: "POST",
+    headers: window.KeyTrack.jsonHeaders(),
+    body: JSON.stringify(payload || {}),
+  });
+}
