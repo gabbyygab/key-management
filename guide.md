@@ -330,6 +330,11 @@ Then reduce `logout_modal.html` to markup only, keeping the behavior it already 
 right. Preserve its a11y attributes: `role="dialog"`, `aria-modal="true"`,
 `aria-labelledby`.
 
+Use `templates/partials/form_field.html` for modal form controls. Pass a Django
+`BoundField` as `field` when available; simple modal controls can pass their label,
+ID, name, type, required state, help text, and error details. This keeps required
+markers and inline validation styling consistent.
+
 ### After **any** dynamic DOM injection, call `lucide.createIcons()`
 
 Icons render as blank space otherwise. This bites on every AJAX modal, every POS search

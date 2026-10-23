@@ -1,5 +1,6 @@
-// Room finder (F5.3): live search against GET /api/scheduling/free-rooms/
+// Room finder (F5.3, F6.8): live search against GET /api/scheduling/free-rooms/
 // and a "Schedule this" hand-off to the schedule editor (F5.2).
+// Upgraded with loading skeletons, network retry toast & session expired handling (F6.8).
 (function () {
   var form = document.getElementById("free-room-form");
   if (!form) return;
@@ -20,7 +21,7 @@
     CLASSROOM: "presentation", LABORATORY: "flask-conical", OFFICE: "briefcase",
     FACILITY: "warehouse", OTHER: "door-open"
   };
-  var DEBOUNCE_MS = 250;
+  var DEBOUNCE_MS = 250; /* within 250-300ms band */
 
   var debounceTimer = null;
   var inFlight = null;
@@ -57,8 +58,10 @@
       var el = form.querySelector('[data-error-for="' + field + '"]')
         || form.querySelector('[data-error-for="__all__"]');
       var messages = Array.isArray(errors[field]) ? errors[field] : [errors[field]];
-      el.textContent = messages.join(" ");
-      el.classList.remove("hidden");
+      if (el) {
+        el.textContent = messages.join(" ");
+        el.classList.remove("hidden");
+      }
       if (form.elements[field] && form.elements[field].setAttribute) {
         form.elements[field].setAttribute("aria-invalid", "true");
       }
@@ -70,8 +73,16 @@
     submitBtn.disabled = on;
     spinner.classList.toggle("hidden", !on);
     searchIcon.classList.toggle("hidden", on);
-    results.classList.toggle("opacity-50", on);
     form.setAttribute("aria-busy", on ? "true" : "false");
+    if (on) {
+      if (window.KeyTrack && window.KeyTrack.skeletons) {
+        window.KeyTrack.skeletons.roomCards(results, 6);
+      } else {
+        results.classList.add("opacity-50");
+      }
+    } else {
+      results.classList.remove("opacity-50");
+    }
   }
 
   function syncDurationChips() {
@@ -143,7 +154,15 @@
       signal: controller.signal
     })
       .then(function (res) {
+        if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired(res)) {
+          window.KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
         return res.json().catch(function () { return {}; }).then(function (body) {
+          if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired(res, body)) {
+            window.KeyTrack.handleSessionExpired();
+            throw new Error("session_expired");
+          }
           if (res.status === 200) {
             lastQuery = params;
             render(body, params);
@@ -158,8 +177,13 @@
         });
       })
       .catch(function (err) {
-        if (err.name !== "AbortError") {
-          showErrors({ __all__: ["Could not reach the server. Check your connection and try again."] });
+        if (err.name === "AbortError" || err.message === "session_expired") return;
+        showErrors({ __all__: ["Could not reach the server. Check your connection and try again."] });
+        /* F6.8 network failure toast with retry */
+        if (window.KeyTrack && window.KeyTrack.networkErrorToast) {
+          window.KeyTrack.networkErrorToast(function () {
+            search();
+          }, "Room search failed due to network error.");
         }
       })
       .finally(function () {

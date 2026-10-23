@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from .test_components import SharedComponentsTests
 from .context_processors import pending_approvals
 from .models import Department
 from .services import ApprovalError, approve_user, pending_count, reject_user
@@ -379,3 +380,140 @@ class NavbarRenderTests(TestCase):
         response = self.client.get(reverse("dashboard"))
         self.assertContains(response, "navbar-server-clock")
         self.assertContains(response, "data-server-now")
+
+
+# ---------------------------------------------------------------------------
+# F7.1 / B8.1 — Login 'next' parameter handling and open redirect prevention
+# ---------------------------------------------------------------------------
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class LoginNextParameterTests(TestCase):
+    def setUp(self):
+        self.guard = User.objects.create_user(
+            username="guard_test",
+            email="guard_test@example.com",
+            password="password123",
+            role=User.Role.GUARD,
+            approval_status=User.Approval.APPROVED,
+        )
+        self.admin = User.objects.create_user(
+            username="admin_test",
+            email="admin_test@example.com",
+            password="password123",
+            role=User.Role.ADMIN,
+            approval_status=User.Approval.APPROVED,
+        )
+
+    def test_login_get_includes_hidden_next_input(self):
+        """GET /accounts/login/?next=/keys/ renders hidden input with next value."""
+        response = self.client.get(reverse("accounts:login"), {"next": "/keys/"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<input type="hidden" name="next" value="/keys/">',
+            html=True,
+        )
+
+    def test_login_get_without_next_renders_empty_hidden_input(self):
+        """GET /accounts/login/ renders hidden input with empty value."""
+        response = self.client.get(reverse("accounts:login"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<input type="hidden" name="next" value="">',
+            html=True,
+        )
+
+    def test_login_get_disallows_external_next(self):
+        """GET /accounts/login/?next=https://evil.example.com clears unsafe next."""
+        response = self.client.get(
+            reverse("accounts:login"),
+            {"next": "https://evil.example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<input type="hidden" name="next" value="">',
+            html=True,
+        )
+        self.assertNotContains(response, "evil.example.com")
+
+    def test_login_post_redirects_to_next_from_form_field(self):
+        """POST /accounts/login/ with hidden input 'next' honors redirect destination."""
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "guard_test",
+                "password": "password123",
+                "next": "/keys/",
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/keys/")
+
+    def test_login_post_blocks_external_redirect_in_next(self):
+        """POST with unsafe next falls back to default post-login redirect."""
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "guard_test",
+                "password": "password123",
+                "next": "https://evil.example.com/phishing",
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        # Should redirect to guard default (/transactions/borrow/), NOT external url
+        self.assertEqual(response.url, "/transactions/borrow/")
+
+    def test_login_post_blocks_scheme_relative_redirect_in_next(self):
+        """POST with scheme-relative //evil.example.com falls back to default redirect."""
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "admin_test",
+                "password": "password123",
+                "next": "//evil.example.com/phishing",
+            },
+            follow=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        # Should redirect to admin default (/), NOT evil.example.com
+        self.assertEqual(response.url, "/")
+
+    def test_login_post_failed_auth_preserves_valid_next(self):
+        """Failed POST credentials preserves the valid next parameter in re-rendered form."""
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "guard_test",
+                "password": "wrongpassword",
+                "next": "/keys/",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<input type="hidden" name="next" value="/keys/">',
+            html=True,
+        )
+        self.assertContains(response, "Invalid credentials")
+
+    def test_login_post_failed_auth_clears_unsafe_next(self):
+        """Failed POST credentials clears unsafe next parameter in re-rendered form."""
+        response = self.client.post(
+            reverse("accounts:login"),
+            {
+                "username": "guard_test",
+                "password": "wrongpassword",
+                "next": "https://evil.example.com",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<input type="hidden" name="next" value="">',
+            html=True,
+        )
+        self.assertNotContains(response, "evil.example.com")

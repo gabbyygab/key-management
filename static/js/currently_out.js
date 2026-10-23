@@ -1,15 +1,17 @@
-/* TASK F3.7 — "Currently Out" live panel + return flow.
+/* TASK F3.7, F6.8 — "Currently Out" live panel + return flow.
  *
  * Rows, counters and due states come from GET /api/transactions/active/;
  * a return is POST /api/transactions/<pk>/return/ with remarks + condition.
  * Refreshes every 30s, on window focus, and after any return.
+ * Includes loading skeletons, debounced search, network retry toast,
+ * and session-expired handling per F6.8.
  */
 (function () {
   var panel = document.getElementById("currently-out");
   if (!panel) return;
 
   var MODAL_ID = "return-key-modal";
-  var SEARCH_DEBOUNCE_MS = 250;
+  var SEARCH_DEBOUNCE_MS = 250; /* within 250-300ms band */
   var FOCUS_REFRESH_FLOOR_MS = 5000;
 
   var activeUrl = panel.dataset.activeUrl;
@@ -38,6 +40,7 @@
   var clockSkewMs = 0;    // server clock - browser clock
   var lastFetchedAt = null;
   var searchTimer = null;
+  var fetchController = null;
 
   /* ---------- helpers ---------- */
 
@@ -157,34 +160,64 @@
     updatedLabel.textContent = secs < 10 ? "just now" : "updated " + secs + "s ago";
   }
 
-  /* ---------- fetching ---------- */
+  /* ---------- fetching (F6.8 Loading skeletons & Error states) ---------- */
 
   function load(opts) {
     var quiet = opts && opts.quiet;
-    if (!quiet) list.setAttribute("aria-busy", "true");
+
+    if (!quiet) {
+      list.setAttribute("aria-busy", "true");
+      if (window.KeyTrack && window.KeyTrack.skeletons) {
+        window.KeyTrack.skeletons.currentlyOut(list, 3);
+      }
+    }
     refreshIcon.classList.add("animate-spin");
+
+    if (fetchController) fetchController.abort();
+    fetchController = new AbortController();
+
     var q = searchInput.value.trim();
     return fetch(activeUrl + (q ? "?q=" + encodeURIComponent(q) : ""), {
       headers: { "X-Requested-With": "XMLHttpRequest" },
+      signal: fetchController.signal,
       credentials: "same-origin",
     })
       .then(function (res) {
-        if (res.status === 403) throw new Error("permission");
-        if (!res.ok) throw new Error("http " + res.status);
-        return res.json();
+        if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired(res)) {
+          window.KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        return res.json().catch(function () { return {}; }).then(function (payload) {
+          if (res.status === 403) {
+            if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired(res, payload)) {
+              window.KeyTrack.handleSessionExpired();
+              throw new Error("session_expired");
+            }
+            throw new Error("permission");
+          }
+          if (!res.ok) throw new Error("http " + res.status);
+          return payload;
+        });
       })
       .then(function (payload) {
         clockSkewMs = new Date(payload.server_time) - new Date();
-        rows = payload.results;
+        rows = payload.results || [];
         lastFetchedAt = Date.now();
         render();
         setCounters(payload);
       })
       .catch(function (err) {
+        if (err.name === "AbortError" || err.message === "session_expired") return;
         list.setAttribute("aria-busy", "false");
         if (err.message === "permission") {
           window.KeyTrackToast.error("You do not have permission to see keys that are out.");
           return;
+        }
+        /* F6.8 network failure toast with retry */
+        if (window.KeyTrack && window.KeyTrack.networkErrorToast) {
+          window.KeyTrack.networkErrorToast(function () {
+            load(opts);
+          }, "Could not load out-keys list due to network error.");
         }
         if (!quiet) {
           list.innerHTML = '<div class="text-center py-10 px-4">'
@@ -268,16 +301,27 @@
     if (inFlight || !pending) return;
     var row = pending;
     var url = returnUrlTemplate.replace("/0/return/", "/" + row.id + "/return/");
+    var payload = { remarks: remarks.value.trim(), condition: condition() };
     errorBox.classList.add("hidden");
     setBusy(true);
 
-    postJson(url, { remarks: remarks.value.trim(), condition: condition() })
+    postJson(url, payload)
       .then(function (res) {
+        if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired(res)) {
+          window.KeyTrackModal.close(MODAL_ID);
+          window.KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
         return res.json()
           .catch(function () { return {}; })
           .then(function (body) { return { status: res.status, body: body }; });
       })
       .then(function (out) {
+        if (window.KeyTrack && window.KeyTrack.isSessionExpired && window.KeyTrack.isSessionExpired({ status: out.status }, out.body)) {
+          window.KeyTrackModal.close(MODAL_ID);
+          window.KeyTrack.handleSessionExpired();
+          return;
+        }
         if (out.status === 403) {
           window.KeyTrackModal.close(MODAL_ID);
           window.KeyTrackToast.error(out.body.error || "You do not have permission.");
@@ -300,8 +344,14 @@
           load({ quiet: true });
         });
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.message === "session_expired") return;
         showError("Network problem — the return was not recorded.");
+        if (window.KeyTrack && window.KeyTrack.networkErrorToast) {
+          window.KeyTrack.networkErrorToast(function () {
+            form.dispatchEvent(new Event("submit"));
+          }, "Return request failed due to network error.");
+        }
       })
       .finally(function () { setBusy(false); });
   });

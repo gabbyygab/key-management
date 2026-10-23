@@ -74,14 +74,7 @@ through window.KeyTrackModal; the summary fields are filled from the row.
          class="hidden mt-1.5 text-[12px] rounded-lg border px-2.5 py-1.5"></p>
     </fieldset>
 
-    <div class="mt-3">
-      <label for="return-remarks" class="text-[13px] font-semibold text-stone-700">
-        Remarks <span class="font-normal text-stone-400">(optional)</span>
-      </label>
-      <textarea id="return-remarks" name="remarks" rows="2" data-return-remarks
-                placeholder="Anything worth recording about this return..."
-                class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"></textarea>
-    </div>
+    {% include "partials/form_field.html" with field_id="return-remarks" field_name="remarks" field_label="Remarks" field_optional=True control_type="textarea" field_rows=2 field_control_marker="return-remarks" field_placeholder="Anything worth recording about this return..." field_control_class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]" field_container_class="mt-3" %}
 
     <p data-return-error
        class="hidden mt-3 text-[13px] bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2"

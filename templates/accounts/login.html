@@ -28,7 +28,8 @@
       <h2 class="text-xl font-extrabold">Welcome back</h2>
       <p class="text-[13px] text-stone-500 mt-1">Log in to start your shift.</p>
       {% if error %}<div id="login-error" role="alert" class="mt-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ error }}</div>{% endif %}
-      <form method="post" action="{% if next %}?next={{ next|urlencode }}{% endif %}" class="mt-5 space-y-3">{% csrf_token %}
+      <form method="post" class="mt-5 space-y-3">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ next|default:'' }}">
         <div><label for="id_username" class="block text-[12px] font-semibold text-stone-600">USERNAME</label>
           <input id="id_username" name="username" required autocomplete="username" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %} class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A]"></div>
         <div><label for="id_password" class="block text-[12px] font-semibold text-stone-600">PASSWORD</label>

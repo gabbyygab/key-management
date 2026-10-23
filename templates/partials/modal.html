@@ -1,0 +1,45 @@
+{% comment %} Shared modal shell. Supply modal_id, modal_title, modal_icon, and
+   optionally modal_size, modal_body_template, modal_footer_template, and
+   modal_form_id. {% endcomment %}
+<div id="{{ modal_id }}" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl
+    {% if modal_size == 'sm' %}max-w-sm{% elif modal_size == 'md' %}max-w-md{% elif modal_size == 'lg' %}max-w-lg{% elif modal_size == 'xl' %}max-w-xl{% else %}max-w-md{% endif %}">
+    <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border
+          {% if modal_icon_container_class %}{{ modal_icon_container_class }}{% else %}border-[#1E6B4A]/20 bg-[#1E6B4A]/10{% endif %}">
+          <i data-lucide="{{ modal_icon }}" aria-hidden="true" class="h-5 w-5 {% if modal_icon_color_class %}{{ modal_icon_color_class }}{% else %}text-[#1E6B4A]{% endif %}"></i>
+        </div>
+        <h2 id="{{ modal_id }}-title" class="truncate text-[15px] font-bold text-stone-900">{{ modal_title }}</h2>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+      </button>
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      {% if modal_body_template %}{% include modal_body_template %}{% endif %}
+    </div>
+
+    <div class="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+      {% if modal_footer_template %}
+        {% include modal_footer_template %}
+      {% else %}
+        <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+          Cancel
+        </button>
+        {% if modal_form_id %}
+        <button type="submit" form="{{ modal_form_id }}" class="rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">
+          {{ modal_save_label|default:"Save" }}
+        </button>
+        {% else %}
+        <button type="button" data-modal-save class="rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">
+          {{ modal_save_label|default:"Save" }}
+        </button>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>

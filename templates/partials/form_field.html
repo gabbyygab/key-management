@@ -1,0 +1,62 @@
+{% comment %} Shared form field for Django BoundFields and simple modal controls.
+   BoundField mode: field, optional field_label, field_container_class.
+   Manual mode: field_id, field_name, field_label, control_type, and optional
+   field_required, field_optional, field_help_text, field_error,
+   field_error_id, field_placeholder, field_rows, field_minlength,
+   field_control_marker, field_container_class. {% endcomment %}
+<div data-form-field data-field-name="{% if field %}{{ field.html_name }}{% else %}{{ field_name }}{% endif %}" class="{{ field_container_class }}">
+  {% if field %}
+    {% if field.field.widget.input_type == "checkbox" %}
+    <label for="{{ field.id_for_label }}" class="flex items-center gap-2 text-[13px] text-stone-700 font-medium">
+      {{ field }}
+      <span>{{ field_label|default:field.label }}</span>
+      {% if field.field.required %}<span class="text-red-600" aria-hidden="true">*</span>{% endif %}
+      {% if field_optional %}<span class="normal-case font-normal text-stone-400">(optional)</span>{% endif %}
+    </label>
+    {% else %}
+    <label for="{{ field.id_for_label }}" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">
+      {{ field_label|default:field.label }}
+      {% if field.field.required %}<span class="text-red-600" aria-hidden="true">*</span>{% endif %}
+      {% if field_optional %}<span class="normal-case font-normal text-stone-400">(optional)</span>{% endif %}
+    </label>
+    {{ field }}
+    {% endif %}
+    {% if field.help_text %}
+    {% with help_id=field.auto_id|add:"_helptext" %}
+    <p id="{{ help_id }}" class="mt-1 text-[12px] text-stone-500">{{ field.help_text }}</p>
+    {% endwith %}
+    {% endif %}
+    {% if field.errors %}
+    <ul id="{{ field.id_for_label }}-error" data-form-field-error class="mt-1 space-y-0.5 text-[12px] text-red-700" role="alert">
+      {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  {% else %}
+    <label for="{{ field_id }}" class="mb-1 block text-[13px] font-semibold text-stone-700">
+      {{ field_label }}
+      {% if field_required %}<span class="text-red-600" aria-hidden="true">*</span>{% endif %}
+      {% if field_optional %}<span class="font-normal text-stone-400">(optional)</span>{% endif %}
+    </label>
+    {% if control_type == "textarea" %}
+    <textarea id="{{ field_id }}" name="{{ field_name }}" rows="{{ field_rows|default:3 }}"
+      {% if field_required %}required aria-required="true"{% endif %}
+      {% if field_minlength %}minlength="{{ field_minlength }}"{% endif %}
+      {% if field_placeholder %}placeholder="{{ field_placeholder }}"{% endif %}
+      {% if field_control_marker == "modal-autofocus" %}data-modal-autofocus{% elif field_control_marker == "return-remarks" %}data-return-remarks{% endif %}
+      data-form-control {% if field_error %}aria-invalid="true"{% endif %}{% if field_error or field_help_text %} aria-describedby="{% if field_error %}{{ field_error_id }}{% endif %}{% if field_help_text %} {{ field_id }}-help{% endif %}"{% endif %}
+      class="{{ field_control_class }}{% if field_error %} border-red-500 text-red-700 focus:border-red-500 focus:ring-red-500{% endif %}"></textarea>
+    {% else %}
+    <input id="{{ field_id }}" name="{{ field_name }}" type="{{ control_type|default:'text' }}"
+      {% if field_required %}required aria-required="true"{% endif %}
+      {% if field_placeholder %}placeholder="{{ field_placeholder }}"{% endif %}
+      {% if field_control_marker == "modal-autofocus" %}data-modal-autofocus{% endif %}
+      data-form-control {% if field_error %}aria-invalid="true"{% endif %}{% if field_error or field_help_text %} aria-describedby="{% if field_error %}{{ field_error_id }}{% endif %}{% if field_help_text %} {{ field_id }}-help{% endif %}"{% endif %}
+      class="{{ field_control_class }}{% if field_error %} border-red-500 text-red-700 focus:border-red-500 focus:ring-red-500{% endif %}">
+    {% endif %}
+    {% if field_help_text %}<p id="{{ field_id }}-help" class="mt-1 text-[12px] text-stone-500">{{ field_help_text }}</p>{% endif %}
+    {% if field_error_id %}
+    <p id="{{ field_error_id }}" data-form-field-error role="alert"
+      class="mt-1 text-[12px] text-red-700{% if not field_error %} hidden{% endif %}">{% if field_error %}{{ field_error }}{% endif %}</p>
+    {% endif %}
+  {% endif %}
+</div>

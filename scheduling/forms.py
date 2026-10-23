@@ -79,13 +79,22 @@ class ScheduleBlockForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for name, f in self.fields.items():
-            if isinstance(f.widget, forms.CheckboxInput):
-                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
-            else:
-                f.widget.attrs.setdefault("class", TAILWIND)
+        modal_ids = {
+            "room": "modal-room",
+            "term": "modal-term",
+            "title": "modal-title",
+            "subject": "modal-subject",
+            "instructor": "modal-instructor",
+            "day_of_week": "modal-day",
+            "start_time": "modal-start-time",
+            "end_time": "modal-end-time",
+            "is_active": "modal-is-active",
+        }
         if "room" in self.fields:
             self.fields["room"].queryset = Room.objects.filter(is_active=True).select_related("building")
+            self.fields["room"].label_from_instance = lambda room: (
+                f"{room.building.code} - {room.room_code} ({room.get_room_type_display()})"
+            )
         if "term" in self.fields:
             self.fields["term"].queryset = Term.objects.all().order_by("-is_active", "-start_date")
         if "subject" in self.fields:
@@ -94,6 +103,23 @@ class ScheduleBlockForm(forms.ModelForm):
         if "instructor" in self.fields:
             self.fields["instructor"].required = False
             self.fields["instructor"].empty_label = "Unassigned (Optional)"
+            self.fields["instructor"].label_from_instance = lambda borrower: (
+                f"{borrower.last_name}, {borrower.first_name} ({borrower.id_number}) - "
+                f"{borrower.get_borrower_type_display()}"
+            )
+        for name, f in self.fields.items():
+            f.widget.attrs["id"] = modal_ids.get(name, f.widget.attrs.get("id", name))
+            f.widget.attrs["data-form-control"] = ""
+            if isinstance(f.widget, forms.CheckboxInput):
+                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
+            else:
+                f.widget.attrs.setdefault("class", TAILWIND)
+            if self.is_bound and self.errors.get(name):
+                f.widget.attrs["class"] += (
+                    " border-red-500 text-red-700 focus:border-red-500 focus:ring-red-500"
+                )
+                f.widget.attrs["aria-invalid"] = "true"
+                f.widget.attrs["aria-describedby"] = f"{modal_ids.get(name, name)}-error"
 
     def clean(self):
         cleaned = super().clean()
