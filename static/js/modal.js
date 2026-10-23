@@ -78,16 +78,27 @@
     }
   }
 
-  function open(id) {
+  function updateStackZIndexes() {
+    for (var i = 0; i < stack.length; i++) {
+      stack[i].el.style.zIndex = String(BASE_Z + (i + 1) * 10);
+    }
+  }
+
+  function open(id, options) {
     var el = document.getElementById(id);
     if (!el) return null;
     if (entryFor(id)) return el; /* already open — don't double-stack */
 
-    var entry = { id: id, el: el, lastFocused: document.activeElement };
+    options = options || {};
+    var entry = {
+      id: id,
+      el: el,
+      lastFocused: options.trigger || document.activeElement,
+    };
     stack.push(entry);
 
     /* Stacked modals: each one sits above the previous (confirm-inside-form). */
-    el.style.zIndex = String(BASE_Z + stack.length * 10);
+    updateStackZIndexes();
     el.classList.remove("hidden");
     el.removeAttribute("aria-hidden");
     document.body.classList.add("overflow-hidden");
@@ -102,10 +113,12 @@
     var entry = entryFor(id);
     if (!entry) return;
 
+    var wasTop = top() === entry;
     stack.splice(stack.indexOf(entry), 1);
     entry.el.classList.add("hidden");
     entry.el.setAttribute("aria-hidden", "true");
     entry.el.style.zIndex = "";
+    updateStackZIndexes();
 
     /* Only release the scroll lock once the last modal has closed. */
     if (!stack.length) document.body.classList.remove("overflow-hidden");
@@ -113,7 +126,12 @@
     /* Restore focus to whatever opened it, per the a11y behavior the logout
      * modal already got right. */
     var back = entry.lastFocused;
-    if (back && typeof back.focus === "function" && document.body.contains(back)) {
+    if (
+      wasTop &&
+      back &&
+      typeof back.focus === "function" &&
+      document.body.contains(back)
+    ) {
       back.focus();
     }
     entry.el.dispatchEvent(
@@ -130,7 +148,7 @@
     var opener = e.target.closest("[data-modal-open]");
     if (opener) {
       e.preventDefault();
-      open(opener.getAttribute("data-modal-open"));
+      open(opener.getAttribute("data-modal-open"), { trigger: opener });
       return;
     }
 
