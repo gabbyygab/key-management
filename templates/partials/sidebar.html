@@ -24,8 +24,21 @@
       <i data-lucide="tags" class="w-4 h-4"></i> Key Categories</a>
 
     <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">People &amp; Security</div>
-    <a href="{% url 'accounts:borrower_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+    <a href="{% url 'accounts:borrower_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'borrower_list' or current == 'borrower_create' or current == 'borrower_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <i data-lucide="users" class="w-4 h-4"></i> Borrowers</a>
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <a href="{% url 'accounts:pending_user_list' %}" class="flex items-center justify-between px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'pending_user_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <div class="flex items-center gap-2 min-w-0">
+        <i data-lucide="user-check" class="w-4 h-4 shrink-0"></i>
+        <span class="truncate">Pending Approvals</span>
+      </div>
+      {% if pending_approvals_count > 0 %}
+      <span class="inline-flex items-center justify-center px-1.5 py-0.5 text-[11px] font-bold rounded-full bg-amber-400 text-stone-900 ml-2" title="{{ pending_approvals_count }} pending approval{{ pending_approvals_count|pluralize }}">
+        {{ pending_approvals_count }}
+      </span>
+      {% endif %}
+    </a>
+    {% endif %}
     <a href="{% url 'transactions:shift_history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'shift_history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <i data-lucide="shield-check" class="w-4 h-4"></i> Guard Shifts</a>
 
@@ -43,7 +56,7 @@
       <div class="w-8 h-8 rounded-full bg-white text-[#0F2E1F] flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
       <div class="leading-tight flex-1 min-w-0">
         <div class="text-[13px] font-semibold truncate">{{ user.get_full_name|default:user.username }}</div>
-        <div class="text-[11px] text-white/60 uppercase">{{ user.role|default:"GUARD" }}</div>
+        <div class="text-[11px] text-white/60 uppercase">{{ user.get_role_display }}</div>
       </div>
       <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out"><i data-lucide="log-out" class="w-4 h-4 text-white/60 hover:text-white"></i></button>
     </div>

@@ -4,11 +4,13 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from .decorators import role_required
 from .forms import BorrowerForm
-from .models import Borrower
+from .models import Borrower, User, Department
 from .permissions import admin_required, guard_required
+from .services import ApprovalError, approve_user, reject_user
 
 
 def home(request):
@@ -120,3 +122,76 @@ def borrower_toggle(request, pk):
         obj.save(update_fields=["is_active"])
         messages.success(request, f"{obj} {'activated' if obj.is_active else 'deactivated'}.")
     return redirect("accounts:borrower_list")
+
+
+@admin_required
+def pending_user_list(request):
+    q = request.GET.get("q", "").strip()
+    role_filter = request.GET.get("role", "").strip()
+    dept_filter = request.GET.get("department", "").strip()
+
+    pending_users = User.objects.filter(
+        approval_status=User.Approval.PENDING
+    ).select_related("department")
+
+    if q:
+        pending_users = pending_users.filter(
+            Q(username__icontains=q)
+            | Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(email__icontains=q)
+            | Q(employee_id__icontains=q)
+        )
+    if role_filter:
+        pending_users = pending_users.filter(role=role_filter)
+    if dept_filter:
+        pending_users = pending_users.filter(department__id=dept_filter)
+
+    pending_users = pending_users.order_by("-date_joined")
+    departments = Department.objects.filter(is_active=True)
+
+    return render(
+        request,
+        "accounts/pending_users.html",
+        {
+            "pending_users": pending_users,
+            "roles": User.Role.choices,
+            "departments": departments,
+            "q": q,
+            "role_filter": role_filter,
+            "dept_filter": dept_filter,
+        },
+    )
+
+
+@admin_required
+@require_POST
+def user_approve(request, pk):
+    try:
+        user = approve_user(user_id=pk, approved_by=request.user)
+        messages.success(
+            request,
+            f"Approved registration for {user.full_name} ({user.get_role_display()}).",
+        )
+    except ApprovalError as e:
+        messages.error(request, str(e))
+    return redirect("accounts:pending_user_list")
+
+
+@admin_required
+@require_POST
+def user_reject(request, pk):
+    reason = request.POST.get("reason", "").strip()
+    if not reason:
+        messages.error(request, "A reason is required to reject an account registration.")
+        return redirect("accounts:pending_user_list")
+
+    try:
+        user = reject_user(user_id=pk, rejected_by=request.user, reason=reason)
+        messages.warning(
+            request,
+            f"Rejected registration for {user.full_name}. Reason: {reason}",
+        )
+    except ApprovalError as e:
+        messages.error(request, str(e))
+    return redirect("accounts:pending_user_list")
