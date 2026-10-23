@@ -1,14 +1,11 @@
-/* schedule-grid.js — weekly room timetable grid (Section 5).
+/* schedule-grid.js — weekly room timetable grid (Section 5, F6.8).
  *
- * SCOPE NOTE (F6.9): the scheduling UI is F5.1–F5.6 and there is no
- * `scheduling` app, no template and no /api/scheduling/* endpoint in this repo
- * yet (backend §5). This file provides the grid geometry and the live
- * conflict check that F5.1/F5.2 build on, so the boundary rule below lives in
- * exactly one place and cannot drift between the two halves of the team.
+ * Provides the grid geometry, loading skeletons, and debounced conflict
+ * checking with network failure retry and session-expired handling.
  *
  * Loaded only by scheduling/room_timetable.html via {% block extra_js %}.
  *
- * Requires: csrf.js, toast.js, search.js (modal.js for the block form).
+ * Requires: csrf.js, toast.js, skeletons.js, search.js (modal.js for the block form).
  */
 (function () {
   "use strict";
@@ -78,7 +75,16 @@
     return rows;
   }
 
-  /* ---- F5.2 live conflict check -------------------------------------- */
+  /* ---- F6.8 timetable grid skeleton ---------------------------------- */
+
+  function renderSkeleton(grid) {
+    if (!grid) return;
+    if (KeyTrack.skeletons) {
+      KeyTrack.skeletons.scheduleGrid(grid);
+    }
+  }
+
+  /* ---- F5.2, F6.8 live conflict check -------------------------------- */
 
   /* Debounced so typing a time does not fire a request per keystroke.
    * Payload: {room, day_of_week, start_time, end_time, term,
@@ -112,18 +118,35 @@
         signal: controller.signal,
       })
         .then(function (res) {
+          if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res)) {
+            KeyTrack.handleSessionExpired();
+            throw new Error("session_expired");
+          }
           if (res.status === 403) {
             KeyTrack.toast("You do not have permission.", "error");
             throw new Error("forbidden");
           }
-          return res.json();
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res, data)) {
+              KeyTrack.handleSessionExpired();
+              throw new Error("session_expired");
+            }
+            return data;
+          });
         })
         .then(onResult)
         .catch(function (err) {
-          if (err.name === "AbortError" || err.message === "forbidden") return;
-          KeyTrack.toast("Could not check for conflicts.", "error");
+          if (err.name === "AbortError" || err.message === "forbidden" || err.message === "session_expired") return;
+          /* F6.8 network failure toast with retry */
+          if (KeyTrack.networkErrorToast) {
+            KeyTrack.networkErrorToast(function () {
+              run(payload);
+            }, "Could not check for conflicts due to network error.");
+          } else {
+            KeyTrack.toast("Could not check for conflicts.", "error");
+          }
         });
-    }, 300);
+    }, 300); /* within 250-300ms band */
 
     return { run: run, cancel: run.cancel };
   }
@@ -225,6 +248,7 @@
     position: position,
     conflictChecker: conflictChecker,
     renderConflictState: renderConflictState,
+    renderSkeleton: renderSkeleton,
     bindGrid: bindGrid,
     repaint: repaint,
   };

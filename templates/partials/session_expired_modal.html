@@ -1,0 +1,30 @@
+{% comment %}
+TASK F6.8 — Session expired modal.
+Behavior (overlay click, Escape, focus trap, focus restore, scroll lock)
+comes from static/js/modal.js and static/js/csrf.js (KeyTrack.handleSessionExpired).
+{% endcomment %}
+<div id="session-expired-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="session-expired-modal-title" aria-describedby="session-expired-modal-desc">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+        <i data-lucide="shield-alert" class="w-5 h-5 text-amber-600"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 id="session-expired-modal-title" class="text-[15px] font-bold text-stone-900">Session expired</h2>
+        <p id="session-expired-modal-desc" class="text-[13px] text-stone-500 mt-1">Your session has timed out or you are no longer signed in. Please log in again to continue.</p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 mt-5">
+      <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+        Dismiss
+      </button>
+      <a href="{% url 'accounts:login' %}" data-session-login-btn class="px-4 py-2 rounded-lg bg-[#0F2E1F] text-white text-[13px] font-semibold hover:bg-[#143d28] inline-flex items-center gap-2">
+        <i data-lucide="log-in" class="w-4 h-4"></i>
+        Log in again
+      </a>
+    </div>
+  </div>
+</div>
