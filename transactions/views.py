@@ -1,10 +1,17 @@
+import csv
+import datetime
+from urllib.parse import urlencode
+
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.permissions import admin_or_guard_required, guard_required
+from accounts.permissions import admin_or_guard_required, admin_required, guard_required
 from accounts.models import Borrower, User
 from audit.models import ActivityLog
 from facilities.models import Building, Room
@@ -226,7 +233,8 @@ def borrow_confirm(request):
         messages.error(request, str(e))
     except Key.DoesNotExist:
         messages.error(request, "Key not found.")
-    return redirect(f"/transactions/borrow/?borrower_id={borrower_id}")
+    url = reverse("transactions:borrow_dashboard")
+    return redirect(f"{url}?{urlencode({'borrower_id': borrower_id})}")
 
 
 @guard_required
@@ -251,14 +259,188 @@ def shift_history(request):
     return render(request, "transactions/shift_history.html", {"shifts": shifts})
 
 
-@admin_or_guard_required
-def transaction_history(request):
+def get_filtered_transactions(request):
+    """Filter BorrowTransaction queryset based on GET query parameters.
+
+    Supports:
+      - q: search transaction_no, key code, borrower name, borrower ID, room code
+      - start_date / date_from: borrowed_at >= start_date
+      - end_date / date_to: borrowed_at <= end_date
+      - status: transaction status choice (ACTIVE, RETURNED, OVERDUE, LOST, DAMAGED)
+      - building: building code or ID
+      - guard: guard User ID or username (matches released_by or received_by)
+    """
     q = request.GET.get("q", "").strip()
-    txns = BorrowTransaction.objects.select_related(
-        "key__room__building", "borrower", "released_by", "received_by").all()
+    status_filter = request.GET.get("status", "").strip()
+    building_filter = request.GET.get("building", "").strip()
+    guard_filter = request.GET.get("guard", "").strip()
+    start_date = request.GET.get("start_date", "").strip() or request.GET.get("date_from", "").strip()
+    end_date = request.GET.get("end_date", "").strip() or request.GET.get("date_to", "").strip()
+
+    txns = (
+        BorrowTransaction.objects
+        .select_related(
+            "key__room__building",
+            "key__category",
+            "room__building",
+            "borrower__department",
+            "released_by",
+            "received_by",
+            "guard_shift",
+        )
+        .all()
+    )
+
     if q:
         txns = txns.filter(
-            Q(transaction_no__icontains=q) | Q(key__key_code__icontains=q)
-            | Q(borrower__first_name__icontains=q) | Q(borrower__last_name__icontains=q)
-            | Q(borrower__id_number__icontains=q))
-    return render(request, "transactions/history.html", {"txns": txns[:200], "q": q})
+            Q(transaction_no__icontains=q)
+            | Q(key__key_code__icontains=q)
+            | Q(borrower__first_name__icontains=q)
+            | Q(borrower__last_name__icontains=q)
+            | Q(borrower__id_number__icontains=q)
+            | Q(room__room_code__icontains=q)
+            | Q(room__building__code__icontains=q)
+        )
+
+    if status_filter:
+        txns = txns.filter(status=status_filter)
+
+    if building_filter:
+        if building_filter.isdigit():
+            txns = txns.filter(
+                Q(room__building_id=building_filter) | Q(key__room__building_id=building_filter)
+            )
+        else:
+            txns = txns.filter(
+                Q(room__building__code__iexact=building_filter) | Q(key__room__building__code__iexact=building_filter)
+            )
+
+    if guard_filter:
+        if guard_filter.isdigit():
+            txns = txns.filter(
+                Q(released_by_id=guard_filter) | Q(received_by_id=guard_filter)
+            )
+        else:
+            txns = txns.filter(
+                Q(released_by__username__iexact=guard_filter) | Q(received_by__username__iexact=guard_filter)
+            )
+
+    if start_date:
+        try:
+            d_start = datetime.date.fromisoformat(start_date)
+            txns = txns.filter(borrowed_at__date__gte=d_start)
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            d_end = datetime.date.fromisoformat(end_date)
+            txns = txns.filter(borrowed_at__date__lte=d_end)
+        except ValueError:
+            pass
+
+    return txns.order_by("-borrowed_at")
+
+
+@admin_or_guard_required
+def transaction_history(request):
+    """Transaction history with search, filters, pagination, and detail views (TASK F6.2)."""
+    txns = get_filtered_transactions(request)
+
+    # Real pagination: 20 per page
+    paginator = Paginator(txns, 20)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    # Preserve query string (without 'page') for pagination and export links
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
+
+    buildings = Building.objects.filter(is_active=True).order_by("code")
+    guards = (
+        User.objects
+        .filter(Q(role=User.Role.GUARD) | Q(keys_released__isnull=False) | Q(keys_received__isnull=False))
+        .distinct()
+        .order_by("first_name", "last_name", "username")
+    )
+
+    return render(request, "transactions/history.html", {
+        "page_obj": page_obj,
+        "txns": page_obj.object_list,
+        "q": request.GET.get("q", "").strip(),
+        "status": request.GET.get("status", "").strip(),
+        "building": request.GET.get("building", "").strip(),
+        "guard": request.GET.get("guard", "").strip(),
+        "start_date": request.GET.get("start_date", "").strip() or request.GET.get("date_from", "").strip(),
+        "end_date": request.GET.get("end_date", "").strip() or request.GET.get("date_to", "").strip(),
+        "buildings": buildings,
+        "guards": guards,
+        "statuses": BorrowTransaction.Status.choices,
+        "querystring": querystring,
+    })
+
+
+@admin_required
+def export_transactions_csv(request):
+    """Export filtered transaction history as a CSV file (Admin only, TASK F6.2)."""
+    txns = get_filtered_transactions(request)
+
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"keytrack_transactions_{timestamp}.csv"
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "Transaction No",
+        "Status",
+        "Key Code",
+        "Key Category",
+        "Building",
+        "Room",
+        "Borrower Name",
+        "Borrower ID",
+        "Borrower Type",
+        "Department",
+        "Purpose",
+        "Borrowed At",
+        "Expected Return At",
+        "Released By",
+        "Guard Shift Post",
+        "Returned At",
+        "Received By",
+        "Return Confirmed",
+        "Remarks",
+        "Override Reason",
+    ])
+
+    for t in txns:
+        room_bldg = t.room.building.code if (t.room and t.room.building) else ""
+        room_code = t.room.room_code if t.room else ""
+        writer.writerow([
+            t.transaction_no,
+            t.status,
+            t.key.key_code if t.key else "",
+            t.key.category.name if (t.key and t.key.category) else "",
+            room_bldg,
+            room_code,
+            t.borrower.full_name if t.borrower else "",
+            t.borrower.id_number if t.borrower else "",
+            t.borrower.get_borrower_type_display() if t.borrower else "",
+            t.borrower.department.code if (t.borrower and t.borrower.department) else "",
+            t.purpose,
+            timezone.localtime(t.borrowed_at).strftime("%Y-%m-%d %H:%M:%S") if t.borrowed_at else "",
+            timezone.localtime(t.expected_return_at).strftime("%Y-%m-%d %H:%M:%S") if t.expected_return_at else "",
+            t.released_by.get_full_name() or t.released_by.username if t.released_by else "",
+            t.guard_shift.post if t.guard_shift else "",
+            timezone.localtime(t.returned_at).strftime("%Y-%m-%d %H:%M:%S") if t.returned_at else "",
+            t.received_by.get_full_name() or t.received_by.username if t.received_by else "",
+            "Yes" if t.return_confirmed else "No",
+            t.remarks,
+            t.override_reason,
+        ])
+
+    return response

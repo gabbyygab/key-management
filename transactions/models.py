@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class GuardShift(models.Model):
@@ -53,3 +54,33 @@ class BorrowTransaction(models.Model):
 
     def __str__(self):
         return self.transaction_no
+
+    @property
+    def is_overdue(self):
+        if self.status == self.Status.OVERDUE:
+            return True
+        if self.status == self.Status.ACTIVE and self.expected_return_at:
+            return timezone.now() >= self.expected_return_at
+        return False
+
+    @property
+    def override_reason(self):
+        if self.remarks:
+            for line in self.remarks.splitlines():
+                s = line.strip()
+                if s.lower().startswith("override:"):
+                    return s[len("override:"):].strip()
+                if s.lower().startswith("[override]"):
+                    return s[len("[override]"):].strip(" :")
+        try:
+            from audit.models import ActivityLog
+            log = ActivityLog.objects.filter(
+                action=ActivityLog.Action.OVERRIDE,
+                model_name="BorrowTransaction",
+                object_id=str(self.pk),
+            ).first()
+            if log:
+                return log.description
+        except Exception:
+            pass
+        return ""
