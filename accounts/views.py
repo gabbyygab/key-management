@@ -42,11 +42,11 @@ def login_view(request):
     # ?next= is only honoured if it points back at this site. Redirecting to a
     # raw query parameter is an open redirect: a crafted link could bounce a
     # guard to an off-site look-alike straight after a real login.
-    next_url = request.GET.get("next", "")
-    if next_url and not url_has_allowed_host_and_scheme(
-        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    nxt = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if nxt and not url_has_allowed_host_and_scheme(
+        nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     ):
-        next_url = ""
+        nxt = ""
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
@@ -57,13 +57,15 @@ def login_view(request):
                 error = "This account is not allowed to log in."
             else:
                 login(request, user)
-                return redirect(request.GET.get("next") or get_post_login_redirect(user))
+                if nxt:
+                    return redirect(nxt)
+                return redirect(get_post_login_redirect(user))
         else:
             error = "Invalid credentials, or account not approved yet."
 
     # `next` goes back into the template so the form can carry it through the
     # POST; the form used to drop it, which sent every guard to the dashboard.
-    return render(request, "accounts/login.html", {"error": error, "next": next_url})
+    return render(request, "accounts/login.html", {"error": error, "next": nxt})
 
 
 def logout_view(request):
