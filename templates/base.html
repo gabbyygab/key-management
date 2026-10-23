@@ -30,6 +30,7 @@
     {% include "partials/logout_modal.html" %}
     {% include "partials/session_expired_modal.html" %}
   {% endif %}
+  {% include "partials/toast.html" %}
   {% comment %} Version pinned deliberately: an unpinned CDN tag can change the icon set
      or the API without warning and break the UI (F7.5 / B8.13). {% endcomment %}
   <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
