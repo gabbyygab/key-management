@@ -25,88 +25,32 @@
       
       <!-- Room and Term inputs -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label for="modal-room" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Room</label>
-          <select id="modal-room" name="room" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-            {% for r in rooms %}
-            <option value="{{ r.pk }}" {% if selected_room and r.pk == selected_room.pk %}selected{% endif %}>
-              {{ r.building.code }} - {{ r.room_code }} ({{ r.get_room_type_display }})
-            </option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label for="modal-term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Term</label>
-          <select id="modal-term" name="term" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-            {% for t in terms %}
-            <option value="{{ t.pk }}" {% if selected_term and t.pk == selected_term.pk %}selected{% endif %}>
-              {{ t.name }}
-            </option>
-            {% endfor %}
-          </select>
-        </div>
+        {% include "partials/form_field.html" with field=form.room field_label="Room" %}
+        {% include "partials/form_field.html" with field=form.term field_label="Term" %}
       </div>
 
       <!-- Title & Subject -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div class="sm:col-span-2">
-          <label for="modal-title" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Title / Class Name <span class="text-red-500">*</span></label>
-          <input type="text" id="modal-title" name="title" required placeholder="e.g. IT401 Lecture or CS 101 Lab" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-        </div>
-        <div class="sm:col-span-2">
-          <label for="modal-subject" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Subject <span class="normal-case font-normal text-stone-400">(optional)</span></label>
-          <select id="modal-subject" name="subject" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-            <option value="">No subject assigned</option>
-            {% for s in subjects %}
-            <option value="{{ s.pk }}">{{ s.code }} — {{ s.title }}</option>
-            {% endfor %}
-          </select>
-        </div>
+        {% include "partials/form_field.html" with field=form.title field_label="Title / Class Name" field_container_class="sm:col-span-2" %}
+        {% include "partials/form_field.html" with field=form.subject field_label="Subject" field_optional=True field_container_class="sm:col-span-2" %}
       </div>
 
       <!-- Instructor -->
-      <div>
-        <label for="modal-instructor" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Instructor / Borrower <span class="normal-case font-normal text-stone-400">(optional)</span></label>
-        <select id="modal-instructor" name="instructor" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-          <option value="">No instructor assigned</option>
-          {% for b in borrowers %}
-          <option value="{{ b.pk }}">{{ b.last_name }}, {{ b.first_name }} ({{ b.id_number }}) - {{ b.get_borrower_type_display }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      {% include "partials/form_field.html" with field=form.instructor field_label="Instructor / Borrower" field_optional=True %}
 
       <!-- Timing: Day, Start, End -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label for="modal-day" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Day of Week</label>
-          <select id="modal-day" name="day_of_week" required class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-            <option value="0">Monday</option>
-            <option value="1">Tuesday</option>
-            <option value="2">Wednesday</option>
-            <option value="3">Thursday</option>
-            <option value="4">Friday</option>
-            <option value="5">Saturday</option>
-          </select>
-        </div>
-        <div>
-          <label for="modal-start-time" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">Start Time</label>
-          <input type="time" id="modal-start-time" name="start_time" required step="300" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-        </div>
-        <div>
-          <label for="modal-end-time" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1">End Time</label>
-          <input type="time" id="modal-end-time" name="end_time" required step="300" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-        </div>
+        {% include "partials/form_field.html" with field=form.day_of_week field_label="Day of Week" %}
+        {% include "partials/form_field.html" with field=form.start_time field_label="Start Time" %}
+        {% include "partials/form_field.html" with field=form.end_time field_label="End Time" %}
       </div>
 
       <!-- Active Checkbox -->
-      <div class="flex items-center gap-2 pt-1">
-        <input type="checkbox" id="modal-is-active" name="is_active" checked class="h-4 w-4 rounded accent-[#1E6B4A]">
-        <label for="modal-is-active" class="text-[13px] text-stone-700 font-medium">Active recurring schedule block</label>
-      </div>
+      {% include "partials/form_field.html" with field=form.is_active field_label="Active recurring schedule block" field_container_class="pt-1" %}
 
       <!-- Live Conflict Detection Status Container -->
       <div id="schedule-conflict-container" class="hidden"></div>
-      <div id="modal-error-alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800"></div>
+      <div id="modal-error-alert" class="{% if not form.non_field_errors %}hidden {% endif %}rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800">{{ form.non_field_errors }}</div>
     </form>
 
     <!-- Modal Footer -->

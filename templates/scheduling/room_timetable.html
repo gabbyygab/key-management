@@ -286,6 +286,73 @@ document.addEventListener("DOMContentLoaded", function () {
   var errorAlert = document.getElementById("modal-error-alert");
   var topAddBtn = document.getElementById("top-add-block-btn");
 
+  function fieldGroup(name) {
+    var groups = form.querySelectorAll("[data-form-field]");
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].getAttribute("data-field-name") === name) return groups[i];
+    }
+    return null;
+  }
+
+  function clearFieldError(name) {
+    var group = fieldGroup(name);
+    if (!group) return;
+    var control = group.querySelector("[data-form-control]");
+    var error = group.querySelector("[data-form-field-error]");
+    if (control) {
+      control.classList.remove("border-red-500", "text-red-700", "focus:border-red-500", "focus:ring-red-500");
+      control.removeAttribute("aria-invalid");
+      if (error) {
+        var describedBy = (control.getAttribute("aria-describedby") || "")
+          .split(/\s+/)
+          .filter(function (id) { return id && id !== error.id; })
+          .join(" ");
+        if (describedBy) control.setAttribute("aria-describedby", describedBy);
+        else control.removeAttribute("aria-describedby");
+      }
+    }
+    if (error) {
+      error.classList.add("hidden");
+      error.textContent = "";
+    }
+  }
+
+  function setFieldError(name, message) {
+    var group = fieldGroup(name);
+    if (!group) return false;
+    var control = group.querySelector("[data-form-control]");
+    if (!control) return false;
+    var error = group.querySelector("[data-form-field-error]");
+    if (!error) {
+      error = document.createElement("p");
+      error.id = control.id + "-error";
+      error.setAttribute("data-form-field-error", "");
+      error.setAttribute("role", "alert");
+      error.className = "mt-1 text-[12px] text-red-700";
+      group.appendChild(error);
+    }
+    control.classList.add("border-red-500", "text-red-700", "focus:border-red-500", "focus:ring-red-500");
+    control.setAttribute("aria-invalid", "true");
+    control.setAttribute("aria-describedby", error.id);
+    error.textContent = message;
+    error.classList.remove("hidden");
+    return true;
+  }
+
+  function clearFieldErrors() {
+    var groups = form.querySelectorAll("[data-form-field]");
+    for (var i = 0; i < groups.length; i++) {
+      clearFieldError(groups[i].getAttribute("data-field-name"));
+    }
+  }
+
+  form.addEventListener("input", function (event) {
+    if (event.target.name) clearFieldError(event.target.name);
+  });
+  form.addEventListener("change", function (event) {
+    if (event.target.name) clearFieldError(event.target.name);
+  });
+
   // Conflict checker
   var conflictChecker = KeyTrack.scheduleGrid ? KeyTrack.scheduleGrid.conflictChecker(function (result) {
     conflictContainer.classList.remove("hidden");
@@ -329,6 +396,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   function clearErrors() {
+    clearFieldErrors();
     if (errorAlert) {
       errorAlert.classList.add("hidden");
       errorAlert.textContent = "";
@@ -415,11 +483,8 @@ document.addEventListener("DOMContentLoaded", function () {
     saveBtn.addEventListener("click", function (e) {
       e.preventDefault();
       if (!titleInput.value.trim()) {
+        setFieldError("title", "Title / Class Name is required.");
         titleInput.focus();
-        if (errorAlert) {
-          errorAlert.textContent = "Title / Class Name is required.";
-          errorAlert.classList.remove("hidden");
-        }
         return;
       }
 
@@ -468,20 +533,20 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
           var errs = result.data;
           var msg = "Please correct the errors.";
+          var hasFieldErrors = false;
           if (errs.error) {
             msg = errs.error;
           } else if (errs.__all__) {
             msg = Array.isArray(errs.__all__) ? errs.__all__.join(" ") : errs.__all__;
           } else {
-            var msgs = [];
             for (var k in errs) {
               if (errs.hasOwnProperty(k)) {
-                msgs.push(k + ": " + (Array.isArray(errs[k]) ? errs[k].join(" ") : errs[k]));
+                var fieldMessage = Array.isArray(errs[k]) ? errs[k].join(" ") : String(errs[k]);
+                if (setFieldError(k, fieldMessage)) hasFieldErrors = true;
               }
             }
-            if (msgs.length) msg = msgs.join(" | ");
           }
-          if (errorAlert) {
+          if (!hasFieldErrors && errorAlert) {
             errorAlert.textContent = msg;
             errorAlert.classList.remove("hidden");
           }
@@ -526,6 +591,10 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     });
   }
+
+  {% if form_invalid %}
+  window.KeyTrackModal.open(modalId);
+  {% endif %}
 
   if (window.lucide) {
     window.lucide.createIcons();

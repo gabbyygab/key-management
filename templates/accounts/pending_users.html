@@ -331,20 +331,7 @@
 
     <form id="reject-user-form" method="post" action="" class="mt-4">
       {% csrf_token %}
-      <div>
-        <label for="reject-reason-input" class="block text-[13px] font-semibold text-stone-700 mb-1">
-          Rejection Reason <span class="text-red-600">*</span>
-        </label>
-        <textarea id="reject-reason-input"
-                  name="reason"
-                  rows="3"
-                  required
-                  minlength="3"
-                  data-modal-autofocus
-                  placeholder="Enter the specific reason for rejecting this registration (e.g. Unverified employee ID, duplicate account, incorrect role)..."
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] placeholder-stone-400 focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-colors"></textarea>
-        <p id="reject-reason-error" class="hidden text-[12px] text-red-600 mt-1">Please provide a valid reason for rejection.</p>
-      </div>
+      {% include "partials/form_field.html" with field_id="reject-reason-input" field_name="reason" field_label="Rejection Reason" field_required=True control_type="textarea" field_rows=3 field_minlength=3 field_control_marker="modal-autofocus" field_placeholder="Enter the specific reason for rejecting this registration (e.g. Unverified employee ID, duplicate account, incorrect role)..." field_control_class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] placeholder-stone-400 focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none transition-colors" field_error_id="reject-reason-error" %}
 
       <div class="flex items-center justify-end gap-2 mt-5">
         <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50 transition-colors">
@@ -410,7 +397,9 @@
       var reasonInput = document.getElementById("reject-reason-input");
       if (reasonInput) {
         reasonInput.value = "";
-        reasonInput.classList.remove("border-red-500");
+        reasonInput.classList.remove("border-red-500", "text-red-700", "focus:border-red-500", "focus:ring-red-500");
+        reasonInput.removeAttribute("aria-invalid");
+        reasonInput.removeAttribute("aria-describedby");
       }
 
       var errorEl = document.getElementById("reject-reason-error");
@@ -426,8 +415,13 @@
       var errorEl = document.getElementById("reject-reason-error");
       if (reasonInput && (!reasonInput.value || !reasonInput.value.trim())) {
         e.preventDefault();
-        reasonInput.classList.add("border-red-500");
-        if (errorEl) errorEl.classList.remove("hidden");
+        reasonInput.classList.add("border-red-500", "text-red-700", "focus:border-red-500", "focus:ring-red-500");
+        reasonInput.setAttribute("aria-invalid", "true");
+        reasonInput.setAttribute("aria-describedby", "reject-reason-error");
+        if (errorEl) {
+          errorEl.textContent = "Please provide a valid reason for rejection.";
+          errorEl.classList.remove("hidden");
+        }
         reasonInput.focus();
       }
     });

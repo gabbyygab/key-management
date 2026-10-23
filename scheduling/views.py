@@ -183,6 +183,8 @@ def room_timetable(request):
     if not selected_room:
         selected_room = rooms.first()
 
+    form = None
+
     # Progressive enhancement: handle form POST when JS is disabled
     if request.method == "POST":
         block_id = request.POST.get("block_id")
@@ -228,14 +230,15 @@ def room_timetable(request):
     subjects = Subject.objects.filter(is_active=True).order_by("code")
     borrowers = Borrower.objects.filter(is_active=True).order_by("last_name", "first_name")
 
-    form = ScheduleBlockForm(initial={
-        "term": selected_term.pk if selected_term else None,
-        "room": selected_room.pk if selected_room else None,
-        "start_time": "09:00",
-        "end_time": "10:30",
-        "day_of_week": 0,
-        "is_active": True,
-    })
+    if form is None:
+        form = ScheduleBlockForm(initial={
+            "term": selected_term.pk if selected_term else None,
+            "room": selected_room.pk if selected_room else None,
+            "start_time": "09:00",
+            "end_time": "10:30",
+            "day_of_week": 0,
+            "is_active": True,
+        })
 
     ctx = {
         "terms": terms,
@@ -248,6 +251,7 @@ def room_timetable(request):
         "subjects": subjects,
         "borrowers": borrowers,
         "form": form,
+        "form_invalid": form.is_bound and bool(form.errors),
     }
     return render(request, "scheduling/room_timetable.html", ctx)
 
