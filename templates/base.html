@@ -28,6 +28,7 @@
   {% endif %}
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
+    {% include "partials/session_expired_modal.html" %}
   {% endif %}
   {% comment %} Version pinned deliberately: an unpinned CDN tag can change the icon set
      or the API without warning and break the UI (F7.5 / B8.13). {% endcomment %}
@@ -36,6 +37,7 @@
   {# Shared, every page. csrf.js must come first — it defines window.KeyTrack. #}
   <script src="{% static 'js/csrf.js' %}"></script>
   <script src="{% static 'js/toast.js' %}"></script>
+  <script src="{% static 'js/skeletons.js' %}"></script>
   <script src="{% static 'js/modal.js' %}"></script>
   <script src="{% static 'js/modal-form.js' %}"></script>
   <script src="{% static 'js/search.js' %}"></script>

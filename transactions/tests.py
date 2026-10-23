@@ -329,3 +329,46 @@ class ReturnEndpointTests(OutKeyFixture):
         self.assertEqual(res.status_code, 403)
         self.txn.refresh_from_db()
         self.assertEqual(self.txn.status, BorrowTransaction.Status.ACTIVE)
+
+
+
+@TESTSERVER
+class LoadingAndErrorStatesTests(TestCase):
+    """TASK F6.8 — Loading and error states, session expired path, and skeletons."""
+
+    def setUp(self):
+        self.guard = User.objects.create_user(
+            username="guard_f68", email="guard_f68@example.edu", password="pw",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+
+    def test_base_template_includes_session_expired_modal_and_skeletons_script(self):
+        self.client.force_login(self.guard)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "session-expired-modal")
+        self.assertContains(res, "Session expired")
+        self.assertContains(res, "Log in again")
+        self.assertContains(res, "js/skeletons.js")
+        self.assertContains(res, "js/toast.js")
+        self.assertContains(res, "js/csrf.js")
+
+    def test_borrow_dashboard_includes_both_scripts_and_search_targets(self):
+        self.client.force_login(self.guard)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "js/pos.js")
+        self.assertContains(res, "js/currently_out.js")
+        self.assertContains(res, "data-pos-borrower-results")
+
+    def test_active_api_unauthenticated_returns_403_session_expired(self):
+        res = self.client.get(reverse("transactions_api:active"))
+        self.assertEqual(res.status_code, 403)
+        data = res.json()
+        self.assertIn("error", data)
+        self.assertIn("session has expired", data["error"].lower())
+
+    def test_login_preserves_next_query_parameter_for_reauthentication(self):
+        login_url = reverse("accounts:login") + "?next=/transactions/borrow/"
+        res = self.client.get(login_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'action="?next=/transactions/borrow/"')

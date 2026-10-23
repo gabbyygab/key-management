@@ -1,4 +1,4 @@
-/* search.js — shared debounced live search (F3.2, F3.4, F4.*).
+/* search.js — shared debounced live search (F3.2, F3.4, F4.*, F6.8).
  *
  * One debounce implementation for every live search in the app, so the
  * 250–300ms window in GUIDE.md §5 is set in exactly one place.
@@ -6,22 +6,23 @@
  * Declarative use — no per-page JS needed:
  *   <input data-search-url="/api/borrowers/search/"
  *          data-search-target="#borrower-results"
+ *          data-search-skeleton="pos-borrower"
  *          data-search-param="q">
  * The endpoint answers with an HTML fragment, or with JSON when the input
- * also carries data-search-template (see KeyTrack.search() below for the
- * programmatic form the POS uses).
+ * also carries data-search-template.
  *
  * Programmatic use:
- *   var run = KeyTrack.debounce(function (q) { ... }, 275);
+ *   var search = KeyTrack.createSearch({ ... });
+ *   search.run("search term");
  *
- * Requires: csrf.js (window.KeyTrack, refreshIcons).
+ * Requires: csrf.js (window.KeyTrack, refreshIcons), toast.js, skeletons.js.
  */
 (function () {
   "use strict";
 
   var KeyTrack = (window.KeyTrack = window.KeyTrack || {});
 
-  var DEFAULT_DELAY = 275; /* inside the agreed 250–300ms band */
+  var DEFAULT_DELAY = 275; /* strictly within the agreed 250–300ms band */
 
   function debounce(fn, delay) {
     var timer = null;
@@ -67,20 +68,39 @@
         credentials: "same-origin",
       })
         .then(function (res) {
+          if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res)) {
+            KeyTrack.handleSessionExpired();
+            throw new Error("session_expired");
+          }
           if (res.status === 403) {
             if (KeyTrack.toast) KeyTrack.toast("You do not have permission.", "error");
             throw new Error("forbidden");
           }
           if (!res.ok) throw new Error("search failed: " + res.status);
           var type = res.headers.get("Content-Type") || "";
-          return type.indexOf("application/json") !== -1 ? res.json() : res.text();
+          return (type.indexOf("application/json") !== -1 ? res.json() : res.text())
+            .then(function (data) {
+              return { res: res, data: data };
+            });
         })
-        .then(function (data) {
+        .then(function (result) {
+          var res = result.res;
+          var data = result.data;
+          if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res, data)) {
+            KeyTrack.handleSessionExpired();
+            throw new Error("session_expired");
+          }
           if (opts.onResults) opts.onResults(data, query);
         })
         .catch(function (err) {
-          if (err.name === "AbortError") return; /* superseded, not an error */
-          if (opts.onError) opts.onError(err);
+          if (err.name === "AbortError" || err.message === "session_expired") return;
+          if (opts.onError) {
+            opts.onError(err);
+          } else if (KeyTrack.networkErrorToast) {
+            KeyTrack.networkErrorToast(function () {
+              run(query);
+            }, "Search failed due to network error.");
+          }
         })
         .finally(function () {
           if (opts.onDone) opts.onDone(query);
@@ -102,12 +122,17 @@
         var target = document.querySelector(input.getAttribute("data-search-target"));
         if (!target) return;
 
+        var skeletonType = input.getAttribute("data-search-skeleton") || "list";
+
         var search = createSearch({
           url: input.getAttribute("data-search-url"),
           param: input.getAttribute("data-search-param") || "q",
           delay: parseInt(input.getAttribute("data-search-delay"), 10) || undefined,
           onStart: function () {
             target.setAttribute("aria-busy", "true");
+            if (KeyTrack.skeletons) {
+              KeyTrack.skeletons.render(target, skeletonType);
+            }
           },
           onResults: function (html) {
             if (typeof html !== "string") return;
@@ -115,6 +140,13 @@
             /* Injected rows carry bare <i data-lucide> — without this the
              * chevrons and badges render as blank space. */
             KeyTrack.refreshIcons(target);
+          },
+          onError: function () {
+            if (KeyTrack.networkErrorToast) {
+              KeyTrack.networkErrorToast(function () {
+                search.run(input.value.trim());
+              }, "Search failed due to network error.");
+            }
           },
           onDone: function () {
             target.removeAttribute("aria-busy");
