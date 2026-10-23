@@ -1,5 +1,6 @@
 from django.contrib import messages
-from django.db.models import Q
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -220,7 +221,7 @@ def borrow_confirm(request):
     borrower = get_object_or_404(Borrower, pk=borrower_id)
     try:
         txn = borrow_key(key_id=key_id, borrower=borrower,
-                         guard=request.user, purpose=purpose, request=request)
+                          guard=request.user, purpose=purpose, request=request)
         messages.success(request, f"Released {txn.key.key_code} to {borrower.full_name} ({txn.transaction_no}).")
     except BorrowError as e:
         messages.error(request, str(e))
@@ -243,12 +244,64 @@ def return_confirm(request, pk):
 
 @admin_or_guard_required
 def shift_history(request):
-    """Read-only shift list. Shifts start on login and end on logout."""
-    if request.user.is_superuser:
-        shifts = GuardShift.objects.select_related("guard").all()[:200]
+    """Read-only shift list. Shifts start on login and end on logout.
+
+    Admins see all shifts with a guard filter; guards see only their own.
+    Columns: guard, post, start, end, duration, transaction count, on-duty pill.
+    """
+    is_admin = request.user.is_superuser or request.user.role == "ADMIN"
+
+    shifts = (
+        GuardShift.objects.select_related("guard")
+        .annotate(transaction_count=Count("transactions"))
+        .order_by("-shift_start")
+    )
+
+    guard_filter = ""
+    guard_users = []
+
+    if is_admin:
+        guard_filter = request.GET.get("guard", "").strip()
+        if guard_filter:
+            if guard_filter.isdigit():
+                shifts = shifts.filter(guard_id=int(guard_filter))
+            else:
+                shifts = shifts.filter(
+                    Q(guard__username__icontains=guard_filter)
+                    | Q(guard__first_name__icontains=guard_filter)
+                    | Q(guard__last_name__icontains=guard_filter)
+                )
+        guard_users = (
+            User.objects.filter(
+                Q(role=User.Role.GUARD) | Q(shifts__isnull=False)
+            )
+            .distinct()
+            .order_by("first_name", "last_name", "username")
+        )
     else:
-        shifts = GuardShift.objects.filter(guard=request.user)[:200]
-    return render(request, "transactions/shift_history.html", {"shifts": shifts})
+        # Guards see ONLY their own shifts
+        shifts = shifts.filter(guard=request.user)
+
+    paginator = Paginator(shifts, 20)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+    try:
+        elided_pages = list(paginator.get_elided_page_range(page_obj.number, on_each_side=1, on_ends=1))
+    except Exception:
+        elided_pages = list(paginator.page_range)
+
+    return render(
+        request,
+        "transactions/shift_history.html",
+        {
+            "is_admin": is_admin,
+            "shifts": page_obj,
+            "page_obj": page_obj,
+            "guard_filter": guard_filter,
+            "guard_users": guard_users,
+            "elided_pages": elided_pages,
+        },
+    )
 
 
 @admin_or_guard_required
