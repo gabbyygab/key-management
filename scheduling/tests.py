@@ -1,10 +1,12 @@
+import json
+
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from accounts.models import User
+from accounts.models import Borrower, User
 from facilities.models import Building, Room
-from .models import ScheduleBlock, Term
-from .services import find_conflicts, find_free_rooms
+from .models import ScheduleBlock, Subject, Term
+from .services import find_conflicts, find_free_rooms, get_room_timetable
 
 SLOT = {"day": "0", "start": "09:00", "end": "10:30"}
 
@@ -184,3 +186,253 @@ class ScheduleConflictTests(TestCase):
         existing = self.add_block(start="09:00", end="10:00", title="A")
         conflicts = find_conflicts(self.room, 0, "09:00", "10:00", self.term, exclude_block_id=existing.pk)
         self.assertEqual(conflicts, [])
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class RoomTimetableTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_user(
+            "tt_admin", "tt_admin@example.com", "x",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        cls.guard = User.objects.create_user(
+            "tt_guard", "tt_guard@example.com", "x",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        cls.building = Building.objects.create(code="CCS", name="Computing")
+        cls.room = Room.objects.create(
+            building=cls.building,
+            room_code="204",
+            name="Computer Lab 1",
+            room_type=Room.RoomType.LABORATORY,
+            capacity=30,
+        )
+        cls.other_room = Room.objects.create(
+            building=cls.building,
+            room_code="205",
+            name="Classroom 2",
+            room_type=Room.RoomType.CLASSROOM,
+            capacity=40,
+        )
+        cls.term = Term.objects.create(
+            name="2026 Fall",
+            start_date="2026-08-01",
+            end_date="2026-12-20",
+            is_active=True,
+        )
+        cls.subject = Subject.objects.create(code="CS 101", title="Intro to CS")
+        cls.borrower = Borrower.objects.create(
+            id_number="FAC-001",
+            first_name="Alan",
+            last_name="Turing",
+            borrower_type=Borrower.BorrowerType.FACULTY,
+        )
+        cls.block = ScheduleBlock.objects.create(
+            term=cls.term,
+            room=cls.room,
+            subject=cls.subject,
+            title="Intro to CS Lab",
+            instructor=cls.borrower,
+            day_of_week=0,  # Monday
+            start_time="09:00",
+            end_time="10:30",
+            is_active=True,
+            created_by=cls.admin,
+        )
+        cls.url = reverse("scheduling:room_timetable")
+        cls.conflict_api = reverse("scheduling:conflict_check")
+        cls.save_api = reverse("scheduling:schedule_block_save")
+
+    def test_timetable_service_geometry_and_data(self):
+        result = get_room_timetable(self.room, self.term)
+        self.assertEqual(result["total_blocks"], 1)
+        self.assertEqual(result["total_hours"], 1.5)
+        block_data = result["blocks"][0]
+        self.assertEqual(block_data["id"], self.block.pk)
+        self.assertEqual(block_data["day_of_week"], 0)
+        self.assertEqual(block_data["col"], 2)  # Monday is column 2
+        self.assertEqual(block_data["row_start"], 5)  # 09:00 is slot 4 -> row 5
+        self.assertEqual(block_data["row_end"], 8)  # 10:30 is slot 7 -> row 8
+        self.assertEqual(block_data["span"], 3)
+        self.assertEqual(block_data["subject_code"], "CS 101")
+        self.assertEqual(block_data["instructor_name"], "Alan Turing")
+        self.assertIn("bg", block_data["palette"])
+
+    def test_timetable_service_none_handling(self):
+        result = get_room_timetable(None, None)
+        self.assertEqual(result["blocks"], [])
+        self.assertEqual(result["total_blocks"], 0)
+        self.assertEqual(result["total_hours"], 0.0)
+
+    def test_timetable_page_renders_for_admin(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Room Timetable")
+        self.assertContains(res, "data-schedule-grid")
+        self.assertContains(res, "Mon")
+        self.assertContains(res, "Sat")
+        self.assertContains(res, "07:00")
+        self.assertContains(res, "20:30")
+        self.assertContains(res, "Intro to CS Lab")
+        self.assertContains(res, "CS 101")
+        self.assertContains(res, "09:00 – 10:30")
+        self.assertContains(res, "@media print")
+        self.assertContains(res, "Print timetable")
+        self.assertContains(res, 'id="schedule-form-modal"')
+
+    def test_timetable_page_filters_by_room_and_term(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(self.url, {"room": self.other_room.pk, "term": self.term.pk})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["selected_room"], self.other_room)
+        self.assertEqual(res.context["selected_term"], self.term)
+        self.assertEqual(len(res.context["timetable"]["blocks"]), 0)
+
+    def test_timetable_page_forbidden_for_guard(self):
+        self.client.force_login(self.guard)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_timetable_page_redirect_for_anonymous(self):
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 302)
+
+    def test_conflict_api_free_slot(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.conflict_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "day_of_week": 0,
+                "start_time": "11:00",
+                "end_time": "12:30",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["available"])
+        self.assertEqual(data["conflicts"], [])
+
+    def test_conflict_api_overlapping_slot(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.conflict_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "day_of_week": 0,
+                "start_time": "09:30",
+                "end_time": "11:00",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertFalse(data["available"])
+        self.assertEqual(len(data["conflicts"]), 1)
+        self.assertEqual(data["conflicts"][0]["title"], "Intro to CS Lab")
+
+    def test_conflict_api_end_before_start(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.conflict_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "day_of_week": 0,
+                "start_time": "11:00",
+                "end_time": "10:00",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertFalse(data["available"])
+        self.assertIn("clientError", data)
+
+    def test_conflict_api_guard_gets_403(self):
+        self.client.force_login(self.guard)
+        res = self.client.post(
+            self.conflict_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "day_of_week": 0,
+                "start_time": "11:00",
+                "end_time": "12:00",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_save_block_api_create_and_delete(self):
+        self.client.force_login(self.admin)
+        # Create
+        res = self.client.post(
+            self.save_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "title": "Math 101",
+                "day_of_week": 1,  # Tuesday
+                "start_time": "13:00",
+                "end_time": "14:30",
+                "is_active": True,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 201)
+        block_id = res.json()["block"]["id"]
+        self.assertTrue(ScheduleBlock.objects.filter(pk=block_id).exists())
+
+        # Update
+        res_update = self.client.post(
+            self.save_api,
+            json.dumps({
+                "block_id": block_id,
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "title": "Math 101 Advanced",
+                "day_of_week": 1,
+                "start_time": "13:00",
+                "end_time": "14:30",
+                "is_active": True,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res_update.status_code, 200)
+        self.assertEqual(ScheduleBlock.objects.get(pk=block_id).title, "Math 101 Advanced")
+
+        # Delete
+        delete_url = reverse("scheduling:schedule_block_delete", kwargs={"pk": block_id})
+        res_del = self.client.post(delete_url)
+        self.assertEqual(res_del.status_code, 200)
+        self.assertFalse(ScheduleBlock.objects.filter(pk=block_id).exists())
+
+    def test_save_block_api_conflict_returns_422(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.save_api,
+            json.dumps({
+                "room": self.room.pk,
+                "term": self.term.pk,
+                "title": "Conflicting Class",
+                "day_of_week": 0,  # Monday
+                "start_time": "09:30",
+                "end_time": "10:00",
+                "is_active": True,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_empty_state_without_rooms(self):
+        self.client.force_login(self.admin)
+        Room.objects.update(is_active=False)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "No rooms available")

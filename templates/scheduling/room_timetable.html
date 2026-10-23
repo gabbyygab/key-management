@@ -1,0 +1,535 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Room Timetable — KEYTRACK{% endblock %}
+{% block crumb %}Timetable{% endblock %}
+
+{% block extra_head %}
+<style>
+  @media print {
+    aside, header, nav, .no-print, #schedule-form-modal, [data-modal-overlay] {
+      display: none !important;
+    }
+    body, html {
+      background: #ffffff !important;
+      color: #000000 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    main {
+      padding: 0 !important;
+      margin: 0 !important;
+      max-width: 100% !important;
+      width: 100% !important;
+    }
+    .print-only {
+      display: block !important;
+    }
+    @page {
+      size: landscape;
+      margin: 8mm;
+    }
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .timetable-scroll {
+      max-height: none !important;
+      overflow: visible !important;
+      border: 1px solid #d6d3d1 !important;
+      box-shadow: none !important;
+    }
+    .slot-cell span {
+      display: none !important;
+    }
+    .timetable-block {
+      box-shadow: none !important;
+      border-width: 1px !important;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Print-Only Header -->
+<div class="hidden print-only mb-4 pb-3 border-b border-stone-400">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-stone-900">KEYTRACK — Room Timetable</h1>
+      <p class="text-sm text-stone-600 mt-0.5">
+        <b>Room:</b> {{ selected_room.building.code }} - {{ selected_room.room_code }} ({{ selected_room.get_room_type_display }})
+        &nbsp;|&nbsp;
+        <b>Building:</b> {{ selected_room.building.name }}
+        &nbsp;|&nbsp;
+        <b>Term:</b> {{ selected_term.name }}
+      </p>
+    </div>
+    <div class="text-right text-xs text-stone-500">
+      <div>Printed: {% now "Y-m-d H:i" %}</div>
+      <div>{{ timetable.total_blocks }} classes · {{ timetable.total_hours }} hrs/week</div>
+    </div>
+  </div>
+</div>
+
+<!-- Screen Page Header -->
+<div class="no-print flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Room Timetable</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Weekly schedule and recurring class assignments for university rooms.</p>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <button type="button" onclick="window.print()" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="printer" class="w-4 h-4 text-stone-500"></i> Print timetable
+    </button>
+    <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="search-check" class="w-4 h-4 text-stone-500"></i> Room Finder
+    </a>
+    <a href="{% url 'scheduling:schedule_list' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="list" class="w-4 h-4 text-stone-500"></i> Schedule List
+    </a>
+    <button type="button" id="top-add-block-btn" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="plus" class="w-4 h-4"></i> Add Block
+    </button>
+  </div>
+</div>
+
+{% if not rooms %}
+<div class="bg-white rounded-xl border border-dashed border-stone-300 p-8 text-center mb-6">
+  <i data-lucide="door-closed" class="w-10 h-10 mx-auto text-stone-400 mb-2"></i>
+  <h3 class="text-[16px] font-bold text-stone-800">No rooms available</h3>
+  <p class="text-[13px] text-stone-500 mt-1 max-w-md mx-auto">Please add active buildings and rooms in Facilities before creating timetables.</p>
+  <div class="mt-4">
+    <a href="{% url 'facilities:building_list' %}" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#14342A] text-white text-[13px] font-semibold hover:bg-[#0F2E1F]">Go to Facilities</a>
+  </div>
+</div>
+{% elif not terms %}
+<div class="bg-white rounded-xl border border-dashed border-stone-300 p-8 text-center mb-6">
+  <i data-lucide="calendar-x" class="w-10 h-10 mx-auto text-stone-400 mb-2"></i>
+  <h3 class="text-[16px] font-bold text-stone-800">No academic terms found</h3>
+  <p class="text-[13px] text-stone-500 mt-1 max-w-md mx-auto">Please configure an active term to manage room schedules.</p>
+</div>
+{% else %}
+
+<!-- Selectors & Room Information Bar -->
+<div class="no-print bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4">
+  <form id="timetable-filter-form" method="get" action="{% url 'scheduling:room_timetable' %}" class="flex flex-col md:flex-row items-stretch md:items-end justify-between gap-4">
+    
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 max-w-xl">
+      <!-- Room Selector -->
+      <div>
+        <label for="room-select" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5 flex items-center gap-1">
+          <i data-lucide="door-open" class="w-3.5 h-3.5"></i> Room
+        </label>
+        <select id="room-select" name="room" onchange="this.form.submit()" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] font-medium text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+          {% for r in rooms %}
+          <option value="{{ r.pk }}" {% if selected_room and r.pk == selected_room.pk %}selected{% endif %}>
+            {{ r.building.code }} - {{ r.room_code }} ({{ r.get_room_type_display }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Term Selector -->
+      <div>
+        <label for="term-select" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5 flex items-center gap-1">
+          <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Term
+        </label>
+        <select id="term-select" name="term" onchange="this.form.submit()" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] font-medium text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+          {% for t in terms %}
+          <option value="{{ t.pk }}" {% if selected_term and t.pk == selected_term.pk %}selected{% endif %}>
+            {{ t.name }}{% if t.is_active %} (Active){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Room Metadata Pills -->
+    <div class="flex items-center gap-2 flex-wrap border-t md:border-t-0 pt-3 md:pt-0 border-stone-100 text-[12px]">
+      {% if selected_room %}
+      <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700">
+        <i data-lucide="building-2" class="w-3.5 h-3.5 text-stone-500"></i>
+        <span><b>{{ selected_room.building.code }}</b> · {{ selected_room.building.name }}</span>
+      </div>
+      <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700">
+        <i data-lucide="tag" class="w-3.5 h-3.5 text-stone-500"></i>
+        <span>{{ selected_room.get_room_type_display }}</span>
+      </div>
+      <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700">
+        <i data-lucide="users" class="w-3.5 h-3.5 text-stone-500"></i>
+        <span>{{ selected_room.capacity|default:"—" }} seats</span>
+      </div>
+      {% endif %}
+      <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
+        <i data-lucide="clock" class="w-3.5 h-3.5 text-emerald-600"></i>
+        <span>{{ timetable.total_blocks }} class{{ timetable.total_blocks|pluralize:"es" }} · {{ timetable.total_hours }} hrs/wk</span>
+      </div>
+    </div>
+
+  </form>
+</div>
+
+<!-- Weekly Timetable Grid Card -->
+<div class="timetable-scroll overflow-x-auto overflow-y-auto max-h-[calc(100vh-230px)] rounded-xl border border-stone-200 bg-white shadow-sm">
+  <div class="min-w-[850px]">
+    
+    <!-- Day Header Row (Sticky at Top) -->
+    <div class="grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))] sticky top-0 z-20 bg-stone-50 border-b border-stone-200 text-stone-700 font-semibold text-[13px]">
+      <div class="p-3 text-right text-stone-400 font-mono text-[11px] uppercase tracking-wider border-r border-stone-200 bg-stone-50">Time</div>
+      {% for day in days %}
+      <div class="p-3 text-center border-r border-stone-200 last:border-r-0 flex items-center justify-center gap-1.5">
+        <span class="font-bold text-stone-800">{{ day.short }}</span>
+        <span class="hidden lg:inline text-stone-500 font-normal text-[12px]">({{ day.name }})</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Timetable Grid Body (28 rows x 7 cols) -->
+    <div data-schedule-grid class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
+      
+      <!-- Time Gutter Labels (Col 1) -->
+      {% for slot in time_slots %}
+      <div class="sticky left-0 z-10 bg-white border-r border-b border-stone-200 text-[11px] font-mono text-stone-500 px-2 flex items-center justify-end select-none"
+           style="grid-column: 1; grid-row: {{ slot.row }};">
+        {% if slot.is_hour %}
+        <span class="font-semibold text-stone-700">{{ slot.label }}</span>
+        {% else %}
+        <span class="text-stone-400 text-[10px]">{{ slot.label }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <!-- Clickable Background Cells (Cols 2 to 7) -->
+      {% for day in days %}
+        {% for slot in time_slots %}
+        <div class="slot-cell border-r border-b border-stone-100 hover:bg-emerald-50/50 transition cursor-pointer group"
+             style="grid-column: {{ day.col }}; grid-row: {{ slot.row }};"
+             data-slot-day="{{ day.code }}"
+             data-slot-time="{{ slot.label }}"
+             title="Click to schedule on {{ day.name }} at {{ slot.label }}">
+          <span class="hidden group-hover:inline-block text-[10px] text-emerald-700 font-medium pl-1.5 pt-0.5 select-none">+ Add</span>
+        </div>
+        {% endfor %}
+      {% endfor %}
+
+      <!-- Scheduled Blocks -->
+      {% for block in timetable.blocks %}
+      <div class="timetable-block z-10 m-0.5 p-2 rounded-lg border {{ block.palette.bg }} {{ block.palette.border }} {{ block.palette.border_accent }} text-[12px] shadow-xs hover:shadow-md cursor-pointer transition flex flex-col justify-between overflow-hidden group select-none"
+           style="grid-column: {{ block.col }}; grid-row: {{ block.row_start }} / {{ block.row_end }};"
+           data-block-id="{{ block.id }}"
+           data-block='{{ block.json_data }}'
+           title="{{ block.title }} ({{ block.time_display }})">
+        <div>
+          <div class="flex items-start justify-between gap-1">
+            <div class="font-bold {{ block.palette.text }} leading-tight line-clamp-2">
+              {% if block.subject_code %}
+              <span class="inline-block px-1.5 py-0.5 text-[10px] font-bold rounded {{ block.palette.badge }} mr-1">{{ block.subject_code }}</span>
+              {% endif %}
+              {{ block.title }}
+            </div>
+          </div>
+          {% if block.instructor_name %}
+          <div class="flex items-center gap-1 text-[11px] text-stone-600 truncate mt-1">
+            <i data-lucide="user" class="w-3 h-3 shrink-0 text-stone-400"></i>
+            <span class="truncate">{{ block.instructor_name }}</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="flex items-center justify-between text-[10px] font-mono text-stone-500 mt-1 pt-0.5 border-t border-stone-200/40">
+          <span>{{ block.time_display }}</span>
+          <i data-lucide="pencil" class="w-3 h-3 opacity-0 group-hover:opacity-100 text-stone-600 transition shrink-0"></i>
+        </div>
+        {% if block.has_exception %}
+        <span class="inline-block px-1 text-[9px] font-bold uppercase rounded bg-red-100 text-red-700 border border-red-200 mt-0.5">{{ block.exception_text }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+    </div>
+  </div>
+</div>
+
+<!-- Include Modal Partial -->
+{% include "scheduling/_schedule_form_modal.html" %}
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/csrf.js' %}"></script>
+<script src="{% static 'js/toast.js' %}"></script>
+<script src="{% static 'js/modal.js' %}"></script>
+<script src="{% static 'js/schedule-grid.js' %}"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var grid = document.querySelector("[data-schedule-grid]");
+  var modalId = "schedule-form-modal";
+  var form = document.getElementById("schedule-block-form");
+  var titleInput = document.getElementById("modal-title");
+  var subjectSelect = document.getElementById("modal-subject");
+  var instructorSelect = document.getElementById("modal-instructor");
+  var daySelect = document.getElementById("modal-day");
+  var startTimeInput = document.getElementById("modal-start-time");
+  var endTimeInput = document.getElementById("modal-end-time");
+  var isActiveCheck = document.getElementById("modal-is-active");
+  var blockIdInput = document.getElementById("modal-block-id");
+  var roomSelect = document.getElementById("modal-room");
+  var termSelect = document.getElementById("modal-term");
+  var modalTitle = document.getElementById("schedule-modal-title");
+  var modalDesc = document.getElementById("schedule-modal-desc");
+  var saveBtn = document.getElementById("modal-save-btn");
+  var saveLabel = document.getElementById("modal-save-label");
+  var saveSpinner = document.getElementById("modal-save-spinner");
+  var deleteBtn = document.getElementById("modal-delete-btn");
+  var conflictContainer = document.getElementById("schedule-conflict-container");
+  var errorAlert = document.getElementById("modal-error-alert");
+  var topAddBtn = document.getElementById("top-add-block-btn");
+
+  // Conflict checker
+  var conflictChecker = KeyTrack.scheduleGrid ? KeyTrack.scheduleGrid.conflictChecker(function (result) {
+    conflictContainer.classList.remove("hidden");
+    KeyTrack.scheduleGrid.renderConflictState(conflictContainer, saveBtn, result);
+  }) : null;
+
+  function runConflictCheck() {
+    if (!conflictChecker) return;
+    var room = roomSelect ? roomSelect.value : "";
+    var term = termSelect ? termSelect.value : "";
+    var day = daySelect ? daySelect.value : "";
+    var start = startTimeInput ? startTimeInput.value : "";
+    var end = endTimeInput ? endTimeInput.value : "";
+    var excludeId = blockIdInput ? blockIdInput.value : "";
+
+    if (!room || !term || day === "" || !start || !end) {
+      conflictContainer.classList.add("hidden");
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+      return;
+    }
+
+    conflictChecker.run({
+      room: room,
+      term: term,
+      day_of_week: day,
+      start_time: start,
+      end_time: end,
+      exclude_block_id: excludeId || null
+    });
+  }
+
+  // Attach change listeners to trigger live conflict checks
+  [roomSelect, termSelect, daySelect, startTimeInput, endTimeInput].forEach(function (el) {
+    if (el) {
+      el.addEventListener("input", runConflictCheck);
+      el.addEventListener("change", runConflictCheck);
+    }
+  });
+
+  function clearErrors() {
+    if (errorAlert) {
+      errorAlert.classList.add("hidden");
+      errorAlert.textContent = "";
+    }
+    if (conflictContainer) {
+      conflictContainer.classList.add("hidden");
+      conflictContainer.textContent = "";
+    }
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  }
+
+  function openCreateModal(day, startTime, endTime) {
+    clearErrors();
+    modalTitle.textContent = "Add Schedule Block";
+    modalDesc.textContent = "Schedule a class or recurring booking for this room.";
+    saveLabel.textContent = "Create block";
+    blockIdInput.value = "";
+    titleInput.value = "";
+    if (subjectSelect) subjectSelect.value = "";
+    if (instructorSelect) instructorSelect.value = "";
+    if (day !== undefined && day !== null && daySelect) daySelect.value = String(day);
+    if (startTime && startTimeInput) startTimeInput.value = startTime;
+    if (endTime && endTimeInput) endTimeInput.value = endTime;
+    if (isActiveCheck) isActiveCheck.checked = true;
+    if (deleteBtn) deleteBtn.classList.add("hidden");
+
+    window.KeyTrackModal.open(modalId);
+    if (titleInput) titleInput.focus();
+    runConflictCheck();
+  }
+
+  function openEditModal(blockId) {
+    clearErrors();
+    var blockEl = document.querySelector('[data-block-id="' + blockId + '"]');
+    if (!blockEl) return;
+
+    var data = {};
+    try {
+      data = JSON.parse(blockEl.getAttribute("data-block") || "{}");
+    } catch (e) {
+      console.error("Invalid block JSON data", e);
+    }
+
+    modalTitle.textContent = "Edit Schedule Block";
+    modalDesc.textContent = "Update room assignment, time, or instructor details.";
+    saveLabel.textContent = "Save changes";
+    blockIdInput.value = data.id || blockId;
+    titleInput.value = data.title || "";
+    if (subjectSelect) subjectSelect.value = data.subject_id || "";
+    if (instructorSelect) instructorSelect.value = data.instructor_id || "";
+    if (daySelect && data.day_of_week !== undefined) daySelect.value = String(data.day_of_week);
+    if (startTimeInput && data.start_time) startTimeInput.value = data.start_time;
+    if (endTimeInput && data.end_time) endTimeInput.value = data.end_time;
+    if (isActiveCheck) isActiveCheck.checked = data.is_active !== false;
+    if (deleteBtn) deleteBtn.classList.remove("hidden");
+
+    window.KeyTrackModal.open(modalId);
+    if (titleInput) titleInput.focus();
+    runConflictCheck();
+  }
+
+  // Handle grid clicks via CustomEvents dispatched from schedule-grid.js
+  if (grid) {
+    grid.addEventListener("schedule:create", function (e) {
+      openCreateModal(e.detail.day, e.detail.startTime, e.detail.endTime);
+    });
+    grid.addEventListener("schedule:edit", function (e) {
+      openEditModal(e.detail.blockId);
+    });
+  }
+
+  // Top "+ Add Block" button
+  if (topAddBtn) {
+    topAddBtn.addEventListener("click", function () {
+      openCreateModal(0, "09:00", "10:30");
+    });
+  }
+
+  // Modal save button handler
+  if (saveBtn) {
+    saveBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (!titleInput.value.trim()) {
+        titleInput.focus();
+        if (errorAlert) {
+          errorAlert.textContent = "Title / Class Name is required.";
+          errorAlert.classList.remove("hidden");
+        }
+        return;
+      }
+
+      var payload = {
+        block_id: blockIdInput.value || null,
+        room: roomSelect ? roomSelect.value : null,
+        term: termSelect ? termSelect.value : null,
+        title: titleInput.value.trim(),
+        subject: subjectSelect ? subjectSelect.value || null : null,
+        instructor: instructorSelect ? instructorSelect.value || null : null,
+        day_of_week: parseInt(daySelect.value, 10),
+        start_time: startTimeInput.value,
+        end_time: endTimeInput.value,
+        is_active: isActiveCheck ? isActiveCheck.checked : true
+      };
+
+      saveBtn.disabled = true;
+      if (saveSpinner) saveSpinner.classList.remove("hidden");
+
+      fetch("{% url 'scheduling:schedule_block_save' %}", {
+        method: "POST",
+        headers: KeyTrack.jsonHeaders ? KeyTrack.jsonHeaders() : {
+          "Content-Type": "application/json",
+          "X-CSRFToken": (KeyTrack.csrfToken ? KeyTrack.csrfToken() : "")
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(function (res) {
+        if (res.status === 403) {
+          if (KeyTrack.toast) KeyTrack.toast("You do not have permission.", "error");
+          window.KeyTrackModal.close(modalId);
+          throw new Error("forbidden");
+        }
+        return res.json().then(function (data) {
+          return { ok: res.ok, status: res.status, data: data };
+        });
+      })
+      .then(function (result) {
+        saveBtn.disabled = false;
+        if (saveSpinner) saveSpinner.classList.add("hidden");
+
+        if (result.ok) {
+          window.KeyTrackModal.close(modalId);
+          if (KeyTrack.toast) KeyTrack.toast("Schedule block saved successfully.", "success");
+          window.location.reload();
+        } else {
+          var errs = result.data;
+          var msg = "Please correct the errors.";
+          if (errs.error) {
+            msg = errs.error;
+          } else if (errs.__all__) {
+            msg = Array.isArray(errs.__all__) ? errs.__all__.join(" ") : errs.__all__;
+          } else {
+            var msgs = [];
+            for (var k in errs) {
+              if (errs.hasOwnProperty(k)) {
+                msgs.push(k + ": " + (Array.isArray(errs[k]) ? errs[k].join(" ") : errs[k]));
+              }
+            }
+            if (msgs.length) msg = msgs.join(" | ");
+          }
+          if (errorAlert) {
+            errorAlert.textContent = msg;
+            errorAlert.classList.remove("hidden");
+          }
+        }
+      })
+      .catch(function (err) {
+        saveBtn.disabled = false;
+        if (saveSpinner) saveSpinner.classList.add("hidden");
+        if (err.message !== "forbidden") {
+          if (errorAlert) {
+            errorAlert.textContent = "An error occurred while saving the schedule block.";
+            errorAlert.classList.remove("hidden");
+          }
+        }
+      });
+    });
+  }
+
+  // Modal delete button handler
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", function () {
+      var blockId = blockIdInput.value;
+      if (!blockId) return;
+      if (!confirm("Are you sure you want to delete this schedule block?")) return;
+
+      var url = "/api/scheduling/blocks/" + blockId + "/delete/";
+      fetch(url, {
+        method: "POST",
+        headers: KeyTrack.jsonHeaders ? KeyTrack.jsonHeaders() : {
+          "Content-Type": "application/json",
+          "X-CSRFToken": (KeyTrack.csrfToken ? KeyTrack.csrfToken() : "")
+        }
+      })
+      .then(function (res) {
+        if (res.ok) {
+          window.KeyTrackModal.close(modalId);
+          if (KeyTrack.toast) KeyTrack.toast("Schedule block deleted.", "success");
+          window.location.reload();
+        } else {
+          alert("Could not delete schedule block.");
+        }
+      });
+    });
+  }
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+});
+</script>
+{% endblock %}
