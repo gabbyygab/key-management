@@ -36,16 +36,16 @@
 <div class="grid lg:grid-cols-2 gap-3 items-start">
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
   <h2 class="font-bold text-[14px]">1 · Search person</h2>
-  <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search for a borrower">
+  <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search for a borrower" data-pos-borrower-form>
     {# The magnifier is decorative; the real name comes from the label. #}
     <label for="pos-q-borrower" class="sr-only">Professor name or ID number</label>
     <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
       <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-      <input id="pos-q-borrower" name="q_borrower" value="{{ q_borrower }}" placeholder="Professor name or ID..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+      <input id="pos-q-borrower" name="q_borrower" value="{{ q_borrower }}" placeholder="Professor name or ID..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0" data-pos-borrower-search>
     </div>
     <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">Search</button>
   </form>
-  <div class="mt-2 divide-y divide-stone-100 max-h-56 overflow-auto" role="region" aria-label="Borrower search results">
+  <div class="mt-2 divide-y divide-stone-100 max-h-56 overflow-auto" role="region" aria-label="Borrower search results" data-pos-borrower-results>
     {% for b in borrowers %}
     <a href="/transactions/borrow/?q_borrower={{ q_borrower }}&borrower_id={{ b.pk }}" class="flex items-center justify-between py-2.5 hover:bg-stone-50 px-2 rounded-lg {% if selected and selected.pk == b.pk %}bg-emerald-50/60{% endif %}" {% if selected and selected.pk == b.pk %}aria-current="true"{% endif %}>
       <span class="text-[13px]"><b>{{ b.last_name }}, {{ b.first_name }}</b> <span class="text-stone-500 font-mono text-[12px]">{{ b.id_number }}</span></span>
@@ -67,17 +67,17 @@
       <p data-pos-blocked-notice role="alert" class="hidden mt-2 text-[13px] bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2.5">
         You must start a shift before releasing keys. Log out and back in to start one.
       </p>
-      <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search available keys">
+      <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search available keys" data-pos-key-form>
         <input type="hidden" name="borrower_id" value="{{ selected.pk }}">
         <input type="hidden" name="q_borrower" value="{{ q_borrower }}">
         <label for="pos-q-key" class="sr-only">Search available keys by code or room</label>
         <div class="flex items-center flex-1 bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
           <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-          <input id="pos-q-key" name="q_key" value="{{ q_key }}" placeholder="Search key / RM303..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+          <input id="pos-q-key" name="q_key" value="{{ q_key }}" placeholder="Search key / RM303..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0" data-pos-key-search>
         </div>
         <button class="bg-white border border-stone-200 hover:bg-stone-50 px-3 py-2 rounded-lg text-[13px] shrink-0">Find</button>
       </form>
-      <div class="mt-2 space-y-2 max-h-80 overflow-auto" role="region" aria-label="Available keys">
+      <div class="mt-2 space-y-2 max-h-80 overflow-auto" role="region" aria-label="Available keys" data-pos-key-results>
       {% for k in available_keys %}
         {% comment %} flex-wrap + a sm: breakpoint: at tablet width the purpose field and
            Confirm used to be squeezed onto one line, leaving a ~40px input. {% endcomment %}
