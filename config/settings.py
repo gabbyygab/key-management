@@ -73,6 +73,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # F2.3: guard shift indicator + navbar quick-add context
+                'accounts.context_processors.navbar_context',
             ],
         },
     },

@@ -1,20 +1,155 @@
+{% load static %}{% load tz %}
+{% comment %}
+partials/navbar.html — F2.3 polished navbar.
+
+Sections:
+  1. Breadcrumb  — "KEYTRACK › Workspace › <page name>"  ({% block crumb %})
+  2. Quick-add + dropdown  — ADMIN / superuser only; links to add-* URLs
+  3. Guard shift indicator  — GUARD only; prominent red pill when off-duty
+  4. Server clock  — shown everywhere; seeds navbar.js to tick in real time
+  5. Date, avatar, logout button  — unchanged from original
+
+navbar.js handles dropdown keyboard / click behaviour and the clock tick.
+{% endcomment %}
+
 <header class="bg-[#FAF7F0]/90 backdrop-blur border-b border-stone-200 sticky top-0 z-10">
-  <div class="px-6 lg:px-8 py-3 flex items-center gap-3">
+  <div class="px-6 lg:px-8 py-3 flex items-center gap-3 min-w-0">
+
+    {# ── Mobile brand ──────────────────────────────────────────────── #}
     <div class="text-[12px] text-stone-500 tracking-wide md:hidden font-extrabold text-[#0F2E1F]">KEYTRACK</div>
-    <nav class="hidden md:block text-[12px] text-stone-500">
+
+    {# ── 1. Breadcrumb ─────────────────────────────────────────────── #}
+    <nav class="hidden md:block text-[12px] text-stone-500 min-w-0" aria-label="Breadcrumb">
       <span class="font-semibold text-stone-700">KEYTRACK</span>
-      <span class="mx-1">›</span> Workspace <span class="mx-1">›</span>
+      <span class="mx-1" aria-hidden="true">›</span> Workspace <span class="mx-1" aria-hidden="true">›</span>
       <span class="text-stone-800 font-medium">{% block crumb %}Dashboard{% endblock %}</span>
     </nav>
+
     <div class="flex-1"></div>
-    <span class="hidden lg:inline text-[12px] text-stone-500">{% now "D, F j, Y" %}</span>
-    <div class="w-8 h-8 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
-    <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out" class="w-8 h-8 rounded-lg border border-stone-200 bg-white flex items-center justify-center hover:bg-stone-50">
-      <i data-lucide="log-out" class="w-4 h-4 text-stone-500"></i>
+
+    {# ── 2. Admin quick-add "+" dropdown ───────────────────────────── #}
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <div class="relative">
+      <button
+        id="navbar-quickadd-btn"
+        type="button"
+        aria-haspopup="true"
+        aria-expanded="false"
+        aria-controls="navbar-quickadd-dropdown"
+        title="Quick add"
+        class="flex items-center gap-1.5 bg-[#14342A] hover:bg-[#0F2E1F] text-white rounded-lg px-3 py-1.5 text-[12px] font-semibold"
+      >
+        <i data-lucide="plus" class="w-3.5 h-3.5" aria-hidden="true"></i>
+        <span class="hidden sm:inline">New</span>
+        <i data-lucide="chevron-down" class="w-3 h-3" aria-hidden="true"></i>
+      </button>
+
+      {# Dropdown panel #}
+      <div
+        id="navbar-quickadd-dropdown"
+        role="menu"
+        aria-hidden="true"
+        aria-labelledby="navbar-quickadd-btn"
+        class="hidden absolute right-0 mt-1.5 w-48 bg-white border border-stone-200 rounded-xl shadow-xl py-1 z-20"
+      >
+        <a
+          role="menuitem"
+          href="{% url 'keys:key_create' %}"
+          class="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-stone-50 rounded-lg mx-1"
+        >
+          <i data-lucide="key-round" class="w-4 h-4 text-stone-500" aria-hidden="true"></i>
+          New Key
+        </a>
+        <a
+          role="menuitem"
+          href="{% url 'facilities:room_create' %}"
+          class="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-stone-50 rounded-lg mx-1"
+        >
+          <i data-lucide="door-open" class="w-4 h-4 text-stone-500" aria-hidden="true"></i>
+          New Room
+        </a>
+        <a
+          role="menuitem"
+          href="{% url 'accounts:borrower_create' %}"
+          class="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-stone-50 rounded-lg mx-1"
+        >
+          <i data-lucide="user-plus" class="w-4 h-4 text-stone-500" aria-hidden="true"></i>
+          New Borrower
+        </a>
+        <a
+          role="menuitem"
+          href="{% url 'scheduling:schedule_list' %}"
+          class="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-stone-50 rounded-lg mx-1"
+        >
+          <i data-lucide="calendar-plus" class="w-4 h-4 text-stone-500" aria-hidden="true"></i>
+          New Schedule
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 3. Guard shift indicator ──────────────────────────────────── #}
+    {# navbar_context injects `navbar_shift` for GUARD users on every page. #}
+    {% if user.role == "GUARD" and not user.is_superuser %}
+      {% if navbar_shift %}
+        {# Green "on duty" pill — shift is open, borrowing is allowed. #}
+        <span
+          role="status"
+          aria-label="Guard shift active since {{ navbar_shift.shift_start|date:'H:i' }}"
+          class="hidden sm:inline-flex items-center gap-1.5 bg-green-50 text-green-800 border border-green-200 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap"
+        >
+          <i data-lucide="shield-check" class="w-3.5 h-3.5" aria-hidden="true"></i>
+          On duty since {{ navbar_shift.shift_start|date:"H:i" }}
+        </span>
+      {% else %}
+        {# Red warning — NO shift, borrowing is completely blocked.
+           This must be impossible to miss (task requirement). #}
+        <span
+          role="alert"
+          aria-live="assertive"
+          aria-label="No active shift — borrowing is blocked. Log out and back in to start a shift."
+          class="inline-flex items-center gap-1.5 animate-pulse bg-red-600 text-white rounded-lg px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap"
+        >
+          <i data-lucide="shield-alert" class="w-3.5 h-3.5" aria-hidden="true"></i>
+          <span class="hidden sm:inline">No active shift</span>
+          <span class="sm:hidden">No shift</span>
+        </span>
+      {% endif %}
+    {% endif %}
+
+    {# ── 4. Server clock ───────────────────────────────────────────── #}
+    {# data-server-now seeds navbar.js to sync the JS clock to server time. #}
+    <span
+      id="navbar-server-clock"
+      data-server-now="{% now "c" %}"
+      aria-label="Server time"
+      title="Server time"
+      class="hidden lg:inline font-mono text-[12px] text-stone-500 tabular-nums"
+    >{% now "H:i:s" %}</span>
+
+    {# ── Date ──────────────────────────────────────────────────────── #}
+    <span class="hidden lg:inline text-[12px] text-stone-400">{% now "D, F j, Y" %}</span>
+
+    {# ── Avatar ────────────────────────────────────────────────────── #}
+    <div
+      class="w-8 h-8 rounded-full bg-[#0F2E1F] text-white flex items-center justify-center text-xs font-bold shrink-0"
+      aria-hidden="true"
+    >{{ user.username|slice:":2"|upper|default:"GU" }}</div>
+
+    {# ── Logout button ─────────────────────────────────────────────── #}
+    <button
+      type="button"
+      data-modal-open="logout-modal"
+      title="Logout"
+      aria-label="Log out"
+      class="w-8 h-8 rounded-lg border border-stone-200 bg-white flex items-center justify-center hover:bg-stone-50 shrink-0"
+    >
+      <i data-lucide="log-out" class="w-4 h-4 text-stone-500" aria-hidden="true"></i>
     </button>
   </div>
-  <!-- mobile nav -->
-  <nav class="md:hidden flex gap-1 overflow-x-auto px-4 pb-2 text-[13px]">
+
+  {# ── Mobile nav strip ──────────────────────────────────────────────── #}
+  <nav class="md:hidden flex gap-1 overflow-x-auto px-4 pb-2 text-[13px]" aria-label="Mobile navigation">
     <a href="{% url 'dashboard' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Dashboard</a>
     <a href="{% url 'transactions:borrow_dashboard' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Transact</a>
     <a href="{% url 'keys:key_list' %}" class="px-3 py-1.5 rounded-lg bg-white border border-stone-200 whitespace-nowrap">Keys</a>
