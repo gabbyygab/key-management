@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Reports &amp; Analytics — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; Analytics</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">High-level key usage analytics, overdue records, and operational reports.</p>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between">
+      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Total Transactions</span>
+      <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+        <i data-lucide="history" class="w-4 h-4"></i>
+      </div>
+    </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ total_txns }}</div>
+    <div class="text-[12px] text-stone-500 mt-0.5">Lifetime checkouts &amp; returns</div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between">
+      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Active Checkouts</span>
+      <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+        <i data-lucide="arrow-left-right" class="w-4 h-4"></i>
+      </div>
+    </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ active_txns }}</div>
+    <div class="text-[12px] text-stone-500 mt-0.5">Currently out with borrowers</div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between">
+      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Overdue Keys</span>
+      <div class="w-8 h-8 rounded-lg bg-red-50 text-red-700 flex items-center justify-center">
+        <i data-lucide="clock" class="w-4 h-4"></i>
+      </div>
+    </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ overdue_txns }}</div>
+    <div class="text-[12px] text-stone-500 mt-0.5">Past scheduled deadline</div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-center justify-between">
+      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Returned Keys</span>
+      <div class="w-8 h-8 rounded-lg bg-green-50 text-green-700 flex items-center justify-center">
+        <i data-lucide="check" class="w-4 h-4"></i>
+      </div>
+    </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ returned_txns }}</div>
+    <div class="text-[12px] text-stone-500 mt-0.5">Safely returned to rack</div>
+  </div>
+</div>
+
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-bold text-[15px] text-stone-900">Standard Reports</h2>
+    <span class="text-[12px] text-stone-500">Export &amp; Review</span>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="p-4 rounded-xl border border-stone-100 bg-stone-50/50 flex items-start gap-3">
+      <div class="w-9 h-9 rounded-lg bg-white border border-stone-200 flex items-center justify-center text-stone-700 shrink-0">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+      </div>
+      <div>
+        <h3 class="font-semibold text-[13px] text-stone-900">Key Utilization by Department</h3>
+        <p class="text-[12px] text-stone-500 mt-0.5">Summary of frequency and duration of key checkouts grouped by academic department.</p>
+        <a href="{% url 'transactions:history' %}" class="inline-flex items-center gap-1 text-[12px] font-medium text-[#1E6B4A] hover:underline mt-2">
+          View transaction records <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </div>
+
+    <div class="p-4 rounded-xl border border-stone-100 bg-stone-50/50 flex items-start gap-3">
+      <div class="w-9 h-9 rounded-lg bg-white border border-stone-200 flex items-center justify-center text-stone-700 shrink-0">
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+      </div>
+      <div>
+        <h3 class="font-semibold text-[13px] text-stone-900">Guard Shift Performance Log</h3>
+        <p class="text-[12px] text-stone-500 mt-0.5">Detailed breakdown of transactions released and returned during each guard duty shift.</p>
+        <a href="{% url 'transactions:shift_history' %}" class="inline-flex items-center gap-1 text-[12px] font-medium text-[#1E6B4A] hover:underline mt-2">
+          View guard shift log <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
