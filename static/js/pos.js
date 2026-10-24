@@ -35,8 +35,10 @@
    * borrow_dashboard.html renders the shift banner into #shift; a data flag
    * on the POS root is the explicit signal. */
   function hasActiveShift() {
-    if (!root) return true;
-    if (root.dataset.shiftActive !== undefined) {
+    if (!root) {
+      root = document.querySelector("[data-pos-root]");
+    }
+    if (root && root.dataset.shiftActive !== undefined) {
       return root.dataset.shiftActive === "1";
     }
     /* Fall back to the existing markup: the "no shift" banner is amber. */
@@ -52,15 +54,31 @@
       document.querySelectorAll("[data-pos-release], form[action*='borrow/confirm'] button"),
       function (btn) {
         btn.disabled = true;
+        btn.setAttribute("aria-disabled", "true");
         btn.classList.add("opacity-50", "cursor-not-allowed");
         btn.title = "You must start a shift before releasing keys.";
       }
     );
 
     Array.prototype.forEach.call(
-      document.querySelectorAll("[data-pos-blocked-notice]"),
+      document.querySelectorAll("[data-pos-blocked-notice], [data-pos-blocked-panel]"),
       function (el) {
         el.classList.remove("hidden");
+      }
+    );
+
+    /* Disable form inputs and search buttons so guard cannot fill in the form */
+    Array.prototype.forEach.call(
+      document.querySelectorAll(
+        "[data-pos-borrower-search], [data-pos-key-search], [data-pos-borrower-form] input, [data-pos-borrower-form] button, [data-pos-key-form] input, [data-pos-key-form] button, input[name='purpose']"
+      ),
+      function (el) {
+        el.disabled = true;
+        el.setAttribute("aria-disabled", "true");
+        el.classList.add("opacity-60", "cursor-not-allowed");
+        if (el.tagName === "INPUT") {
+          el.title = "You must start a shift before releasing keys.";
+        }
       }
     );
   }
@@ -125,6 +143,7 @@
       if (window.KeyTrackModal && window.KeyTrackModal.anyOpen && window.KeyTrackModal.anyOpen()) return;
 
       if (e.key === "F1" || (e.key === "/" && !isTyping(e))) {
+        if (!hasActiveShift()) return;
         if (focusSearch("[name=q_borrower], [data-pos-borrower-search]")) {
           e.preventDefault();
         }
@@ -132,6 +151,7 @@
       }
 
       if (e.key === "F2") {
+        if (!hasActiveShift()) return;
         if (focusSearch("[name=q_key], [data-pos-key-search]")) {
           e.preventDefault();
         }
@@ -223,12 +243,14 @@
       }, SEARCH_DEBOUNCE_MS);
 
       borrowerInput.addEventListener("input", function () {
+        if (!hasActiveShift()) return;
         fetchBorrowers(borrowerInput.value.trim());
       });
 
       if (borrowerForm) {
         borrowerForm.addEventListener("submit", function (e) {
           e.preventDefault();
+          if (!hasActiveShift()) return;
           fetchBorrowers.cancel();
           fetchBorrowers(borrowerInput.value.trim());
         });
@@ -299,12 +321,14 @@
       }, SEARCH_DEBOUNCE_MS);
 
       keyInput.addEventListener("input", function () {
+        if (!hasActiveShift()) return;
         fetchKeys(keyInput.value.trim());
       });
 
       if (keyForm) {
         keyForm.addEventListener("submit", function (e) {
           e.preventDefault();
+          if (!hasActiveShift()) return;
           fetchKeys.cancel();
           fetchKeys(keyInput.value.trim());
         });
@@ -356,6 +380,14 @@
    * Error carrying .status and .body for 422/403 so the caller can render the
    * business-rule message inline (F3.5). */
   function release(payload) {
+    if (!hasActiveShift()) {
+      var shiftErr = new Error("You must start a shift before releasing keys.");
+      shiftErr.status = 422;
+      shiftErr.body = { error: shiftErr.message };
+      if (KeyTrack.toast) KeyTrack.toast(shiftErr.message, "error");
+      return Promise.reject(shiftErr);
+    }
+
     return fetch(ENDPOINTS.borrow, {
       method: "POST",
       headers: KeyTrack.jsonHeaders(),
@@ -397,12 +429,14 @@
    * forgotten most often and leaves every badge blank. */
   function renderInto(container, html) {
     container.innerHTML = html;
+    applyShiftBlock();
     KeyTrack.refreshIcons(container);
   }
 
   KeyTrack.pos = {
     endpoints: ENDPOINTS,
     hasActiveShift: hasActiveShift,
+    applyShiftBlock: applyShiftBlock,
     borrowerSearch: borrowerSearch,
     keySearch: keySearch,
     release: release,
