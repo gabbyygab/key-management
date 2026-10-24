@@ -1,6 +1,9 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -226,7 +229,10 @@ def borrow_confirm(request):
         messages.error(request, str(e))
     except Key.DoesNotExist:
         messages.error(request, "Key not found.")
-    return redirect(f"/transactions/borrow/?borrower_id={borrower_id}")
+    url = reverse("transactions:borrow_dashboard")
+    if borrower_id:
+        return redirect(f"{url}?{urlencode({'borrower_id': borrower_id})}")
+    return redirect(url)
 
 
 @guard_required

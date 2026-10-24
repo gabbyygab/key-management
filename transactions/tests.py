@@ -473,3 +473,111 @@ class RoleSplitDashboardTests(TestCase):
         self.assertIsNone(res.context["shift"])
         self.assertEqual(res.context["my_released_count"], 0)
         self.assertContains(res, "Off Duty")
+
+
+
+@TESTSERVER
+class NoActiveShiftPosTests(OutKeyFixture):
+    """TASK F3.8: POS screen blocking state when guard has no active shift."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("transactions:borrow_dashboard")
+        self.confirm_url = reverse("transactions:borrow_confirm")
+        self.client.force_login(self.guard)
+
+    def test_no_active_shift_shows_full_panel_blocking_message(self):
+        # Close the shift so the guard is off duty
+        GuardShift.objects.filter(guard=self.guard).update(is_on_duty=False)
+
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.context["shift"])
+
+        # POS root data attribute signals shiftActive=0
+        self.assertContains(res, 'data-shift-active="0"')
+
+        # Full-panel blocking card and notice are present
+        self.assertContains(res, "data-pos-blocked-panel")
+        self.assertContains(res, "data-pos-blocked-notice")
+        self.assertContains(res, "Key Release Blocked — No Active Shift")
+        self.assertContains(res, "The backend refuses all borrowing without an open guard shift")
+        self.assertContains(res, "Guard shifts start automatically on login")
+        self.assertContains(res, "Log out and back in to start one")
+
+        # Action button to trigger logout modal
+        self.assertContains(res, 'data-modal-open="logout-modal"')
+        self.assertContains(res, "Log Out to Start Shift")
+
+        # Release button is explicitly disabled
+        self.assertContains(res, "data-pos-release")
+        self.assertContains(res, "disabled")
+        self.assertContains(res, 'aria-disabled="true"')
+        self.assertContains(res, "You must start a shift before releasing keys.")
+
+        # Guard is NOT allowed to fill in the form (search form is blocked)
+        self.assertNotContains(res, "1 · Search person")
+        self.assertNotContains(res, 'id="pos-q-borrower"')
+
+    def test_active_shift_renders_operational_pos_screen(self):
+        # Shift is open
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNotNone(res.context["shift"])
+
+        self.assertContains(res, 'data-shift-active="1"')
+        self.assertContains(res, "1 · Search person")
+        self.assertContains(res, 'id="pos-q-borrower"')
+        self.assertNotContains(res, "data-pos-blocked-panel")
+
+    def test_off_duty_guard_with_borrower_query_param_still_blocked(self):
+        GuardShift.objects.filter(guard=self.guard).update(is_on_duty=False)
+
+        res = self.client.get(self.url, {"borrower_id": self.borrower.pk})
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.context["shift"])
+
+        # Still shows full-panel blocking message and disabled release button
+        self.assertContains(res, "data-pos-blocked-panel")
+        self.assertContains(res, "data-pos-release")
+        self.assertContains(res, "disabled")
+        self.assertNotContains(res, "1 · Search person")
+
+    def test_off_duty_guard_cannot_submit_borrow_confirm(self):
+        GuardShift.objects.filter(guard=self.guard).update(is_on_duty=False)
+        key = self.keys[0]
+
+        res = self.client.post(self.confirm_url, {
+            "borrower_id": self.borrower.pk,
+            "key_id": key.pk,
+            "purpose": "Lecture",
+        }, follow=True)
+
+        self.assertEqual(res.status_code, 200)
+        # Error message added to messages
+        self.assertContains(res, "You must start a shift before releasing keys.")
+        # No transaction was created
+        self.assertEqual(BorrowTransaction.objects.count(), 0)
+        # Key status remains available
+        key.refresh_from_db()
+        self.assertEqual(key.status, Key.Status.AVAILABLE)
+        # Landed back on borrow_dashboard with blocking panel
+        self.assertContains(res, "data-pos-blocked-panel")
+
+    def test_on_duty_guard_can_submit_borrow_confirm(self):
+        key = self.keys[0]
+        res = self.client.post(self.confirm_url, {
+            "borrower_id": self.borrower.pk,
+            "key_id": key.pk,
+            "purpose": "Lecture",
+        }, follow=True)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(BorrowTransaction.objects.count(), 1)
+        txn = BorrowTransaction.objects.first()
+        self.assertEqual(txn.borrower, self.borrower)
+        self.assertEqual(txn.key, key)
+        self.assertEqual(txn.guard_shift, self.shift)
+        self.assertEqual(txn.released_by, self.guard)
+        key.refresh_from_db()
+        self.assertEqual(key.status, Key.Status.BORROWED)

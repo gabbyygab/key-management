@@ -34,6 +34,31 @@
    a 1366-wide guard station sees both panels, and a portrait tablet (768px)
    stays single-column. {% endcomment %}
 <div class="grid lg:grid-cols-2 gap-3 items-start">
+{% if not shift %}
+  {# F3.8: Full-panel blocking message when there is no active shift #}
+  <div class="bg-white rounded-xl border border-amber-200 shadow-sm p-6 flex flex-col items-center justify-center text-center min-h-[380px]" data-pos-blocked-panel role="alert" aria-live="assertive">
+    <div class="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-800 mb-4 shadow-sm">
+      <i data-lucide="shield-alert" class="w-8 h-8" aria-hidden="true"></i>
+    </div>
+    <h2 class="text-[18px] font-bold text-stone-900 tracking-tight">Key Release Blocked — No Active Shift</h2>
+    <p data-pos-blocked-notice class="text-[13px] text-stone-600 max-w-md mt-2 leading-relaxed">
+      The backend refuses all borrowing without an open guard shift. Guard shifts start automatically on login and end on logout. You must start a shift before releasing keys. Log out and back in to start one.
+    </p>
+    <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+      <button type="button" data-modal-open="logout-modal" class="inline-flex items-center gap-2 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2.5 rounded-lg text-[13px] font-semibold transition shadow-sm">
+        <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i>
+        Log Out to Start Shift
+      </button>
+      <button type="button" disabled aria-disabled="true" data-pos-release class="inline-flex items-center gap-2 bg-stone-100 border border-stone-200 text-stone-400 px-4 py-2.5 rounded-lg text-[13px] font-semibold opacity-50 cursor-not-allowed" title="You must start a shift before releasing keys.">
+        <i data-lucide="lock" class="w-4 h-4" aria-hidden="true"></i>
+        Release Key
+      </button>
+    </div>
+    <div class="mt-6 border-t border-stone-100 pt-4 text-[12px] text-stone-500 max-w-sm">
+      <p>Borrowing and key releases are locked while off duty. Do not attempt to issue keys until your shift is active.</p>
+    </div>
+  </div>
+{% else %}
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
   <h2 class="font-bold text-[14px]">1 · Search person</h2>
   <form method="get" class="mt-2 flex gap-2" role="search" aria-label="Search for a borrower" data-pos-borrower-form>
@@ -89,7 +114,7 @@
             <label for="pos-purpose-{{ k.pk }}" class="sr-only">Purpose for key {{ k.key_code }}</label>
             <input id="pos-purpose-{{ k.pk }}" name="purpose" placeholder="Purpose (e.g. Lecture)" class="mt-1.5 rounded-lg border border-stone-300 bg-white text-[13px] w-full px-2 py-1.5">
           </div>
-          <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3 py-2 rounded-lg text-[13px] font-semibold whitespace-nowrap shrink-0">
+          <button data-pos-release class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3 py-2 rounded-lg text-[13px] font-semibold whitespace-nowrap shrink-0">
             Confirm<span class="sr-only"> release of key {{ k.key_code }} to {{ selected.full_name }}</span>
           </button>
         </form>
@@ -99,6 +124,7 @@
   </div>
   {% endif %}
 </div>
+{% endif %}
 
 {% include "transactions/_currently_out_panel.html" %}
 </div>
