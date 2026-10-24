@@ -1,9 +1,13 @@
 from django import forms
-from .models import Borrower
+from django.db.models import Q
+
 from facilities.models import Building, Room
 from keys.models import Key, KeyCategory
+from .models import Borrower
 
 TAILWIND = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"
+
+
 class StyledFormMixin:
     """Applies the shared Tailwind widget classes and the F6.7 a11y attributes.
 
@@ -46,7 +50,6 @@ class StyledFormMixin:
                 )
 
 
-
 class BorrowerForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = Borrower
@@ -64,11 +67,25 @@ class KeyForm(StyledFormMixin, forms.ModelForm):
         fields = ("key_code", "room", "category", "description",
                   "copy_number", "status", "remarks")
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "category" in self.fields:
+            if self.instance and self.instance.pk and self.instance.category_id:
+                self.fields["category"].queryset = KeyCategory.objects.filter(
+                    Q(is_active=True) | Q(pk=self.instance.category_id)
+                )
+            else:
+                self.fields["category"].queryset = KeyCategory.objects.filter(is_active=True)
+
 
 class CategoryForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = KeyCategory
         fields = ("name", "description")
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Master, Office, Laboratory"}),
+            "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Brief description of this category's purpose..."}),
+        }
 
 
 class BuildingForm(StyledFormMixin, forms.ModelForm):
