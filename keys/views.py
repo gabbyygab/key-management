@@ -70,3 +70,33 @@ def category_update(request, pk):
         messages.success(request, "Category updated.")
         return redirect("keys:category_list")
     return render(request, "keys/category_form.html", {"form": form, "title": "Edit category"})
+
+
+from accounts.permissions import admin_or_guard_required
+
+
+@admin_or_guard_required
+def key_availability(request):
+    """Guard read-only key availability lookup."""
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "")
+    keys = Key.objects.select_related("room__building", "category").all()
+    if q:
+        keys = keys.filter(
+            Q(key_code__icontains=q)
+            | Q(room__room_code__icontains=q)
+            | Q(room__building__code__icontains=q)
+            | Q(description__icontains=q)
+        )
+    if status:
+        keys = keys.filter(status=status)
+    return render(
+        request,
+        "keys/key_availability.html",
+        {
+            "keys": keys[:200],
+            "q": q,
+            "status": status,
+            "statuses": Key.Status.choices,
+        },
+    )

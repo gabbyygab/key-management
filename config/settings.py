@@ -76,6 +76,8 @@ TEMPLATES = [
                 'accounts.context_processors.pending_approvals',
                 # F2.3: guard shift indicator + navbar quick-add context
                 'accounts.context_processors.navbar_context',
+                # F2.1 / F7.3: active navigation identifier for sidebar highlighting
+                'accounts.context_processors.active_nav_context',
             ],
         },
     },
