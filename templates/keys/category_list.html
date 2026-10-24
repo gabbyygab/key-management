@@ -1,15 +1,296 @@
 {% extends "base.html" %}
 {% block title %}Key Categories — KEYTRACK{% endblock %}
+
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Key Categories</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Master, Room, Cabinet, Gate…</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">Master, Room, Cabinet, Gate — group keys by purpose or access tier.</p>
   </div>
-  <a href="{% url 'keys:category_create' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ Add</a>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'keys:key_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="key" class="w-4 h-4 text-stone-500"></i>
+      <span>Key Inventory</span>
+    </a>
+    <a href="{% url 'keys:category_create' %}"
+       data-modal-form="category-modal"
+       data-modal-refresh="#category-list-region"
+       class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="plus" class="w-4 h-4"></i>
+      <span>Add Category</span>
+    </a>
+  </div>
 </div>
-<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 divide-y divide-stone-100">
-{% for c in categories %}<div class="py-2.5 text-[13px] flex justify-between gap-3"><div><b>{{ c.name }}</b> <span class="text-stone-400">{{ c.description }}</span></div><a href="{% url 'keys:category_update' c.pk %}" class="font-medium hover:underline inline-flex items-center gap-1">Edit <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i></a></div>
-{% empty %}<p class="text-stone-400 text-[13px]">No categories. Add: Master, Room, Cabinet, Gate.</p>{% endfor %}
+
+<form method="get" class="flex gap-2 mb-3" role="search" aria-label="Search and filter categories">
+  <label for="cat-q" class="sr-only">Search category name or description</label>
+  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="cat-q" name="q" value="{{ q }}" placeholder="Search category name or description..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+  </div>
+  <label for="cat-status" class="sr-only">Filter by active status</label>
+  <select id="cat-status" name="status" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+    <option value="">All statuses</option>
+    <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active only</option>
+    <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inactive only</option>
+  </select>
+  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">
+    Filter
+  </button>
+  {% if q or status_filter %}
+  <a href="{% url 'keys:category_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">
+    Reset
+  </a>
+  {% endif %}
+</form>
+
+<div id="category-list-region">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Key categories list</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 font-semibold">Category Name</th>
+          <th scope="col" class="p-3.5 font-semibold">Description</th>
+          <th scope="col" class="p-3.5 font-semibold">Key Count</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold"><span class="sr-only">Actions</span>Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for c in categories %}
+        <tr class="hover:bg-stone-50/60 transition-colors">
+          <td class="p-3.5 font-semibold text-stone-900">
+            {{ c.name }}
+          </td>
+          <td class="p-3.5 text-stone-600 max-w-md">
+            {{ c.description|default:"—" }}
+          </td>
+          <td class="p-3.5 whitespace-nowrap">
+            {% if c.key_count == 0 %}
+              <span class="inline-flex items-center gap-1.5 text-stone-400 font-mono text-[12px]">
+                <i data-lucide="key" class="w-3.5 h-3.5 text-stone-300"></i>
+                0 keys
+              </span>
+            {% else %}
+              <div class="inline-flex items-center gap-1.5">
+                <span class="inline-flex items-center gap-1 font-semibold text-stone-800 font-mono text-[12px]">
+                  <i data-lucide="key" class="w-3.5 h-3.5 text-[#1E6B4A]"></i>
+                  {{ c.key_count }} key{{ c.key_count|pluralize }}
+                </span>
+                {% if c.borrowed_count > 0 %}
+                <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[11px] font-semibold" title="{{ c.borrowed_count }} key{{ c.borrowed_count|pluralize }} currently borrowed or overdue">
+                  <i data-lucide="alert-circle" class="w-3 h-3 text-amber-600"></i>
+                  {{ c.borrowed_count }} out
+                </span>
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td class="p-3.5 whitespace-nowrap">
+            {% if c.is_active %}
+              {% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
+            {% else %}
+              {% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'keys:category_update' c.pk %}"
+                 data-modal-form="category-modal"
+                 data-modal-refresh="#category-list-region"
+                 class="font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline inline-flex items-center gap-1">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                <span>Edit</span>
+                <span class="sr-only">{{ c.name }}</span>
+              </a>
+
+              {% if c.is_active %}
+                <button type="button"
+                        class="category-deactivate-trigger font-medium text-stone-500 hover:text-red-700 hover:underline inline-flex items-center gap-1"
+                        data-category-id="{{ c.pk }}"
+                        data-category-name="{{ c.name }}"
+                        data-key-count="{{ c.key_count }}"
+                        data-borrowed-count="{{ c.borrowed_count }}"
+                        data-toggle-url="{% url 'keys:category_toggle' c.pk %}">
+                  <span>Deactivate</span>
+                  <span class="sr-only">{{ c.name }}</span>
+                </button>
+                <noscript>
+                  <form method="post" action="{% url 'keys:category_toggle' c.pk %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" class="font-medium text-stone-500 hover:text-red-700 hover:underline">Deactivate</button>
+                  </form>
+                </noscript>
+              {% else %}
+                <form method="post" action="{% url 'keys:category_toggle' c.pk %}" class="inline">
+                  {% csrf_token %}
+                  <button type="submit" class="font-medium text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                    <span>Activate</span>
+                    <span class="sr-only">{{ c.name }}</span>
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% include "partials/empty_state.html" with colspan=5 icon="tags" title="No categories found" message="No key categories defined yet. Add categories like Master, Room, or Cabinet to organize keys." action_modal="category-modal" action_label="Add category" action_icon="plus" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
+
+<!-- Category Add / Edit Modal -->
+<div id="category-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="category-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl max-w-md">
+    <div data-modal-body class="flex flex-col max-h-[90vh] overflow-hidden">
+      {% include "keys/_category_form_modal.html" with form=form title="Add Category" action_url=create_url %}
+    </div>
+  </div>
+</div>
+
+<!-- Category Deactivation / Warning Modal -->
+<div id="category-deactivate-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="deactivate-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-md overflow-hidden flex flex-col">
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-3 p-5 border-b border-stone-200 bg-white">
+      <div class="flex items-center gap-3">
+        <div id="deactivate-modal-icon-container" class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
+          <i data-lucide="alert-triangle" class="w-5 h-5" id="deactivate-modal-icon"></i>
+        </div>
+        <div class="min-w-0">
+          <h2 id="deactivate-modal-title" class="text-[15px] font-bold text-stone-900">Deactivate Category</h2>
+          <p id="deactivate-modal-subtitle" class="text-[12px] text-stone-500 mt-0.5">Check category usage before deactivation.</p>
+        </div>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <form id="category-deactivate-form" method="post" action="" class="p-5 space-y-3">
+      {% csrf_token %}
+      <input type="hidden" name="confirm" id="deactivate-modal-confirm" value="true">
+
+      <div id="deactivate-modal-message" class="text-[13px] text-stone-700"></div>
+
+      <!-- Hard Block Alert (when keys are borrowed/overdue) -->
+      <div id="deactivate-modal-block-alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800">
+        <div class="flex items-start gap-2">
+          <i data-lucide="shield-alert" class="w-4 h-4 text-red-600 shrink-0 mt-0.5"></i>
+          <div>
+            <p class="font-semibold text-red-900">Deactivation Blocked</p>
+            <p id="deactivate-modal-block-text" class="text-red-700 mt-0.5"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning Alert (when keys exist in category) -->
+      <div id="deactivate-modal-warn-alert" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+        <div class="flex items-start gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0 mt-0.5"></i>
+          <div>
+            <p class="font-semibold text-amber-900">Warning: Category In Use</p>
+            <p id="deactivate-modal-warn-text" class="text-amber-800 mt-0.5"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Buttons inside form -->
+      <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-200">
+        <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+          Cancel
+        </button>
+        <button type="submit" id="deactivate-modal-submit-btn" class="rounded-lg bg-red-700 hover:bg-red-800 px-4 py-2 text-[13px] font-semibold text-white inline-flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="ban" class="w-4 h-4"></i>
+          <span id="deactivate-modal-submit-label">Deactivate</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var deactivateModalId = "category-deactivate-modal";
+  var form = document.getElementById("category-deactivate-form");
+  var message = document.getElementById("deactivate-modal-message");
+  var blockAlert = document.getElementById("deactivate-modal-block-alert");
+  var blockText = document.getElementById("deactivate-modal-block-text");
+  var warnAlert = document.getElementById("deactivate-modal-warn-alert");
+  var warnText = document.getElementById("deactivate-modal-warn-text");
+  var submitBtn = document.getElementById("deactivate-modal-submit-btn");
+  var submitLabel = document.getElementById("deactivate-modal-submit-label");
+  var iconContainer = document.getElementById("deactivate-modal-icon-container");
+  var title = document.getElementById("deactivate-modal-title");
+
+  document.addEventListener("click", function (e) {
+    var trigger = e.target.closest(".category-deactivate-trigger");
+    if (!trigger) return;
+    e.preventDefault();
+
+    var catId = trigger.getAttribute("data-category-id");
+    var catName = trigger.getAttribute("data-category-name");
+    var keyCount = parseInt(trigger.getAttribute("data-key-count") || "0", 10);
+    var borrowedCount = parseInt(trigger.getAttribute("data-borrowed-count") || "0", 10);
+    var toggleUrl = trigger.getAttribute("data-toggle-url");
+
+    if (form) form.action = toggleUrl;
+
+    if (borrowedCount > 0) {
+      // Hard block state
+      if (title) title.textContent = "Cannot Deactivate Category";
+      if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0 text-red-700";
+      if (message) message.innerHTML = 'Category <strong class="font-semibold text-stone-900">' + catName + '</strong> cannot be deactivated while keys are in circulation.';
+      if (blockText) blockText.textContent = borrowedCount + " key" + (borrowedCount === 1 ? "" : "s") + " in this category are currently borrowed or overdue. All keys must be returned before this category can be deactivated.";
+      if (blockAlert) blockAlert.classList.remove("hidden");
+      if (warnAlert) warnAlert.classList.add("hidden");
+      if (submitBtn) submitBtn.classList.add("hidden");
+    } else if (keyCount > 0) {
+      // Warning state with explicit confirmation
+      if (title) title.textContent = "Warning: Category In Use";
+      if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700";
+      if (message) message.innerHTML = 'Are you sure you want to deactivate <strong class="font-semibold text-stone-900">' + catName + '</strong>?';
+      if (warnText) warnText.textContent = "This category currently has " + keyCount + " key" + (keyCount === 1 ? "" : "s") + " assigned to it. Deactivating it will prevent assigning new keys to this category.";
+      if (warnAlert) warnAlert.classList.remove("hidden");
+      if (blockAlert) blockAlert.classList.add("hidden");
+      if (submitBtn) {
+        submitBtn.classList.remove("hidden");
+        if (submitLabel) submitLabel.textContent = "Confirm Deactivation";
+      }
+    } else {
+      // Normal confirmation
+      if (title) title.textContent = "Deactivate Category";
+      if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0 text-stone-600";
+      if (message) message.innerHTML = 'Are you sure you want to deactivate category <strong class="font-semibold text-stone-900">' + catName + '</strong>?';
+      if (blockAlert) blockAlert.classList.add("hidden");
+      if (warnAlert) warnAlert.classList.add("hidden");
+      if (submitBtn) {
+        submitBtn.classList.remove("hidden");
+        if (submitLabel) submitLabel.textContent = "Deactivate";
+      }
+    }
+
+    if (window.KeyTrackModal) {
+      window.KeyTrackModal.open(deactivateModalId, { trigger: trigger });
+    }
+  });
+});
+</script>
 {% endblock %}
