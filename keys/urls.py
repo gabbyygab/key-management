@@ -7,6 +7,7 @@ urlpatterns = [
     path("", views.key_list, name="key_list"),
     path("new/", views.key_create, name="key_create"),
     path("<int:pk>/edit/", views.key_update, name="key_update"),
+    path("bulk-create/", views.key_bulk_create, name="key_bulk_create"),
     path("categories/", views.category_list, name="category_list"),
     path("categories/new/", views.category_create, name="category_create"),
     path("categories/<int:pk>/edit/", views.category_update, name="category_update"),
