@@ -1,0 +1,78 @@
+<form method="post" action="{% url 'keys:key_bulk_create' %}" data-success-message="Key copies generated successfully." class="space-y-4" id="key-bulk-form">
+  {% csrf_token %}
+  
+  {% if form.non_field_errors %}
+  <div class="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-800 space-y-1" role="alert">
+    {% for error in form.non_field_errors %}
+      <p class="flex items-start gap-1.5"><i data-lucide="alert-circle" class="w-4 h-4 shrink-0 text-red-600 mt-0.5"></i> <span>{{ error }}</span></p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="rounded-lg bg-emerald-50/70 border border-emerald-200 p-3 text-[12px] text-emerald-900 flex items-start gap-2">
+    <i data-lucide="info" class="w-4 h-4 text-emerald-700 shrink-0 mt-0.5"></i>
+    <p>Bulk add automatically finds the highest existing copy number for the room and category and creates N sequential copies, respecting the <strong>one copy number per room and category</strong> constraint.</p>
+  </div>
+
+  <!-- Room selector with live search and optgroups grouped by building -->
+  <div data-form-field data-field-name="room" class="space-y-1">
+    <div class="flex items-center justify-between">
+      <label for="{{ form.room.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500">
+        Room <span class="text-red-600" aria-hidden="true">*</span>
+      </label>
+      <span class="text-[11px] text-stone-400">Grouped by building</span>
+    </div>
+    
+    <!-- Search filter input for Room select -->
+    <div class="relative">
+      <div class="flex items-center rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 focus-within:border-[#1E6B4A] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#1E6B4A]">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-stone-400 mr-2 shrink-0"></i>
+        <input type="text" data-room-search placeholder="Search rooms by code, name, or building..." autocomplete="off" class="w-full bg-transparent text-[12px] outline-none text-stone-800 placeholder-stone-400" aria-label="Search and filter rooms">
+        <button type="button" data-room-search-clear class="hidden text-stone-400 hover:text-stone-600 ml-1" title="Clear room search" aria-label="Clear room search">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <p data-room-search-feedback class="hidden text-[11px] text-stone-500 mt-0.5"></p>
+    </div>
+
+    {{ form.room }}
+
+    {% if form.room.help_text %}
+    <p class="text-[12px] text-stone-500">{{ form.room.help_text }}</p>
+    {% endif %}
+    {% if form.room.errors %}
+    <ul id="{{ form.room.id_for_label }}-error" data-form-field-error class="space-y-0.5 text-[12px] text-red-700" role="alert">
+      {% for error in form.room.errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <!-- Category & Count -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+    {% include "partials/form_field.html" with field=form.category field_label="Category" %}
+    {% include "partials/form_field.html" with field=form.count field_label="Number of Copies (N)" %}
+  </div>
+
+  <!-- Key code prefix & Status -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+    {% include "partials/form_field.html" with field=form.key_code_prefix field_label="Key Code Prefix" field_optional=True %}
+    {% include "partials/form_field.html" with field=form.status field_label="Status" %}
+  </div>
+
+  <!-- Description -->
+  {% include "partials/form_field.html" with field=form.description field_label="Description" field_optional=True %}
+
+  <!-- Remarks -->
+  {% include "partials/form_field.html" with field=form.remarks field_label="Remarks" field_optional=True %}
+
+  <!-- Footer buttons -->
+  <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-200">
+    <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+      Cancel
+    </button>
+    <button type="submit" class="rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] inline-flex items-center gap-1.5">
+      <i data-lucide="layers" class="w-4 h-4"></i>
+      <span>Generate copies</span>
+    </button>
+  </div>
+</form>
