@@ -270,6 +270,7 @@ class NavbarContextTests(TestCase):
             approval_status=User.Approval.APPROVED,
         )
 
+
     # -- guard with no open shift ----------------------------------------
 
     def test_guard_no_shift_context_is_none(self):
@@ -516,3 +517,229 @@ class LoginNextParameterTests(TestCase):
             html=True,
         )
         self.assertNotContains(response, "evil.example.com")
+
+
+
+class SidebarRoleSplitTests(TestCase):
+    """TASK F2.1 — Split the sidebar by role (Admin vs Guard)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="admin_jane",
+            first_name="Jane",
+            last_name="Doe",
+            email="jane.admin@example.com",
+            password="adminpassword123",
+            role=User.Role.ADMIN,
+            approval_status=User.Approval.APPROVED,
+        )
+        self.guard = User.objects.create_user(
+            username="guard_bob",
+            first_name="Bob",
+            last_name="Smith",
+            email="bob.guard@example.com",
+            password="guardpassword123",
+            role=User.Role.GUARD,
+            approval_status=User.Approval.APPROVED,
+        )
+        self.superuser = User.objects.create_superuser(
+            username="super_root",
+            email="root@example.com",
+            password="rootpassword123",
+            approval_status=User.Approval.APPROVED,
+        )
+
+    def test_admin_sidebar_full_menu_rendered(self):
+        """Admin sees full menu: Workspace, Scheduling, Inventory, People, Oversight."""
+        self.client.force_login(self.admin)
+        res = self.client.get(reverse("dashboard"))
+        self.assertEqual(res.status_code, 200)
+
+        # Admin Section Headers
+        self.assertContains(res, "Workspace")
+        self.assertContains(res, "Scheduling")
+        self.assertContains(res, "Inventory")
+        self.assertContains(res, "People")
+        self.assertContains(res, "Oversight")
+
+        # Admin Navigation Links
+        self.assertContains(res, reverse("dashboard"))
+        self.assertContains(res, reverse("scheduling:room_timetable"))
+        self.assertContains(res, "Room Schedule")
+        self.assertContains(res, reverse("scheduling:free_rooms"))
+        self.assertContains(res, "Room Finder")
+        self.assertContains(res, reverse("scheduling:conflicts"))
+        self.assertContains(res, "Conflicts")
+
+        self.assertContains(res, reverse("keys:key_list"))
+        self.assertContains(res, "Key Inventory")
+        self.assertContains(res, reverse("keys:category_list"))
+        self.assertContains(res, "Key Categories")
+        self.assertContains(res, reverse("facilities:building_list"))
+        self.assertContains(res, "Buildings")
+        self.assertContains(res, reverse("facilities:room_list"))
+        self.assertContains(res, "Rooms")
+
+        self.assertContains(res, reverse("accounts:borrower_list"))
+        self.assertContains(res, "Borrowers")
+        self.assertContains(res, reverse("accounts:user_list"))
+        self.assertContains(res, "Users &amp; Guards")
+        self.assertContains(res, reverse("accounts:pending_user_list"))
+        self.assertContains(res, "Pending Approvals")
+
+        self.assertContains(res, reverse("transactions:history"))
+        self.assertContains(res, "Transaction History")
+        self.assertContains(res, reverse("transactions:shift_history"))
+        self.assertContains(res, "Guard Shifts")
+        self.assertContains(res, reverse("audit:log_list"))
+        self.assertContains(res, "Audit Log")
+        self.assertContains(res, reverse("transactions:reports"))
+        self.assertContains(res, "Reports")
+
+        # Guard-specific menu items MUST NOT appear for Admin
+        self.assertNotContains(res, "Key Transactions (POS)")
+        self.assertNotContains(res, "Key Availability (read-only)")
+        self.assertNotContains(res, "Borrower Lookup (read-only)")
+        self.assertNotContains(res, "My Shift Log")
+        self.assertNotContains(res, "Today's Transactions")
+
+    def test_guard_sidebar_minimal_menu_rendered(self):
+        """Guard sees deliberately minimal menu: POS, read-only lookups, shift log, today's txns."""
+        self.client.force_login(self.guard)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertEqual(res.status_code, 200)
+
+        # Guard Section Headers
+        self.assertContains(res, "Workspace")
+        self.assertContains(res, "Lookup")
+        self.assertContains(res, "My Records")
+
+        # Guard Navigation Links
+        self.assertContains(res, reverse("transactions:borrow_dashboard"))
+        self.assertContains(res, "Key Transactions (POS)")
+        self.assertContains(res, reverse("keys:key_availability"))
+        self.assertContains(res, "Key Availability (read-only)")
+        self.assertContains(res, reverse("accounts:borrower_lookup"))
+        self.assertContains(res, "Borrower Lookup (read-only)")
+        self.assertContains(res, reverse("transactions:shift_history"))
+        self.assertContains(res, "My Shift Log")
+        self.assertContains(res, reverse("transactions:history") + "?today=1")
+        self.assertContains(res, "Today's Transactions")
+
+        # Admin-only items MUST NOT appear for Guard
+        self.assertNotContains(res, reverse("scheduling:room_timetable"))
+        self.assertNotContains(res, "Room Schedule")
+        self.assertNotContains(res, reverse("scheduling:conflicts"))
+        self.assertNotContains(res, "Conflicts")
+        self.assertNotContains(res, reverse("keys:category_list"))
+        self.assertNotContains(res, "Key Categories")
+        self.assertNotContains(res, reverse("facilities:building_list"))
+        self.assertNotContains(res, "Buildings")
+        self.assertNotContains(res, reverse("facilities:room_list"))
+        self.assertNotContains(res, "Rooms")
+        self.assertNotContains(res, reverse("accounts:user_list"))
+        self.assertNotContains(res, "Users &amp; Guards")
+        self.assertNotContains(res, reverse("accounts:pending_user_list"))
+        self.assertNotContains(res, "Pending Approvals")
+        self.assertNotContains(res, reverse("audit:log_list"))
+        self.assertNotContains(res, "Audit Log")
+        self.assertNotContains(res, reverse("transactions:reports"))
+        self.assertNotContains(res, "Reports")
+
+    def test_superuser_sees_admin_sidebar(self):
+        """Superuser gets full admin sidebar."""
+        self.client.force_login(self.superuser)
+        res = self.client.get(reverse("dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Audit Log")
+        self.assertContains(res, "Key Inventory")
+        self.assertNotContains(res, "Key Transactions (POS)")
+
+    def test_pending_approvals_count_badge_display(self):
+        """Pending approvals count badge shows for admin when count > 0, hidden when 0."""
+        self.client.force_login(self.admin)
+
+        # When 0 pending users
+        res = self.client.get(reverse("dashboard"))
+        self.assertEqual(res.context["pending_approvals_count"], 0)
+        self.assertNotContains(res, 'title="0 pending approval"')
+
+        # Create a pending user
+        User.objects.create_user(
+            username="pending_applicant",
+            email="pending@example.com",
+            password="secretpassword",
+            role=User.Role.GUARD,
+            approval_status=User.Approval.PENDING,
+        )
+
+        res = self.client.get(reverse("dashboard"))
+        self.assertEqual(res.context["pending_approvals_count"], 1)
+        self.assertContains(res, "1 pending approval")
+
+    def test_user_chip_role_display_and_initials(self):
+        """User chip uses user.get_role_display (not 'GUARD' fallback) and proper initials."""
+        # Admin test
+        self.client.force_login(self.admin)
+        res = self.client.get(reverse("dashboard"))
+        self.assertContains(res, "Jane Doe")
+        self.assertContains(res, "JD")  # initials for Jane Doe
+        self.assertContains(res, "Admin")
+
+        # Guard test
+        self.client.force_login(self.guard)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertContains(res, "Bob Smith")
+        self.assertContains(res, "BS")  # initials for Bob Smith
+        self.assertContains(res, "Guard")
+
+    def test_active_link_styling_for_admin_and_guard(self):
+        """Active link receives bg-white text-[#0F2E1F] font-semibold styling."""
+        # Admin on Dashboard
+        self.client.force_login(self.admin)
+        res = self.client.get(reverse("dashboard"))
+        # Dashboard is active
+        self.assertContains(
+            res,
+            'href="/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 bg-white text-[#0F2E1F] font-semibold"',
+        )
+        # Key Inventory is inactive
+        self.assertContains(
+            res,
+            'href="/keys/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 text-white/80 hover:bg-white/10"',
+        )
+
+        # Guard on POS
+        self.client.force_login(self.guard)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertContains(
+            res,
+            'href="/transactions/borrow/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 bg-white text-[#0F2E1F] font-semibold"',
+        )
+        # Shift log is inactive
+        self.assertContains(
+            res,
+            'href="/transactions/shifts/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 text-white/80 hover:bg-white/10"',
+        )
+
+    def test_new_endpoints_permission_gating(self):
+        """Verify role protection on newly wired endpoints."""
+        # Admin views
+        self.client.force_login(self.guard)
+        self.assertEqual(self.client.get(reverse("accounts:user_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("audit:log_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("transactions:reports")).status_code, 403)
+
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("accounts:user_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("audit:log_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("transactions:reports")).status_code, 200)
+
+        # Guard read-only lookups: accessible by guard and admin
+        self.client.force_login(self.guard)
+        self.assertEqual(self.client.get(reverse("keys:key_availability")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("accounts:borrower_lookup")).status_code, 200)
+
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("keys:key_availability")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("accounts:borrower_lookup")).status_code, 200)

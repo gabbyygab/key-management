@@ -2,45 +2,73 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login — KEYTRACK</title>{% tailwind_css %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | KEYTRACK</title>
+  <link rel="icon" type="image/png" href="{% static 'keytrack-favicon.png' %}">
+  {% tailwind_css %}
+  <link rel="stylesheet" href="{% static 'css/login.css' %}">
 </head>
-<body class="bg-[#0F2E1F] min-h-screen flex items-center justify-center p-6">
-  <div class="w-full max-w-4xl grid md:grid-cols-2 rounded-2xl overflow-hidden shadow-2xl">
-    <div class="bg-[#0F2E1F] text-white p-8 flex flex-col justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"><i data-lucide="key-round" aria-hidden="true" class="w-5 h-5"></i></div>
-        <div class="leading-tight"><div class="font-extrabold tracking-wide">KEYTRACK</div>
-        <div class="text-[11px] text-white/80">University Key Management</div></div>
-      </div>
-      <div class="mt-10">
-        <h1 class="text-2xl font-extrabold">Guard<br>Workspace</h1>
-        <p class="text-[13px] text-white/80 mt-2">Release and receive keys, track who has what, and keep every room secure.</p>
-        <div class="mt-6 space-y-2 text-[13px] text-white/70">
-          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> Search person, release key in seconds</div>
-          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> One active key per borrower</div>
-          <div class="flex items-center gap-2"><i data-lucide="check" aria-hidden="true" class="w-4 h-4"></i> Shift starts on login, ends on logout</div>
+<body>
+  <main class="login-shell">
+    <section class="login-story" aria-label="About KEYTRACK">
+      <div class="brand">
+        <img src="{% static 'keytrack-favicon.png' %}" alt="" width="44" height="44">
+        <div>
+          <div class="brand-name">KEYTRACK</div>
+          <div class="brand-caption">University Key Management</div>
         </div>
       </div>
-      <div class="text-[11px] text-white/70 mt-8">Campus Security · Facilities Office</div>
-    </div>
-    <div class="bg-[#FAF7F0] p-8">
-      <h2 class="text-xl font-extrabold">Welcome back</h2>
-      <p class="text-[13px] text-stone-500 mt-1">Log in to start your shift.</p>
-      {% if error %}<div id="login-error" role="alert" class="mt-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[13px]">{{ error }}</div>{% endif %}
-      <form method="post" class="mt-5 space-y-3">{% csrf_token %}
-        <input type="hidden" name="next" value="{{ next|default:'' }}">
-        <div><label for="id_username" class="block text-[12px] font-semibold text-stone-600">USERNAME</label>
-          <input id="id_username" name="username" required autocomplete="username" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %} class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A]"></div>
-        <div><label for="id_password" class="block text-[12px] font-semibold text-stone-600">PASSWORD</label>
-          <input id="id_password" name="password" type="password" required autocomplete="current-password" {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %} class="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-[14px] focus:border-[#1E6B4A]"></div>
-        <button class="w-full bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2.5 rounded-lg font-semibold text-[14px] inline-flex items-center justify-center gap-2">Log in <i data-lucide="arrow-right" aria-hidden="true" class="w-4 h-4"></i></button>
+
+      <div class="story-copy">
+        <div class="story-kicker">Campus facilities</div>
+        <h1>Every key,<br>in good hands.</h1>
+        <p>Keep room access organized with clear key handoffs and a reliable record of who has what.</p>
+        <div class="story-note">
+          <span class="story-note-icon" aria-hidden="true">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3 5 6v5c0 4.6 2.9 8.2 7 10 4.1-1.8 7-5.4 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span>
+            <span class="story-note-label">On duty</span>
+            <span class="story-note-text">Sign in to begin your shift</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="story-footer">Facilities Office <span aria-hidden="true">·</span> Campus Security</div>
+    </section>
+
+    <section class="login-form-panel" aria-labelledby="login-heading">
+      <p class="form-eyebrow">Guard access</p>
+      <h2 class="form-heading" id="login-heading">Welcome back.</h2>
+      <p class="form-description">Sign in with your guard account to continue.</p>
+
+      {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+
+      <form method="post" class="login-form">
+        {% csrf_token %}
+        <div>
+          <label for="username" class="field-label">Username</label>
+          <input id="username" name="username" required autocomplete="username" class="field-input">
+        </div>
+        <div>
+          <label for="password" class="field-label">Password</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password" class="field-input">
+        </div>
+        <button type="submit" class="submit-button">
+          <span>Sign in</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </form>
-      <p class="text-[12px] text-stone-600 mt-4">No account? Ask an admin to create your guard account and approve it.</p>
-    </div>
-  </div>
-  {# Standalone page — does not extend base.html, so it loads these itself. #}
-  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
-  <script src="{% static 'js/init-icons.js' %}"></script>
+
+      <hr class="form-divider">
+      <p class="account-note">Need an account? Ask an administrator to create and approve your guard account.</p>
+    </section>
+  </main>
 </body>
 </html>

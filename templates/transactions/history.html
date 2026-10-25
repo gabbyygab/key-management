@@ -1,32 +1,374 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Reports & History — KEYTRACK{% endblock %}
+
 {% block content %}
-<div class="mb-4">
-  <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; History</h1>
-  <p class="text-[13px] text-stone-500 mt-0.5">Every checkout and return, newest first.</p>
-</div>
-<form method="get" class="flex gap-2" role="search" aria-label="Search transactions">
-  <label for="history-q" class="sr-only">Search transactions by number, key or borrower</label>
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
-    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-    <input id="history-q" name="q" value="{{ q }}" placeholder="Search TXN, key, borrower..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; History</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Every key checkout and return with full audit timeline.</p>
   </div>
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
-</form>
-<div class="mt-3 bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
-<table class="min-w-full text-[13px]">
-<caption class="sr-only">Transaction history, newest first</caption>
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
-<th scope="col" class="p-3 font-medium">Transaction</th><th scope="col" class="p-3 font-medium">Borrower</th><th scope="col" class="p-3 font-medium">Key</th><th scope="col" class="p-3 font-medium">Checkout</th><th scope="col" class="p-3 font-medium">Status</th><th scope="col" class="p-3 font-medium">Back</th></tr></thead>
-<tbody class="divide-y divide-stone-100">
-{% for t in txns %}
-<tr class="hover:bg-stone-50/60"><td class="p-3 font-mono text-[12px]">{{ t.transaction_no }}</td>
-<td class="p-3">{{ t.borrower.full_name }}</td><td class="p-3 font-mono">{{ t.key.key_code }}</td>
-<td class="p-3 text-stone-500">{{ t.borrowed_at|date:"M j, Y, g:i A" }}</td>
-<td class="p-3">{% include "partials/status_pill.html" with status=t.status %}</td>
-<td class="p-3 text-stone-500">{{ t.returned_at|date:"M j, H:i"|default:"—" }}</td></tr>
-{% empty %}<tr><td colspan="6" class="p-6 text-center text-stone-500">No transactions yet.</td></tr>{% endfor %}
-</tbody>
-</table>
+  {% if user.role == "ADMIN" or user.is_superuser %}
+  <div class="flex items-center gap-2">
+    <a href="{% url 'transactions:export_csv' %}{% if querystring %}?{{ querystring }}{% endif %}"
+       class="inline-flex items-center gap-1.5 bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-stone-700 hover:bg-stone-50 shadow-sm transition-colors"
+       title="Export filtered records to CSV">
+      <i data-lucide="download" class="w-4 h-4 text-stone-500"></i>
+      <span>Export CSV</span>
+    </a>
+  </div>
+  {% endif %}
 </div>
+
+{# Filter Toolbar #}
+<form id="history-filter-form" method="get" action="{% url 'transactions:history' %}"
+      class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4"
+      role="search" aria-label="Filter transaction history">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 items-end">
+    {# Search Query #}
+    <div class="xl:col-span-2">
+      <label for="history-q" class="block text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
+        Search
+      </label>
+      <div class="flex items-center bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A] focus-within:ring-1 focus-within:ring-[#1E6B4A]">
+        <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+        <input id="history-q" name="q" value="{{ q }}"
+               placeholder="Search TXN, key, borrower, ID..."
+               autocomplete="off"
+               class="w-full bg-transparent outline-none py-2 text-[13px]">
+      </div>
+    </div>
+
+    {# Date Range: Start #}
+    <div>
+      <label for="history-start-date" class="block text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
+        Date From
+      </label>
+      <input type="date" id="history-start-date" name="start_date" value="{{ start_date }}"
+             class="w-full rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-1.5 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+    </div>
+
+    {# Date Range: End #}
+    <div>
+      <label for="history-end-date" class="block text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
+        Date To
+      </label>
+      <input type="date" id="history-end-date" name="end_date" value="{{ end_date }}"
+             class="w-full rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-1.5 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+    </div>
+
+    {# Status Filter #}
+    <div>
+      <label for="history-status" class="block text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
+        Status
+      </label>
+      <select id="history-status" name="status"
+              class="w-full rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+        <option value="">All statuses</option>
+        {% for value, label in statuses %}
+          <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Building Filter #}
+    <div>
+      <label for="history-building" class="block text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
+        Building
+      </label>
+      <select id="history-building" name="building"
+              class="w-full rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+        <option value="">All buildings</option>
+        {% for b in buildings %}
+          <option value="{{ b.code }}" {% if building == b.code or building == b.id|stringformat:"s" %}selected{% endif %}>{{ b.code }} ({{ b.name }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between gap-2 flex-wrap">
+    {# Guard Filter #}
+    <div class="flex items-center gap-2 min-w-[240px]">
+      <label for="history-guard" class="text-[12px] font-semibold text-stone-500 shrink-0">
+        Guard:
+      </label>
+      <select id="history-guard" name="guard"
+              class="rounded-lg border border-stone-200 bg-[#FAF7F0] px-2.5 py-1.5 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
+        <option value="">All guards</option>
+        {% for g in guards %}
+          <option value="{{ g.pk }}" {% if guard == g.pk|stringformat:"s" or guard == g.username %}selected{% endif %}>
+            {% if g.get_full_name %}{{ g.get_full_name }}{% else %}{{ g.username }}{% endif %} (@{{ g.username }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Action Buttons #}
+    <div class="flex items-center gap-2">
+      <a href="{% url 'transactions:history' %}"
+         class="px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-medium text-stone-700 hover:bg-stone-50 transition-colors">
+        Reset
+      </a>
+      <button type="submit"
+              class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors">
+        <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+        <span>Apply Filters</span>
+      </button>
+    </div>
+  </div>
+</form>
+
+{# Transactions Table #}
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
+  <table id="transaction-history-table" class="min-w-full text-[13px]">
+    <caption class="sr-only">Key checkout and return transaction history, newest first</caption>
+    <thead>
+      <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 bg-stone-50/70 border-b border-stone-200">
+        <th scope="col" class="p-3 font-semibold">Transaction</th>
+        <th scope="col" class="p-3 font-semibold">Borrower</th>
+        <th scope="col" class="p-3 font-semibold">Key &amp; Room</th>
+        <th scope="col" class="p-3 font-semibold">Checkout</th>
+        <th scope="col" class="p-3 font-semibold">Status</th>
+        <th scope="col" class="p-3 font-semibold">Return</th>
+        <th scope="col" class="p-3 font-semibold text-right">Action</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for t in txns %}
+      <tr data-txn-row
+          tabindex="0"
+          role="button"
+          aria-label="View details for transaction {{ t.transaction_no }}"
+          data-txn-no="{{ t.transaction_no }}"
+          data-status="{{ t.status }}"
+          data-is-overdue="{% if t.is_overdue or t.status == 'OVERDUE' %}true{% else %}false{% endif %}"
+          data-key="{{ t.key.key_code }}"
+          data-category="{% if t.key and t.key.category %}{{ t.key.category.name }}{% else %}—{% endif %}"
+          data-room="{{ t.room.room_code }}"
+          data-building="{{ t.room.building.code }}"
+          data-borrower="{{ t.borrower.full_name }}"
+          data-borrower-id="{{ t.borrower.id_number }}"
+          data-borrower-type="{{ t.borrower.get_borrower_type_display }}"
+          data-borrower-dept="{% if t.borrower and t.borrower.department %}{{ t.borrower.department.code }}{% endif %}"
+          data-purpose="{{ t.purpose }}"
+          data-borrowed-at="{{ t.borrowed_at|date:'M j, Y, g:i A' }}"
+          data-expected-return="{{ t.expected_return_at|date:'M j, Y, g:i A'|default:'—' }}"
+          data-released-by="{% if t.released_by %}{% if t.released_by.get_full_name %}{{ t.released_by.get_full_name }}{% else %}{{ t.released_by.username }}{% endif %}{% else %}—{% endif %}"
+          data-shift-post="{% if t.guard_shift %}{{ t.guard_shift.post }}{% endif %}"
+          data-returned-at="{{ t.returned_at|date:'M j, Y, g:i A'|default:'—' }}"
+          data-received-by="{% if t.received_by %}{% if t.received_by.get_full_name %}{{ t.received_by.get_full_name }}{% else %}{{ t.received_by.username }}{% endif %}{% else %}—{% endif %}"
+          data-return-confirmed="{% if t.return_confirmed %}true{% else %}false{% endif %}"
+          data-remarks="{{ t.remarks }}"
+          data-override-reason="{{ t.override_reason }}"
+          class="group cursor-pointer transition-colors focus:outline-none focus:bg-stone-100 {% if t.is_overdue or t.status == 'OVERDUE' %}bg-red-50/70 border-l-4 border-l-red-500 hover:bg-red-50{% else %}hover:bg-stone-50/80{% endif %}">
+        
+        {# Transaction ID #}
+        <td class="p-3 font-mono font-medium text-[12px] text-stone-900 group-hover:text-[#1E6B4A]">
+          {{ t.transaction_no }}
+        </td>
+
+        {# Borrower Info #}
+        <td class="p-3">
+          <div class="font-medium text-stone-900">{{ t.borrower.full_name }}</div>
+          <div class="text-[11px] text-stone-400 font-mono">{{ t.borrower.id_number }}{% if t.borrower.department %} · {{ t.borrower.department.code }}{% endif %}</div>
+        </td>
+
+        {# Key & Room #}
+        <td class="p-3">
+          <div class="font-mono font-bold text-stone-800">{{ t.key.key_code }}</div>
+          <div class="text-[12px] text-stone-500">{{ t.room.building.code }}-{{ t.room.room_code }}</div>
+        </td>
+
+        {# Checkout #}
+        <td class="p-3 text-stone-600">
+          <div>{{ t.borrowed_at|date:"M j, Y, g:i A" }}</div>
+          <div class="text-[11px] text-stone-400">By {% if t.released_by.get_full_name %}{{ t.released_by.get_full_name }}{% else %}{{ t.released_by.username }}{% endif %}</div>
+        </td>
+
+        {# Status #}
+        <td class="p-3">
+          {% include "partials/status_pill.html" with status=t.status %}
+          {% if t.is_overdue and t.status == 'ACTIVE' %}
+            <span class="inline-flex items-center gap-1 bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[10px] font-bold ml-1">
+              OVERDUE
+            </span>
+          {% endif %}
+        </td>
+
+        {# Return #}
+        <td class="p-3 text-stone-600">
+          {% if t.returned_at %}
+            <div>{{ t.returned_at|date:"M j, Y, g:i A" }}</div>
+            {% if t.received_by %}
+              <div class="text-[11px] text-stone-400">By {% if t.received_by.get_full_name %}{{ t.received_by.get_full_name }}{% else %}{{ t.received_by.username }}{% endif %}</div>
+            {% endif %}
+          {% else %}
+            <span class="text-stone-400">—</span>
+          {% endif %}
+        </td>
+
+        {# Action / Details Button #}
+        <td class="p-3 text-right">
+          <button type="button"
+                  data-txn-detail-btn
+                  aria-label="View transaction {{ t.transaction_no }}"
+                  class="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-stone-800 hover:bg-white group-hover:border-stone-300 transition-colors inline-flex items-center gap-1 text-[12px] font-medium">
+            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Details</span>
+          </button>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="7" class="p-10 text-center text-stone-500">
+          <div class="max-w-xs mx-auto">
+            <i data-lucide="inbox" class="w-8 h-8 text-stone-300 mx-auto mb-2"></i>
+            <p class="font-medium text-stone-700">No transactions found</p>
+            <p class="text-[12px] text-stone-400 mt-1">Try adjusting your search criteria or clearing filters.</p>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# Pagination #}
+  {% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
+</div>
+
+{# Detail Timeline Modal #}
+<div id="transaction-detail-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  
+  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+    {# Sticky Modal Header #}
+    <div class="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-white px-6 py-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center text-[#1E6B4A] shrink-0">
+          <i data-lucide="history" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 id="detail-modal-title" class="text-[15px] font-bold text-stone-900">Transaction Details</h2>
+            <span data-modal-status-container></span>
+          </div>
+          <p class="text-[12px] font-mono text-stone-500 mt-0.5" data-modal-txn-no>—</p>
+        </div>
+      </div>
+      <button type="button" data-modal-close aria-label="Close details"
+              class="rounded-lg border border-stone-200 bg-white p-1.5 text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    {# Scrollable Body #}
+    <div class="overflow-y-auto p-6 space-y-5 flex-1">
+      {# Summary Cards Grid #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {# Key & Room #}
+        <div class="rounded-xl border border-stone-200 bg-[#FAF7F0] p-3 text-[13px]">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-1">Key &amp; Location</div>
+          <div class="font-mono font-bold text-[14px] text-stone-900" data-modal-key>—</div>
+          <div class="text-stone-600 mt-0.5" data-modal-room-building>—</div>
+          <div class="text-[11px] text-stone-400 mt-1">Category: <span data-modal-category>—</span></div>
+        </div>
+
+        {# Borrower Info #}
+        <div class="rounded-xl border border-stone-200 bg-[#FAF7F0] p-3 text-[13px]">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-1">Borrower</div>
+          <div class="font-bold text-[14px] text-stone-900" data-modal-borrower>—</div>
+          <div class="text-stone-600 mt-0.5" data-modal-borrower-details>—</div>
+          <div class="text-[11px] text-stone-400 mt-1">Purpose: <span data-modal-purpose>—</span></div>
+        </div>
+      </div>
+
+      {# Schedule Override Reason (if present) #}
+      <div data-modal-override-section class="hidden rounded-xl border border-amber-300 bg-amber-50 p-3.5">
+        <div class="flex items-start gap-2.5">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-700 shrink-0 mt-0.5"></i>
+          <div>
+            <h3 class="text-[12px] font-bold uppercase tracking-wider text-amber-900">Schedule Override Warning</h3>
+            <p class="text-[13px] text-amber-800 mt-0.5" data-modal-override-reason></p>
+          </div>
+        </div>
+      </div>
+
+      {# Remarks (if present) #}
+      <div data-modal-remarks-section class="hidden rounded-xl border border-stone-200 bg-stone-50 p-3.5 text-[13px]">
+        <div class="flex items-start gap-2.5">
+          <i data-lucide="message-square" class="w-4 h-4 text-stone-500 shrink-0 mt-0.5"></i>
+          <div>
+            <h3 class="text-[11px] font-bold uppercase tracking-wider text-stone-500">Remarks</h3>
+            <p class="text-stone-800 mt-0.5 whitespace-pre-line" data-modal-remarks></p>
+          </div>
+        </div>
+      </div>
+
+      {# Timeline Section #}
+      <div>
+        <h3 class="text-[12px] font-bold uppercase tracking-wider text-stone-500 mb-3">
+          Transaction Timeline
+        </h3>
+        <div class="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-stone-200">
+          
+          {# Timeline Node 1: Release #}
+          <div class="relative">
+            <div class="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-[#1E6B4A] border-2 border-white flex items-center justify-center text-white shadow-sm">
+              <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+            </div>
+            <div class="text-[13px]">
+              <div class="font-bold text-stone-900">Key Released / Checked Out</div>
+              <div class="text-[12px] text-stone-500 mt-0.5" data-modal-borrowed-at>—</div>
+              <div class="mt-2 rounded-lg border border-stone-200 bg-white p-2.5 text-[12px] space-y-1">
+                <div><span class="text-stone-400">Released by:</span> <strong class="text-stone-800" data-modal-released-by>—</strong></div>
+                <div><span class="text-stone-400">Guard Shift:</span> <span class="text-stone-700" data-modal-shift>—</span></div>
+                <div><span class="text-stone-400">Expected return:</span> <span class="text-stone-700" data-modal-expected-return>—</span></div>
+              </div>
+            </div>
+          </div>
+
+          {# Timeline Node 2: Return #}
+          <div data-modal-return-step class="relative">
+            <div class="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-stone-300 border-2 border-white flex items-center justify-center text-white shadow-sm">
+              <i data-lucide="check" class="w-3 h-3"></i>
+            </div>
+
+            {# Return Completed #}
+            <div data-modal-return-completed class="hidden text-[13px]">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-stone-900">Key Received &amp; Returned</span>
+                <span data-modal-return-status-badge class="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5"></span>
+              </div>
+              <div class="text-[12px] text-stone-500 mt-0.5" data-modal-returned-at>—</div>
+              <div class="mt-2 rounded-lg border border-stone-200 bg-white p-2.5 text-[12px]">
+                <div><span class="text-stone-400">Received by:</span> <strong class="text-stone-800" data-modal-received-by>—</strong></div>
+              </div>
+            </div>
+
+            {# Return Pending #}
+            <div data-modal-return-pending class="text-[13px]">
+              <div class="font-bold text-stone-700">Return Pending</div>
+              <div data-modal-pending-note></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    {# Modal Footer #}
+    <div class="sticky bottom-0 border-t border-stone-200 bg-white px-6 py-3 flex items-center justify-end">
+      <button type="button" data-modal-close
+              class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50 transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/history.js' %}"></script>
 {% endblock %}
