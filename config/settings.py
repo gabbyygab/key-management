@@ -88,7 +88,7 @@ LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATICFILES_DIRS = [BASE_DIR / "static", BASE_DIR / "images"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Tailwind source lives in the repo so hand-written CSS survives a rebuild.
