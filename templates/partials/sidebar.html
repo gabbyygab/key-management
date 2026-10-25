@@ -9,25 +9,39 @@
   </div>
 
   <nav class="flex-1 overflow-y-auto px-3 pb-4 text-[13px]">
-    <div class="px-2 mt-1 mb-1 text-[11px] uppercase tracking-wider text-white/40">Workspace</div>
-    <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if current == 'dashboard' and not ns %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard</a>
-    <a href="{% url 'transactions:borrow_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'borrow_dashboard' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="arrow-left-right" class="w-4 h-4"></i> Key Transactions</a>
-
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Inventory</div>
-    <a href="{% url 'keys:key_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="key-round" class="w-4 h-4"></i> Key Inventory</a>
-    <a href="{% url 'facilities:building_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'facilities' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="building-2" class="w-4 h-4"></i> Buildings &amp; Rooms</a>
-    <a href="{% url 'keys:category_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'keys' and current == 'category_list' or current == 'category_create' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="tags" class="w-4 h-4"></i> Key Categories</a>
-
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">People &amp; Security</div>
-    <a href="{% url 'accounts:borrower_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'borrower_list' or current == 'borrower_create' or current == 'borrower_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="users" class="w-4 h-4"></i> Borrowers</a>
     {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'accounts:pending_user_list' %}" class="flex items-center justify-between px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'pending_user_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+    {# ── ADMIN WORKSPACE ── #}
+    <div class="px-2 mt-1 mb-1 text-[11px] uppercase tracking-wider text-white/40">Workspace</div>
+    <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'dashboard' or not ns and current == 'dashboard' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="layout-dashboard" class="w-4 h-4 shrink-0"></i> Dashboard</a>
+
+    {# ── ADMIN SCHEDULING ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Scheduling</div>
+    <a href="{% url 'scheduling:room_timetable' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'room_schedule' or ns == 'scheduling' and current == 'room_timetable' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="calendar" class="w-4 h-4 shrink-0"></i> Room Schedule</a>
+    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'room_finder' or ns == 'scheduling' and current == 'free_rooms' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="search-check" class="w-4 h-4 shrink-0"></i> Room Finder</a>
+    <a href="{% url 'scheduling:conflicts' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'conflicts' or ns == 'scheduling' and current == 'conflicts' or ns == 'scheduling' and current == 'schedule_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="calendar-x" class="w-4 h-4 shrink-0"></i> Conflicts</a>
+
+    {# ── ADMIN INVENTORY ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Inventory</div>
+    <a href="{% url 'keys:key_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'key_inventory' or ns == 'keys' and current == 'key_list' or ns == 'keys' and current == 'key_create' or ns == 'keys' and current == 'key_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="key-round" class="w-4 h-4 shrink-0"></i> Key Inventory</a>
+    <a href="{% url 'keys:category_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'key_categories' or ns == 'keys' and current == 'category_list' or ns == 'keys' and current == 'category_create' or ns == 'keys' and current == 'category_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="tags" class="w-4 h-4 shrink-0"></i> Key Categories</a>
+    <a href="{% url 'facilities:building_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'buildings' or ns == 'facilities' and current == 'building_list' or ns == 'facilities' and current == 'building_create' or ns == 'facilities' and current == 'building_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="building-2" class="w-4 h-4 shrink-0"></i> Buildings</a>
+    <a href="{% url 'facilities:room_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'rooms' or ns == 'facilities' and current == 'room_list' or ns == 'facilities' and current == 'room_create' or ns == 'facilities' and current == 'room_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="door-closed" class="w-4 h-4 shrink-0"></i> Rooms</a>
+
+    {# ── ADMIN PEOPLE ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">People</div>
+    <a href="{% url 'accounts:borrower_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'borrowers' or ns == 'accounts' and current == 'borrower_list' or ns == 'accounts' and current == 'borrower_create' or ns == 'accounts' and current == 'borrower_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="users" class="w-4 h-4 shrink-0"></i> Borrowers</a>
+    <a href="{% url 'accounts:user_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'users_guards' or ns == 'accounts' and current == 'user_list' or ns == 'accounts' and current == 'user_create' or ns == 'accounts' and current == 'user_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="user-cog" class="w-4 h-4 shrink-0"></i> Users &amp; Guards</a>
+    <a href="{% url 'accounts:pending_user_list' %}" class="flex items-center justify-between px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'pending_approvals' or ns == 'accounts' and current == 'pending_user_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
       <div class="flex items-center gap-2 min-w-0">
         <i data-lucide="user-check" class="w-4 h-4 shrink-0"></i>
         <span class="truncate">Pending Approvals</span>
@@ -38,26 +52,49 @@
       </span>
       {% endif %}
     </a>
-    {% endif %}
-    <a href="{% url 'transactions:shift_history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'shift_history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="shield-check" class="w-4 h-4"></i> Guard Shifts</a>
 
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Management</div>
-    <a href="{% url 'transactions:history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="chart-column" class="w-4 h-4"></i> Reports &amp; History</a>
-    {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'scheduling:room_timetable' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'room_timetable' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="calendar" class="w-4 h-4"></i> Room Timetable</a>
-    <a href="{% url 'scheduling:schedule_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'schedule_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="calendar-days" class="w-4 h-4"></i> Schedule List</a>
-    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'free_rooms' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="search-check" class="w-4 h-4"></i> Room Finder</a>
+    {# ── ADMIN OVERSIGHT ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Oversight</div>
+    <a href="{% url 'transactions:history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'transaction_history' or ns == 'transactions' and current == 'history' and not request.GET.today %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="history" class="w-4 h-4 shrink-0"></i> Transaction History</a>
+    <a href="{% url 'transactions:shift_history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'shift_history' or ns == 'transactions' and current == 'shift_history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="shield-check" class="w-4 h-4 shrink-0"></i> Guard Shifts</a>
+    <a href="{% url 'audit:log_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'audit_log' or ns == 'audit' and current == 'log_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="file-text" class="w-4 h-4 shrink-0"></i> Audit Log</a>
+    <a href="{% url 'transactions:reports' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'reports' or ns == 'transactions' and current == 'reports' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="chart-column" class="w-4 h-4 shrink-0"></i> Reports</a>
+
+    {% else %}
+    {# ── GUARD WORKSPACE ── #}
+    <div class="px-2 mt-1 mb-1 text-[11px] uppercase tracking-wider text-white/40">Workspace</div>
+    <a href="{% url 'transactions:borrow_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'pos' or ns == 'transactions' and current == 'borrow_dashboard' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="arrow-left-right" class="w-4 h-4 shrink-0"></i> Key Transactions (POS)</a>
+
+    {# ── GUARD LOOKUP ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Lookup</div>
+    <a href="{% url 'keys:key_availability' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'key_availability' or ns == 'keys' and current == 'key_availability' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="key-round" class="w-4 h-4 shrink-0"></i> Key Availability (read-only)</a>
+    <a href="{% url 'accounts:borrower_lookup' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'borrower_lookup' or ns == 'accounts' and current == 'borrower_lookup' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="users" class="w-4 h-4 shrink-0"></i> Borrower Lookup (read-only)</a>
+
+    {# ── GUARD MY RECORDS ── #}
+    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">My Records</div>
+    <a href="{% url 'transactions:shift_history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'shift_history' or ns == 'transactions' and current == 'shift_history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="shield-check" class="w-4 h-4 shrink-0"></i> My Shift Log</a>
+    <a href="{% url 'transactions:history' %}?today=1" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if active_nav == 'today_transactions' or ns == 'transactions' and current == 'history' and request.GET.today %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
+      <i data-lucide="clock" class="w-4 h-4 shrink-0"></i> Today's Transactions</a>
     {% endif %}
   </nav>
 
   <div class="p-3">
     <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-      <div class="w-8 h-8 rounded-full bg-white text-[#0F2E1F] flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
+      <div class="w-8 h-8 rounded-full bg-white text-[#0F2E1F] flex items-center justify-center text-xs font-bold">
+        {% if user.first_name and user.last_name %}
+          {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
+        {% else %}
+          {{ user.username|slice:":2"|upper|default:"KT" }}
+        {% endif %}
+      </div>
       <div class="leading-tight flex-1 min-w-0">
         <div class="text-[13px] font-semibold truncate">{{ user.get_full_name|default:user.username }}</div>
         <div class="text-[11px] text-white/60 uppercase">{{ user.get_role_display }}</div>
