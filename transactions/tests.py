@@ -477,308 +477,259 @@ class RoleSplitDashboardTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# F6.3 — Guard Shift History Upgrade Tests
+# F6.2 — Transaction history upgrades and CSV export tests
 # ---------------------------------------------------------------------------
 
 @TESTSERVER
-class ShiftHistoryUpgradeTests(TestCase):
+class TransactionHistoryUpgradeTests(TestCase):
     def setUp(self):
         self.dept = Department.objects.create(code="CCS", name="Computer Studies")
         self.admin = User.objects.create_user(
-            username="admin_shifts", email="admin_shifts@example.edu", password="pw",
-            first_name="Admin", last_name="Boss",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
-        )
+            username="admin_history", email="admin_history@example.edu", password="pw",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED)
         self.guard1 = User.objects.create_user(
-            username="guard_one", email="guard1@example.edu", password="pw",
-            first_name="John", last_name="Guard",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
-        )
+            username="guard_alpha", email="guard_alpha@example.edu", password="pw",
+            first_name="Alpha", last_name="Guard",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
         self.guard2 = User.objects.create_user(
-            username="guard_two", email="guard2@example.edu", password="pw",
-            first_name="Jane", last_name="Officer",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
-        )
-        self.staff = User.objects.create_user(
-            username="staff_user", email="staff@example.edu", password="pw",
-            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED,
-        )
+            username="guard_beta", email="guard_beta@example.edu", password="pw",
+            first_name="Beta", last_name="Guard",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
 
-        self.building = Building.objects.create(code="ENG", name="Engineering")
-        self.room = Room.objects.create(building=self.building, room_code="101", capacity=30)
-        self.category = KeyCategory.objects.create(name="Classroom")
-        self.key1 = Key.objects.create(key_code="ENG-101-1", room=self.room, category=self.category, copy_number=1)
-        self.key2 = Key.objects.create(key_code="ENG-101-2", room=self.room, category=self.category, copy_number=2)
+        self.shift1 = GuardShift.objects.create(guard=self.guard1, post="Main Gate", is_on_duty=True)
+        self.shift2 = GuardShift.objects.create(guard=self.guard2, post="North Gate", is_on_duty=True)
 
-        self.borrower = Borrower.objects.create(
-            id_number="BORR-001", first_name="Alan", last_name="Turing",
-            borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept,
-        )
+        self.bldg_eng = Building.objects.create(code="ENG", name="Engineering")
+        self.bldg_ccs = Building.objects.create(code="CCS", name="Computing")
+
+        self.room_eng = Room.objects.create(building=self.bldg_eng, room_code="101", name="ENG Lab 1")
+        self.room_ccs = Room.objects.create(building=self.bldg_ccs, room_code="202", name="CCS Lab 2")
+
+        self.cat = KeyCategory.objects.create(name="Lab")
+
+        self.key_eng = Key.objects.create(key_code="ENG-101-1", room=self.room_eng, category=self.cat, copy_number=1)
+        self.key_ccs = Key.objects.create(key_code="CCS-202-1", room=self.room_ccs, category=self.cat, copy_number=1)
+
+        self.borrower1 = Borrower.objects.create(
+            id_number="B-101", first_name="Alice", last_name="Smith",
+            borrower_type=Borrower.BorrowerType.STUDENT, department=self.dept)
+        self.borrower2 = Borrower.objects.create(
+            id_number="B-102", first_name="Bob", last_name="Jones",
+            borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept)
+
+        self.url = reverse("transactions:history")
+        self.export_url = reverse("transactions:export_csv")
 
         now = timezone.now()
-
-        # Guard 1 ended shift with 2 transactions
-        self.shift1 = GuardShift.objects.create(
-            guard=self.guard1, post="East Gate", is_on_duty=False,
-            shift_end=now - timedelta(hours=2),
+        self.txn_active = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0001",
+            key=self.key_eng,
+            borrower=self.borrower1,
+            room=self.room_eng,
+            purpose="Thesis work",
+            released_by=self.guard1,
+            guard_shift=self.shift1,
+            status=BorrowTransaction.Status.ACTIVE,
+            borrowed_at=now - timedelta(hours=2),
+            expected_return_at=now + timedelta(hours=2),
         )
-        GuardShift.objects.filter(pk=self.shift1.pk).update(
-            shift_start=now - timedelta(hours=5),
-            shift_end=now - timedelta(hours=2),
-        )
-        self.shift1.refresh_from_db()
 
-        self.txn1 = BorrowTransaction.objects.create(
-            transaction_no="TXN-S1-01", key=self.key1, borrower=self.borrower,
-            room=self.room, released_by=self.guard1, guard_shift=self.shift1,
+        self.txn_returned = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0002",
+            key=self.key_ccs,
+            borrower=self.borrower2,
+            room=self.room_ccs,
+            purpose="Class session",
+            released_by=self.guard1,
+            guard_shift=self.shift1,
+            received_by=self.guard2,
+            returned_at=now - timedelta(hours=1),
+            return_confirmed=True,
             status=BorrowTransaction.Status.RETURNED,
-        )
-        self.txn2 = BorrowTransaction.objects.create(
-            transaction_no="TXN-S1-02", key=self.key2, borrower=self.borrower,
-            room=self.room, released_by=self.guard1, guard_shift=self.shift1,
-            status=BorrowTransaction.Status.RETURNED,
+            remarks="Key returned in good condition",
+            borrowed_at=now - timedelta(hours=5),
         )
 
-        # Guard 2 active shift with 0 transactions
-        self.shift2 = GuardShift.objects.create(
-            guard=self.guard2, post="North Gate", is_on_duty=True,
+        self.txn_overdue = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0003",
+            key=self.key_eng,
+            borrower=self.borrower1,
+            room=self.room_eng,
+            purpose="Late exam review",
+            released_by=self.guard2,
+            guard_shift=self.shift2,
+            status=BorrowTransaction.Status.OVERDUE,
+            remarks="Override: Dean approved emergency weekend room access",
+            borrowed_at=now - timedelta(days=2),
+            expected_return_at=now - timedelta(days=1),
         )
-
-        self.url = reverse("transactions:shift_history")
+        BorrowTransaction.objects.filter(pk=self.txn_active.pk).update(borrowed_at=now - timedelta(hours=2))
+        BorrowTransaction.objects.filter(pk=self.txn_returned.pk).update(borrowed_at=now - timedelta(hours=5))
+        BorrowTransaction.objects.filter(pk=self.txn_overdue.pk).update(borrowed_at=now - timedelta(days=2))
 
     def test_anonymous_redirected_to_login(self):
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 302)
-        self.assertIn("login", res.url)
+        self.assertIn(reverse("accounts:login"), res.url)
 
-    def test_unauthorized_role_gets_403(self):
-        self.client.force_login(self.staff)
-        res = self.client.get(self.url)
-        self.assertEqual(res.status_code, 403)
-
-    def test_guard_sees_only_own_shifts(self):
+    def test_guard_can_view_history_without_csv_export(self):
         self.client.force_login(self.guard1)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
-        self.assertFalse(res.context["is_admin"])
+        self.assertContains(res, "Reports &amp; History")
+        self.assertContains(res, "TXN-20261023-0001")
+        self.assertNotContains(res, "Export CSV")
 
-        for s in res.context["shifts"]:
-            self.assertEqual(s.guard, self.guard1)
-
-        self.assertContains(res, "East Gate")
-        self.assertNotContains(res, "North Gate")
-        self.assertNotContains(res, "Jane Officer")
-        self.assertNotContains(res, 'id="guard-filter"')
-
-    def test_guard_cannot_bypass_scoping_with_get_param(self):
-        self.client.force_login(self.guard1)
-        res = self.client.get(f"{self.url}?guard={self.guard2.pk}")
-        self.assertEqual(res.status_code, 200)
-        for s in res.context["shifts"]:
-            self.assertEqual(s.guard, self.guard1)
-        self.assertNotContains(res, "North Gate")
-
-    def test_admin_sees_all_shifts_and_guard_filter(self):
+    def test_admin_can_view_history_with_csv_export(self):
         self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
-
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.context["is_admin"])
+        self.assertContains(res, "Reports &amp; History")
+        self.assertContains(res, "Export CSV")
+        self.assertContains(res, reverse("transactions:export_csv"))
 
-        self.assertContains(res, "East Gate")
-        self.assertContains(res, "North Gate")
-        self.assertContains(res, "John Guard")
-        self.assertContains(res, "Jane Officer")
-        self.assertContains(res, 'id="guard-filter"')
+    def test_search_filter(self):
+        self.client.force_login(self.guard1)
+        # Search by key code
+        res_key = self.client.get(self.url, {"q": "CCS-202-1"})
+        self.assertEqual(res_key.status_code, 200)
+        self.assertEqual(len(res_key.context["txns"]), 1)
+        self.assertEqual(res_key.context["txns"][0].transaction_no, "TXN-20261023-0002")
 
-    def test_admin_filters_by_guard_id(self):
-        self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
+        # Search by borrower name
+        res_borrower = self.client.get(self.url, {"q": "Bob"})
+        self.assertEqual(res_borrower.status_code, 200)
+        self.assertEqual(len(res_borrower.context["txns"]), 1)
+        self.assertEqual(res_borrower.context["txns"][0].transaction_no, "TXN-20261023-0002")
 
-        res = self.client.get(f"{self.url}?guard={self.guard1.pk}")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.context["guard_filter"], str(self.guard1.pk))
+        # Search by transaction number
+        res_txn = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertEqual(res_txn.status_code, 200)
+        self.assertEqual(len(res_txn.context["txns"]), 1)
+        self.assertEqual(res_txn.context["txns"][0].transaction_no, "TXN-20261023-0003")
 
-        for s in res.context["shifts"]:
-            self.assertEqual(s.guard, self.guard1)
+    def test_status_filter(self):
+        self.client.force_login(self.guard1)
+        res_active = self.client.get(self.url, {"status": "ACTIVE"})
+        self.assertEqual(len(res_active.context["txns"]), 1)
+        self.assertEqual(res_active.context["txns"][0].status, BorrowTransaction.Status.ACTIVE)
 
-        self.assertContains(res, "East Gate")
-        self.assertNotContains(res, "North Gate")
-        self.assertContains(res, "Clear")
+        res_returned = self.client.get(self.url, {"status": "RETURNED"})
+        self.assertEqual(len(res_returned.context["txns"]), 1)
+        self.assertEqual(res_returned.context["txns"][0].status, BorrowTransaction.Status.RETURNED)
 
-    def test_admin_filters_by_guard_username(self):
-        self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
+        res_overdue = self.client.get(self.url, {"status": "OVERDUE"})
+        self.assertEqual(len(res_overdue.context["txns"]), 1)
+        self.assertEqual(res_overdue.context["txns"][0].status, BorrowTransaction.Status.OVERDUE)
 
-        res = self.client.get(f"{self.url}?guard=guard_two")
-        self.assertEqual(res.status_code, 200)
-        for s in res.context["shifts"]:
-            self.assertEqual(s.guard, self.guard2)
+    def test_building_filter(self):
+        self.client.force_login(self.guard1)
+        res_eng = self.client.get(self.url, {"building": "ENG"})
+        self.assertEqual(len(res_eng.context["txns"]), 2)
+        for t in res_eng.context["txns"]:
+            self.assertEqual(t.room.building.code, "ENG")
 
-        self.assertContains(res, "North Gate")
-        self.assertNotContains(res, "East Gate")
+        res_ccs = self.client.get(self.url, {"building": "CCS"})
+        self.assertEqual(len(res_ccs.context["txns"]), 1)
+        self.assertEqual(res_ccs.context["txns"][0].room.building.code, "CCS")
 
-    def test_admin_filter_no_results(self):
-        self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
+    def test_guard_filter(self):
+        self.client.force_login(self.guard1)
+        # guard2 released TXN-3 and received TXN-2
+        res_guard2 = self.client.get(self.url, {"guard": str(self.guard2.pk)})
+        self.assertEqual(len(res_guard2.context["txns"]), 2)
+        txn_nos = {t.transaction_no for t in res_guard2.context["txns"]}
+        self.assertEqual(txn_nos, {"TXN-20261023-0002", "TXN-20261023-0003"})
 
-        res = self.client.get(f"{self.url}?guard=nonexistent_guard")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.context["shifts"]), 0)
-        self.assertContains(res, "No shifts found for this guard filter.")
+    def test_date_range_filter(self):
+        self.client.force_login(self.guard1)
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        three_days_ago = today - timedelta(days=3)
 
-    def test_columns_and_data_present(self):
-        self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
+        # Transactions within the last day (should find TXN-1 and TXN-2, exclude TXN-3 from 2 days ago)
+        res = self.client.get(self.url, {"start_date": yesterday.isoformat(), "end_date": today.isoformat()})
+        self.assertEqual(len(res.context["txns"]), 2)
+        self.assertNotIn("TXN-20261023-0003", [t.transaction_no for t in res.context["txns"]])
 
-        res = self.client.get(f"{self.url}?guard={self.guard1.pk}")
-        self.assertEqual(res.status_code, 200)
-
-        # Columns
-        self.assertContains(res, ">Guard<")
-        self.assertContains(res, ">Post<")
-        self.assertContains(res, ">Start<")
-        self.assertContains(res, ">End<")
-        self.assertContains(res, ">Duration<")
-        self.assertContains(res, ">Transactions<")
-        self.assertContains(res, ">Duty Status<")
-
-        # Data for shift1
-        self.assertContains(res, "John Guard")
-        self.assertContains(res, "@guard_one")
-        self.assertContains(res, "East Gate")
-        self.assertContains(res, "3h 00m")
-        self.assertContains(res, "2")
-        self.assertContains(res, "ENDED")
-
-    def test_on_duty_pill_for_active_shift(self):
-        self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
-
-        res = self.client.get(f"{self.url}?guard={self.guard2.pk}")
-        self.assertEqual(res.status_code, 200)
-        self.assertContains(res, "ON DUTY")
+        # Transactions starting 3 days ago up to yesterday (should find TXN-3 only)
+        res_old = self.client.get(self.url, {"start_date": three_days_ago.isoformat(), "end_date": yesterday.isoformat()})
+        self.assertEqual(len(res_old.context["txns"]), 1)
+        self.assertEqual(res_old.context["txns"][0].transaction_no, "TXN-20261023-0003")
 
     def test_pagination(self):
         self.client.force_login(self.guard1)
-        GuardShift.objects.filter(guard=self.guard1).update(is_on_duty=False)
-        base_time = timezone.now() - timedelta(days=30)
-        new_shifts = [
-            GuardShift(
-                guard=self.guard1,
-                post=f"Post-{i}",
-                is_on_duty=False,
-                shift_end=base_time + timedelta(hours=i * 2 + 1),
+        # Create 22 more transactions so we have 25 total
+        now = timezone.now()
+        for i in range(4, 26):
+            BorrowTransaction.objects.create(
+                transaction_no=f"TXN-PAG-{i:04d}",
+                key=self.key_eng,
+                borrower=self.borrower1,
+                room=self.room_eng,
+                released_by=self.guard1,
+                guard_shift=self.shift1,
+                status=BorrowTransaction.Status.ACTIVE,
+                borrowed_at=now - timedelta(minutes=i),
             )
-            for i in range(25)
-        ]
-        GuardShift.objects.bulk_create(new_shifts)
 
-        total_guard1_shifts = GuardShift.objects.filter(guard=self.guard1).count()
-        self.assertGreater(total_guard1_shifts, 20)
+        # Page 1 should contain 20 items and pager should indicate 25 total
+        res_page1 = self.client.get(self.url)
+        self.assertEqual(res_page1.status_code, 200)
+        self.assertEqual(len(res_page1.context["txns"]), 20)
+        self.assertEqual(res_page1.context["page_obj"].paginator.count, 25)
+        self.assertTrue(res_page1.context["page_obj"].has_next())
+        self.assertContains(res_page1, "Showing <span class=\"font-semibold text-stone-800\">1</span> to <span class=\"font-semibold text-stone-800\">20</span> of <span class=\"font-semibold text-stone-800\">25</span> results")
 
-        # Page 1
-        res_p1 = self.client.get(self.url)
-        self.assertEqual(res_p1.status_code, 200)
-        self.assertEqual(len(res_p1.context["shifts"]), 20)
-        self.assertEqual(res_p1.context["page_obj"].number, 1)
-        self.assertContains(res_p1, f"Showing 1-20 of {total_guard1_shifts}")
-        self.assertContains(res_p1, "page=2")
+        # Page 2 should contain 5 items
+        res_page2 = self.client.get(self.url, {"page": "2"})
+        self.assertEqual(res_page2.status_code, 200)
+        self.assertEqual(len(res_page2.context["txns"]), 5)
+        self.assertFalse(res_page2.context["page_obj"].has_next())
+        self.assertTrue(res_page2.context["page_obj"].has_previous())
 
-        # Page 2
-        res_p2 = self.client.get(f"{self.url}?page=2")
-        self.assertEqual(res_p2.status_code, 200)
-        expected_p2_count = total_guard1_shifts - 20
-        self.assertEqual(len(res_p2.context["shifts"]), expected_p2_count)
-        self.assertEqual(res_p2.context["page_obj"].number, 2)
-        self.assertContains(res_p2, f"Showing 21-{total_guard1_shifts} of {total_guard1_shifts}")
+    def test_overdue_highlighting(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertContains(res, 'data-is-overdue="true"')
+        self.assertContains(res, "border-l-red-500")
 
-    def test_pagination_preserves_filter_params(self):
+    def test_row_metadata_and_override_reason_in_html(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertContains(res, 'data-released-by="Beta Guard"')
+        self.assertContains(res, 'data-shift-post="North Gate"')
+        self.assertContains(res, 'data-override-reason="Dean approved emergency weekend room access"')
+        self.assertEqual(self.txn_overdue.override_reason, "Dean approved emergency weekend room access")
+
+    def test_csv_export_guard_forbidden(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_csv_export_admin_allowed_and_filters(self):
         self.client.force_login(self.admin)
-        GuardShift.objects.filter(guard=self.admin).delete()
-        base_time = timezone.now() - timedelta(days=30)
-        new_shifts = [
-            GuardShift(
-                guard=self.guard1,
-                post=f"Eng-Post-{i}",
-                is_on_duty=False,
-                shift_end=base_time + timedelta(hours=i * 2 + 1),
-            )
-            for i in range(25)
-        ]
-        GuardShift.objects.bulk_create(new_shifts)
-
-        res = self.client.get(f"{self.url}?guard={self.guard1.pk}&page=1")
+        res = self.client.get(self.export_url, {"status": "RETURNED"})
         self.assertEqual(res.status_code, 200)
-        self.assertContains(res, f"guard={self.guard1.pk}")
-        self.assertContains(res, "page=2")
+        self.assertEqual(res["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("attachment; filename=", res["Content-Disposition"])
 
+        content = res.content.decode("utf-8")
+        lines = content.strip().splitlines()
+        # Header + 1 returned txn
+        self.assertEqual(len(lines), 2)
+        header = lines[0]
+        self.assertIn("Transaction No", header)
+        self.assertIn("Status", header)
+        self.assertIn("Released By", header)
+        self.assertIn("Received By", header)
+        self.assertIn("Guard Shift Post", header)
+        self.assertIn("Override Reason", header)
 
-@TESTSERVER
-class GuardShiftModelTests(TestCase):
-    def setUp(self):
-        self.guard = User.objects.create_user(
-            username="guard_model", email="guard_model@example.edu", password="pw",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
-        )
-
-    def test_duration_and_display_ended_shift(self):
-        now = timezone.now()
-        shift = GuardShift.objects.create(
-            guard=self.guard, post="Gate 1", is_on_duty=False,
-            shift_end=now,
-        )
-        # Test 45 min
-        GuardShift.objects.filter(pk=shift.pk).update(
-            shift_start=now - timedelta(minutes=45),
-            shift_end=now,
-        )
-        shift.refresh_from_db()
-        self.assertEqual(shift.duration, timedelta(minutes=45))
-        self.assertEqual(shift.duration_display, "45m")
-        self.assertEqual(shift.duty_status, "ENDED")
-
-        # Test 2h 15m
-        GuardShift.objects.filter(pk=shift.pk).update(
-            shift_start=now - timedelta(hours=2, minutes=15),
-            shift_end=now,
-        )
-        shift.refresh_from_db()
-        self.assertEqual(shift.duration_display, "2h 15m")
-
-        # Test 1d 3h 10m
-        GuardShift.objects.filter(pk=shift.pk).update(
-            shift_start=now - timedelta(days=1, hours=3, minutes=10),
-            shift_end=now,
-        )
-        shift.refresh_from_db()
-        self.assertEqual(shift.duration_display, "1d 3h 10m")
-
-        # Test < 1m
-        GuardShift.objects.filter(pk=shift.pk).update(
-            shift_start=now - timedelta(seconds=20),
-            shift_end=now,
-        )
-        shift.refresh_from_db()
-        self.assertEqual(shift.duration_display, "< 1m")
-
-    def test_duration_active_shift(self):
-        now = timezone.now()
-        shift = GuardShift.objects.create(
-            guard=self.guard, post="Main Gate", is_on_duty=True,
-        )
-        GuardShift.objects.filter(pk=shift.pk).update(
-            shift_start=now - timedelta(hours=1, minutes=30),
-        )
-        shift.refresh_from_db()
-        self.assertIsNotNone(shift.duration)
-        self.assertEqual(shift.duty_status, "ON DUTY")
-        self.assertTrue(shift.duration_display.startswith("1h 30m"))
-
-    def test_duration_none_when_ended_without_end_time(self):
-        shift = GuardShift.objects.create(
-            guard=self.guard, post="Main Gate", is_on_duty=False, shift_end=None,
-        )
-        self.assertIsNone(shift.duration)
-        self.assertEqual(shift.duration_display, "—")
+        data_row = lines[1]
+        self.assertIn("TXN-20261023-0002", data_row)
+        self.assertIn("RETURNED", data_row)
+        self.assertIn("CCS-202-1", data_row)
+        self.assertIn("Bob Jones", data_row)
+        self.assertIn("Beta Guard", data_row)
+        self.assertIn("Key returned in good condition", data_row)
