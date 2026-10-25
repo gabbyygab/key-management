@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Borrower Lookup — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Borrower Lookup (Read-Only)</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Search verified borrowers and verify authorization status.</p>
+  </div>
+  <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="arrow-left-right" class="w-4 h-4"></i> Return to POS
+  </a>
+</div>
+
+<form method="get" class="flex gap-2" role="search" aria-label="Search borrowers">
+  <label for="borrower-q" class="sr-only">Search name or ID number</label>
+  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="borrower-q" name="q" value="{{ q }}" placeholder="Search borrower name or ID number..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+  </div>
+  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
+</form>
+
+<div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+  <table class="min-w-full text-[13px]">
+    <caption class="sr-only">Borrower Lookup</caption>
+    <thead>
+      <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+        <th scope="col" class="p-3 font-medium">ID Number</th>
+        <th scope="col" class="p-3 font-medium">Name</th>
+        <th scope="col" class="p-3 font-medium">Type</th>
+        <th scope="col" class="p-3 font-medium">Department</th>
+        <th scope="col" class="p-3 font-medium">Contact</th>
+        <th scope="col" class="p-3 font-medium">Authorized to Borrow</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for b in borrowers %}
+      <tr class="hover:bg-stone-50/60">
+        <td class="p-3 font-mono text-[12px] text-stone-700">{{ b.id_number }}</td>
+        <td class="p-3 font-semibold text-stone-900">{{ b.last_name }}, {{ b.first_name }}</td>
+        <td class="p-3 text-stone-600">{{ b.get_borrower_type_display|default:b.borrower_type }}</td>
+        <td class="p-3 text-stone-600">{{ b.department.code|default:"—" }}</td>
+        <td class="p-3 text-stone-600">{{ b.contact_number|default:"—" }}</td>
+        <td class="p-3">
+          {% if b.can_borrow %}
+          <span class="inline-flex items-center gap-1 bg-green-50 text-green-800 border border-green-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            <span aria-hidden="true">●</span> Authorized
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 bg-red-50 text-red-800 border border-red-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+            <span aria-hidden="true">●</span> Not Authorized
+          </span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6" class="p-6 text-center text-stone-500">No borrowers found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

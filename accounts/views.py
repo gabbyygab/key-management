@@ -197,3 +197,50 @@ def user_reject(request, pk):
     except ApprovalError as e:
         messages.error(request, str(e))
     return redirect("accounts:pending_user_list")
+
+
+@admin_required
+def user_list(request):
+    """Admin view: Users & Guards list."""
+    q = request.GET.get("q", "").strip()
+    role_filter = request.GET.get("role", "").strip()
+    users = User.objects.select_related("department").all()
+    if q:
+        users = users.filter(
+            Q(username__icontains=q)
+            | Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(employee_id__icontains=q)
+            | Q(email__icontains=q)
+        )
+    if role_filter:
+        users = users.filter(role=role_filter)
+    users = users.order_by("-date_joined")
+    return render(
+        request,
+        "accounts/user_list.html",
+        {
+            "users": users[:100],
+            "roles": User.Role.choices,
+            "q": q,
+            "role_filter": role_filter,
+        },
+    )
+
+
+@role_required("GUARD", "ADMIN")
+def borrower_lookup(request):
+    """Guard read-only borrower lookup."""
+    q = request.GET.get("q", "").strip()
+    borrowers = Borrower.objects.select_related("department").filter(is_active=True)
+    if q:
+        borrowers = borrowers.filter(
+            Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(id_number__icontains=q)
+        )
+    return render(
+        request,
+        "accounts/borrower_lookup.html",
+        {"borrowers": borrowers[:100], "q": q},
+    )
