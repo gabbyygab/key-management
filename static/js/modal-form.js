@@ -1,4 +1,4 @@
-/* modal-form.js — AJAX form-in-modal helper (F1.3).
+/* modal-form.js — AJAX form-in-modal helper (F1.3, F6.8).
  *
  * The pattern for every add/edit modal:
  *   1. GET <endpoint>?modal=1  -> the server returns just the form partial
@@ -8,24 +8,10 @@
  *      422     -> re-render the partial in place, modal STAYS OPEN, typed
  *                 input preserved (the server echoes bound data + errors)
  *      403     -> "You do not have permission", close
+ *      Session expired -> close modal, open session expired dialog
+ *      Network failure -> show toast with retry option
  *
- * Progressive enhancement: the full-page form templates keep working with no
- * JS. A plain GET still returns the whole page; only ?modal=1 returns the
- * partial. So a trigger should be a real <a href> — this script intercepts it.
- *
- * Markup:
- *   <a href="{% url 'keys:key_create' %}"
- *      data-modal-form="key-form"
- *      data-modal-refresh="#key-table">+ Add key</a>
- *
- *   <div id="key-form" role="dialog" ...>
- *     <div data-modal-body></div>
- *   </div>
- *
- * NOTE: the ?modal=1 endpoints this drives are task F4.* / backend work and
- * do not exist yet. This file is the agreed client half of that contract.
- *
- * Requires: csrf.js, modal.js, toast.js.
+ * Requires: csrf.js, toast.js, skeletons.js, modal.js.
  */
 (function () {
   "use strict";
@@ -39,9 +25,15 @@
     return modal.querySelector("[data-modal-body]") || modal;
   }
 
+  /* F6.8: Use animated pulse form skeleton while fetching the partial */
   function setLoading(modal) {
-    bodyOf(modal).innerHTML =
-      '<div class="py-10 text-center text-[13px] text-stone-400">Loading…</div>';
+    var body = bodyOf(modal);
+    if (KeyTrack.skeletons) {
+      KeyTrack.skeletons.form(body);
+    } else {
+      body.innerHTML =
+        '<div class="py-10 text-center text-[13px] text-stone-400">Loading…</div>';
+    }
   }
 
   /* Inject markup and re-init icons. Every injection path goes through here
@@ -83,6 +75,11 @@
       credentials: "same-origin",
     })
       .then(function (res) {
+        if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res)) {
+          window.KeyTrackModal.close(modalId);
+          KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
         if (res.status === 403) {
           KeyTrack.toast("You do not have permission.", "error");
           window.KeyTrackModal.close(modalId);
@@ -92,13 +89,24 @@
         return res.text();
       })
       .then(function (html) {
+        if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired({ status: 200 }, html)) {
+          window.KeyTrackModal.close(modalId);
+          KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
         inject(modal, html);
       })
       .catch(function (err) {
-        if (err.message === "forbidden") return;
+        if (err.message === "forbidden" || err.message === "session_expired") return;
+        /* F6.8 network failure toast with retry */
+        if (KeyTrack.networkErrorToast) {
+          KeyTrack.networkErrorToast(function () {
+            load(trigger);
+          }, "Could not load form due to network error.");
+        }
         inject(
           modal,
-          '<p class="py-8 text-center text-[13px] text-red-700">Could not load this form. Please try again.</p>'
+          '<p class="py-8 text-center text-[13px] text-red-700">Could not load this form. Please check your connection and try again.</p>'
         );
       });
   }
@@ -153,9 +161,17 @@
       credentials: "same-origin",
     })
       .then(function (res) {
+        if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res)) {
+          window.KeyTrackModal.close(modalId);
+          KeyTrack.handleSessionExpired();
+          restore();
+          return null;
+        }
+
         if (res.status === 403) {
           KeyTrack.toast("You do not have permission.", "error");
           window.KeyTrackModal.close(modalId);
+          restore();
           return null;
         }
 
@@ -166,6 +182,12 @@
           var type = res.headers.get("Content-Type") || "";
           if (type.indexOf("application/json") !== -1) {
             return res.json().then(function (data) {
+              if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res, data)) {
+                window.KeyTrackModal.close(modalId);
+                KeyTrack.handleSessionExpired();
+                restore();
+                return null;
+              }
               KeyTrack.toast(
                 data.error || "Please correct the errors below.",
                 "error"
@@ -182,19 +204,35 @@
         }
 
         if (res.status === 200 || res.status === 201) {
-          KeyTrack.toast(
-            form.getAttribute("data-success-message") || "Saved.",
-            "success"
-          );
-          window.KeyTrackModal.close(modalId);
-          refreshRegion(modal);
-          return null;
+          return res.text().then(function (text) {
+            if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res, text)) {
+              window.KeyTrackModal.close(modalId);
+              KeyTrack.handleSessionExpired();
+              restore();
+              return null;
+            }
+            KeyTrack.toast(
+              form.getAttribute("data-success-message") || "Saved.",
+              "success"
+            );
+            window.KeyTrackModal.close(modalId);
+            refreshRegion(modal);
+            return null;
+          });
         }
 
         throw new Error("save failed: " + res.status);
       })
-      .catch(function () {
-        KeyTrack.toast("Could not save. Please try again.", "error");
+      .catch(function (err) {
+        if (err && err.message === "session_expired") return;
+        /* F6.8 network failure toast with retry */
+        if (KeyTrack.networkErrorToast) {
+          KeyTrack.networkErrorToast(function () {
+            submit(form, modal);
+          }, "Could not save form due to network error.");
+        } else {
+          KeyTrack.toast("Could not save. Please check your connection and try again.", "error");
+        }
         restore();
       });
   }
@@ -213,6 +251,10 @@
       credentials: "same-origin",
     })
       .then(function (res) {
+        if (KeyTrack.isSessionExpired && KeyTrack.isSessionExpired(res)) {
+          KeyTrack.handleSessionExpired();
+          throw new Error("session_expired");
+        }
         return res.text();
       })
       .then(function (html) {
@@ -227,7 +269,8 @@
         KeyTrack.refreshIcons(region);
         if (KeyTrack.bindSearch) KeyTrack.bindSearch(region);
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.message === "session_expired") return;
         window.location.reload();
       });
   }

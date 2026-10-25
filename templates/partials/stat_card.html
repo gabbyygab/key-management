@@ -1,10 +1,48 @@
-{# stat_card — label/value/sub. The icon is decorative; the label is the name. #}
+{# stat_card — label/value/sub with trend indicator, click-through link and icon. #}
+{% if url or href %}
+<a href="{% if url %}{{ url }}{% else %}{{ href }}{% endif %}" class="group block bg-white rounded-xl border border-stone-200 shadow-sm p-4 hover:border-[#1E6B4A] hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]">
+{% else %}
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-  <div class="flex items-start justify-between">
-    <div class="text-[13px] text-stone-500">{{ label }}</div>
-    <div aria-hidden="true" class="w-8 h-8 rounded-lg flex items-center justify-center {{ icon_bg|default:'bg-stone-100' }}"><i data-lucide="{{ icon|default:'key-round' }}" class="w-4 h-4"></i></div>
+{% endif %}
+  <div class="flex items-start justify-between gap-2">
+    <div class="flex items-center gap-1.5 min-w-0">
+      <span class="text-[13px] text-stone-500 font-medium truncate">{{ label }}</span>
+      {% if url or href %}
+      <i data-lucide="arrow-up-right" aria-hidden="true" class="w-3.5 h-3.5 text-stone-400 group-hover:text-[#1E6B4A] shrink-0 transition-colors"></i>
+      {% endif %}
+    </div>
+    {% if icon != "none" and not hide_icon %}
+    <div aria-hidden="true" class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 {{ icon_bg|default:'bg-stone-100' }} {{ icon_color|default:'text-stone-700' }}">
+      <i data-lucide="{{ icon|default:'key-round' }}" class="w-4 h-4"></i>
+    </div>
+    {% endif %}
   </div>
-  <div class="text-[26px] leading-8 font-extrabold mt-1">{{ value }}</div>
-  {# stone-400 measured 2.52:1 on white — below the 4.5:1 AA floor (F6.7). #}
-  <div class="text-[12px] text-stone-500 mt-0.5">{{ sub }}</div>
+
+  <div class="text-[26px] leading-8 font-extrabold mt-1 text-stone-900 tracking-tight">{{ value }}</div>
+
+  {% if sub or trend %}
+  <div class="mt-1 flex items-center justify-between gap-2 flex-wrap">
+    {% if sub %}
+    <div class="text-[12px] text-stone-500 truncate">{{ sub }}</div>
+    {% else %}
+    <div></div>
+    {% endif %}
+
+    {% if trend %}
+    {% comment %} Trend indicator pill with accessible label {% endcomment %}
+    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border {% if trend_sentiment == 'danger' or trend_sentiment == 'negative' or trend_sentiment == 'bad' or trend_direction == 'down' and trend_sentiment != 'positive' and trend_sentiment != 'good' or not trend_direction and '-' in trend and trend_sentiment != 'positive' and trend_sentiment != 'good' %}bg-red-50 text-red-800 border-red-200{% elif trend_sentiment == 'positive' or trend_sentiment == 'good' or trend_direction == 'up' or not trend_direction and '+' in trend %}bg-green-50 text-green-800 border-green-200{% else %}bg-stone-100 text-stone-700 border-stone-200{% endif %}">
+      <i data-lucide="{% if trend_direction == 'down' or not trend_direction and '-' in trend %}trending-down{% elif trend_direction == 'up' or not trend_direction and '+' in trend %}trending-up{% else %}minus{% endif %}" aria-hidden="true" class="w-3 h-3 shrink-0"></i>
+      <span>{{ trend }}</span>
+      {% if trend_label %}
+      <span class="text-stone-500 font-normal ml-0.5">{{ trend_label }}</span>
+      {% endif %}
+      <span class="sr-only">Trend: {{ trend }} {{ trend_label }}</span>
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+{% if url or href %}
+</a>
+{% else %}
 </div>
+{% endif %}

@@ -1,0 +1,407 @@
+/* ===== Navbar shell ===== */
+.app-header {
+    --header-green: #0f2e1f;
+    --header-gold: #e2cf85;
+    --header-gold-soft: rgba(226, 207, 133, 0.22);
+    --header-border: #e7e5e4;
+    --header-muted: #78716c;
+
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--header-border);
+}
+
+.app-header-top {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.85rem 1.5rem;
+}
+
+@media (min-width: 1024px) {
+    .app-header-top {
+        padding: 1.1rem 2rem;
+    }
+}
+
+.app-header-spacer {
+    flex: 1;
+}
+
+.app-header svg {
+    flex-shrink: 0;
+}
+
+/* ===== Mobile brand ===== */
+.app-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.app-header-brand img {
+    border-radius: 0.5rem;
+    object-fit: contain;
+}
+
+.app-header-brand-name {
+    font-size: 0.8125rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--header-green);
+}
+
+@media (min-width: 768px) {
+    .app-header-brand {
+        display: none;
+    }
+}
+
+/* ===== Breadcrumb ===== */
+.app-breadcrumb {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    font-size: 0.8125rem;
+    color: var(--header-muted);
+}
+
+@media (min-width: 768px) {
+    .app-breadcrumb {
+        display: flex;
+    }
+}
+
+.app-breadcrumb-section {
+    font-weight: 500;
+}
+
+.app-breadcrumb-divider {
+    color: #a8a29e;
+}
+
+.app-breadcrumb-current {
+    font-weight: 700;
+    color: var(--header-green);
+}
+
+/* ===== Quick-add dropdown ===== */
+.app-quickadd {
+    position: relative;
+}
+
+.app-quickadd-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 0.85rem;
+    border: 0;
+    border-radius: 0.75rem;
+    background: #14342a;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.app-quickadd-btn:hover {
+    background: var(--header-green);
+}
+
+.app-quickadd-btn svg {
+    width: 0.9rem;
+    height: 0.9rem;
+    color: var(--header-gold);
+}
+
+.app-quickadd-btn .app-quickadd-chevron {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+.app-quickadd-label {
+    display: none;
+}
+
+@media (min-width: 640px) {
+    .app-quickadd-label {
+        display: inline;
+    }
+}
+
+.app-quickadd-menu {
+    position: absolute;
+    right: 0;
+    z-index: 20;
+    width: 12rem;
+    margin-top: 0.4rem;
+    padding: 0.3rem;
+    border: 1px solid var(--header-border);
+    border-radius: 0.85rem;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 46, 31, 0.15);
+}
+
+/* navbar.js toggles the "hidden" class, so keep it working without Tailwind */
+.app-quickadd-menu.hidden {
+    display: none;
+}
+
+.app-quickadd-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.6rem;
+    color: #292524;
+    font-size: 0.8125rem;
+    text-decoration: none;
+    transition: background-color 0.15s ease;
+}
+
+.app-quickadd-item svg {
+    width: 1rem;
+    height: 1rem;
+    color: #a8a29e;
+    transition: color 0.15s ease;
+}
+
+.app-quickadd-item:hover {
+    background: var(--header-gold-soft);
+}
+
+.app-quickadd-item:hover svg {
+    color: var(--header-green);
+}
+
+/* ===== Guard shift pills ===== */
+.app-shift-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.app-shift-pill svg {
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+.app-shift-on {
+    display: none;
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    color: #166534;
+}
+
+@media (min-width: 640px) {
+    .app-shift-on {
+        display: inline-flex;
+    }
+}
+
+.app-shift-off {
+    background: #dc2626;
+    color: #fff;
+    animation: app-shift-pulse 2s ease-in-out infinite;
+}
+
+.app-shift-text-short {
+    display: inline;
+}
+
+.app-shift-text-long {
+    display: none;
+}
+
+@media (min-width: 640px) {
+    .app-shift-text-short {
+        display: none;
+    }
+
+    .app-shift-text-long {
+        display: inline;
+    }
+}
+
+@keyframes app-shift-pulse {
+    50% {
+        opacity: 0.6;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-shift-off {
+        animation: none;
+    }
+}
+
+/* ===== Clock and date ===== */
+.app-header-clock {
+    display: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--header-muted);
+}
+
+.app-header-date {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid var(--header-border);
+    border-radius: 0.75rem;
+    background: #fff;
+    font-size: 0.75rem;
+    color: var(--header-muted);
+}
+
+.app-header-date svg {
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+@media (min-width: 1024px) {
+    .app-header-clock {
+        display: inline;
+    }
+
+    .app-header-date {
+        display: inline-flex;
+    }
+}
+
+/* ===== Account ===== */
+.app-header-account {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.8rem 0.35rem 0.35rem;
+    border: 1px solid var(--header-border);
+    border-radius: 999px;
+    background: #fff;
+}
+
+.app-header-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--header-green);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 700;
+}
+
+.app-header-user {
+    display: none;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+@media (min-width: 640px) {
+    .app-header-user {
+        display: flex;
+    }
+}
+
+.app-header-user-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #1c1917;
+}
+
+.app-header-user-role {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--header-muted);
+}
+
+/* ===== Logout ===== */
+.app-header-logout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--header-border);
+    border-radius: 0.75rem;
+    background: #fff;
+    color: var(--header-muted);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-header-logout:hover {
+    background: #f5f5f4;
+    color: var(--header-green);
+}
+
+.app-header-logout svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.app-header-logout:focus-visible,
+.app-quickadd-btn:focus-visible,
+.app-mobile-link:focus-visible {
+    outline: 2px solid var(--header-green);
+    outline-offset: 2px;
+}
+
+/* ===== Mobile nav strip ===== */
+.app-header-mobile-nav {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding: 0 1rem 0.65rem;
+    font-size: 0.8125rem;
+}
+
+@media (min-width: 768px) {
+    .app-header-mobile-nav {
+        display: none;
+    }
+}
+
+.app-mobile-link {
+    flex-shrink: 0;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--header-border);
+    border-radius: 0.6rem;
+    background: #fff;
+    color: #44403c;
+    font: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.app-mobile-link.is-active {
+    border-color: var(--header-gold);
+    background: var(--header-gold);
+    color: var(--header-green);
+    font-weight: 600;
+}
+
+.app-mobile-logout {
+    color: #b91c1c;
+    font-weight: 500;
+}

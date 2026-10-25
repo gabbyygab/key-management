@@ -42,11 +42,11 @@ def login_view(request):
     # ?next= is only honoured if it points back at this site. Redirecting to a
     # raw query parameter is an open redirect: a crafted link could bounce a
     # guard to an off-site look-alike straight after a real login.
-    next_url = request.GET.get("next", "")
-    if next_url and not url_has_allowed_host_and_scheme(
-        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    nxt = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if nxt and not url_has_allowed_host_and_scheme(
+        nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     ):
-        next_url = ""
+        nxt = ""
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
@@ -57,13 +57,15 @@ def login_view(request):
                 error = "This account is not allowed to log in."
             else:
                 login(request, user)
-                return redirect(request.GET.get("next") or get_post_login_redirect(user))
+                if nxt:
+                    return redirect(nxt)
+                return redirect(get_post_login_redirect(user))
         else:
             error = "Invalid credentials, or account not approved yet."
 
     # `next` goes back into the template so the form can carry it through the
     # POST; the form used to drop it, which sent every guard to the dashboard.
-    return render(request, "accounts/login.html", {"error": error, "next": next_url})
+    return render(request, "accounts/login.html", {"error": error, "next": nxt})
 
 
 def logout_view(request):
@@ -195,3 +197,50 @@ def user_reject(request, pk):
     except ApprovalError as e:
         messages.error(request, str(e))
     return redirect("accounts:pending_user_list")
+
+
+@admin_required
+def user_list(request):
+    """Admin view: Users & Guards list."""
+    q = request.GET.get("q", "").strip()
+    role_filter = request.GET.get("role", "").strip()
+    users = User.objects.select_related("department").all()
+    if q:
+        users = users.filter(
+            Q(username__icontains=q)
+            | Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(employee_id__icontains=q)
+            | Q(email__icontains=q)
+        )
+    if role_filter:
+        users = users.filter(role=role_filter)
+    users = users.order_by("-date_joined")
+    return render(
+        request,
+        "accounts/user_list.html",
+        {
+            "users": users[:100],
+            "roles": User.Role.choices,
+            "q": q,
+            "role_filter": role_filter,
+        },
+    )
+
+
+@role_required("GUARD", "ADMIN")
+def borrower_lookup(request):
+    """Guard read-only borrower lookup."""
+    q = request.GET.get("q", "").strip()
+    borrowers = Borrower.objects.select_related("department").filter(is_active=True)
+    if q:
+        borrowers = borrowers.filter(
+            Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(id_number__icontains=q)
+        )
+    return render(
+        request,
+        "accounts/borrower_lookup.html",
+        {"borrowers": borrowers[:100], "q": q},
+    )

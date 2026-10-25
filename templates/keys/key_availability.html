@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Key Availability — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Key Availability (Read-Only)</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Quickly look up physical key availability across all campus rooms.</p>
+  </div>
+  <a href="{% url 'transactions:borrow_dashboard' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="arrow-left-right" class="w-4 h-4"></i> Return to POS
+  </a>
+</div>
+
+<form method="get" class="flex gap-2" role="search" aria-label="Search and filter keys">
+  <label for="key-q" class="sr-only">Search key code or room</label>
+  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="key-q" name="q" value="{{ q }}" placeholder="Search key code, room, building..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+  </div>
+  <label for="key-status" class="sr-only">Filter by key status</label>
+  <select id="key-status" name="status" class="rounded-lg border border-stone-300 bg-white text-[13px] px-2 py-2">
+    <option value="">All statuses</option>
+    {% for code, label in statuses %}
+    <option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Filter</button>
+</form>
+
+<div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+  <table class="min-w-full text-[13px]">
+    <caption class="sr-only">Key Availability</caption>
+    <thead>
+      <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
+        <th scope="col" class="p-3 font-medium">Key Code</th>
+        <th scope="col" class="p-3 font-medium">Room</th>
+        <th scope="col" class="p-3 font-medium">Building</th>
+        <th scope="col" class="p-3 font-medium">Category</th>
+        <th scope="col" class="p-3 font-medium">Copy No.</th>
+        <th scope="col" class="p-3 font-medium">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for k in keys %}
+      <tr class="hover:bg-stone-50/60">
+        <td class="p-3 font-mono font-bold text-stone-900">{{ k.key_code }}</td>
+        <td class="p-3 font-semibold">{{ k.room }}</td>
+        <td class="p-3 text-stone-600">{{ k.room.building.name|default:k.room.building.code }}</td>
+        <td class="p-3 text-stone-600">{{ k.category.name|default:"—" }}</td>
+        <td class="p-3 font-mono text-[12px] text-stone-500">{{ k.copy_number }}</td>
+        <td class="p-3">
+          {% include "partials/status_pill.html" with status=k.status %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6" class="p-6 text-center text-stone-500">No keys found matching your criteria.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

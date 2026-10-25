@@ -76,6 +76,8 @@ TEMPLATES = [
                 'accounts.context_processors.pending_approvals',
                 # F2.3: guard shift indicator + navbar quick-add context
                 'accounts.context_processors.navbar_context',
+                # F2.1 / F7.3: active navigation identifier for sidebar highlighting
+                'accounts.context_processors.active_nav_context',
             ],
         },
     },
@@ -86,7 +88,7 @@ LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATICFILES_DIRS = [BASE_DIR / "static", BASE_DIR / "images"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Tailwind source lives in the repo so hand-written CSS survives a rebuild.
