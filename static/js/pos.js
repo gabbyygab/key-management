@@ -400,6 +400,77 @@
     KeyTrack.refreshIcons(container);
   }
 
+  /* ---- F5.6 Room schedule on key selection -------------------------- */
+
+  function loadRoomSchedule(panel, roomId) {
+    if (!panel || !roomId) return;
+    if (panel.querySelector(".today-in-room-widget")) return;
+
+    panel.innerHTML =
+      '<div class="py-2.5 text-[12px] text-stone-500 flex items-center gap-2">' +
+      '<i data-lucide="loader-circle" class="w-4 h-4 animate-spin text-stone-400"></i>' +
+      '<span>Loading today\'s schedule for this room...</span>' +
+      '</div>';
+    KeyTrack.refreshIcons(panel);
+
+    fetch("/api/scheduling/rooms/" + roomId + "/today/", {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      credentials: "same-origin",
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("Status: " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.html) {
+          panel.innerHTML = data.html;
+          KeyTrack.refreshIcons(panel);
+        }
+      })
+      .catch(function () {
+        panel.innerHTML =
+          '<div class="py-2 text-[12px] text-stone-400 flex items-center gap-1.5">' +
+          '<i data-lucide="alert-circle" class="w-3.5 h-3.5 text-stone-400"></i>' +
+          '<span>Unable to load room schedule.</span>' +
+          '</div>';
+        KeyTrack.refreshIcons(panel);
+      });
+  }
+
+  function bindRoomScheduleToggle() {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-pos-toggle-schedule]");
+      if (!btn) return;
+      var keyId = btn.getAttribute("data-pos-toggle-schedule");
+      var panel = document.querySelector("[data-pos-schedule-panel='" + keyId + "']");
+      if (!panel) return;
+
+      var isHidden = panel.classList.contains("hidden");
+      if (isHidden) {
+        panel.classList.remove("hidden");
+        btn.setAttribute("aria-expanded", "true");
+        var roomId = panel.getAttribute("data-room-id");
+        loadRoomSchedule(panel, roomId);
+      } else {
+        panel.classList.add("hidden");
+        btn.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    document.addEventListener("focusin", function (e) {
+      var input = e.target.closest("[data-pos-key-input]");
+      if (!input) return;
+      var keyId = input.getAttribute("data-pos-key-input");
+      var card = document.querySelector("[data-pos-key-card='" + keyId + "']");
+      if (card) {
+        document.querySelectorAll("[data-pos-key-card]").forEach(function (c) {
+          c.classList.remove("bg-emerald-50/40", "border-emerald-300", "ring-1", "ring-emerald-300");
+        });
+        card.classList.add("bg-emerald-50/40", "border-emerald-300", "ring-1", "ring-emerald-300");
+      }
+    });
+  }
+
   KeyTrack.pos = {
     endpoints: ENDPOINTS,
     hasActiveShift: hasActiveShift,
@@ -408,6 +479,8 @@
     release: release,
     renderInto: renderInto,
     bindLivePosSearch: bindLivePosSearch,
+    loadRoomSchedule: loadRoomSchedule,
+    bindRoomScheduleToggle: bindRoomScheduleToggle,
   };
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -416,5 +489,6 @@
     guardDoubleSubmit();
     bindShortcuts();
     bindLivePosSearch();
+    bindRoomScheduleToggle();
   });
 })();
