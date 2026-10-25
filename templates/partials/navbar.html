@@ -127,6 +127,9 @@ Sections:
     <a href="{% url 'keys:key_list' %}" {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %} is-active{% endif %}">Keys</a>
     <a href="{% url 'accounts:borrower_list' %}" {% if ns == 'accounts' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'accounts' %} is-active{% endif %}">Borrowers</a>
     <a href="{% url 'transactions:history' %}" {% if ns == 'transactions' and current == 'history' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'transactions' and current == 'history' %} is-active{% endif %}">History</a>
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <a href="{% url 'reports:index' %}" {% if ns == 'reports' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'reports' %} is-active{% endif %}">Reports</a>
+    {% endif %}
     <button type="button" data-modal-open="logout-modal" class="app-mobile-link app-mobile-logout">Log out</button>
   </nav>
 </header>

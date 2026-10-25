@@ -51,8 +51,13 @@
 
     <div class="sidebar-section-title">Management</div>
     <a href="{% url 'transactions:history' %}" {% if ns == 'transactions' and current == 'history' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'history' %} is-active{% endif %}">
-      <i data-lucide="chart-column"></i><span>Reports &amp; History</span>
+      <i data-lucide="receipt-text"></i><span>Transaction History</span>
     </a>
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <a href="{% url 'reports:index' %}" {% if ns == 'reports' and current == 'index' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'reports' and current == 'index' %} is-active{% endif %}">
+      <i data-lucide="bar-chart-3"></i><span>Reports</span>
+    </a>
+    {% endif %}
     {% if user.is_superuser or user.role == "ADMIN" %}
     <a href="{% url 'scheduling:room_timetable' %}" {% if ns == 'scheduling' and current == 'room_timetable' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'scheduling' and current == 'room_timetable' %} is-active{% endif %}">
       <i data-lucide="calendar"></i><span>Room Timetable</span>
