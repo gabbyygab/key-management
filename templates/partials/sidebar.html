@@ -1,69 +1,80 @@
+{% load static %}
 {% with current=request.resolver_match.url_name ns=request.resolver_match.namespace %}
-<aside class="w-64 shrink-0 bg-[#0F2E1F] text-white hidden md:flex flex-col min-h-screen sticky top-0 h-screen">
-  <div class="flex items-center gap-2 px-4 pt-4 pb-3">
-    <div class="w-9 h-9 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center"><i data-lucide="key-round" class="w-5 h-5"></i></div>
-    <div class="leading-tight">
-      <div class="font-extrabold tracking-wide text-[15px]">KEYTRACK</div>
-      <div class="text-[11px] text-white/60">University Key<br>Management</div>
+<link rel="stylesheet" href="{% static 'css/sidebar.css' %}">
+<aside class="app-sidebar">
+  <div class="sidebar-decoration sidebar-decoration-outer"></div>
+  <div class="sidebar-decoration sidebar-decoration-inner"></div>
+
+  <div class="sidebar-brand">
+    <img src="{% static 'keytrack-favicon.png' %}" alt="" width="44" height="44">
+    <div class="sidebar-brand-copy">
+      <div class="sidebar-brand-name">KEYTRACK</div>
+      <div class="sidebar-brand-caption">UNIVERSITY KEY MANAGEMENT</div>
     </div>
   </div>
 
-  <nav class="flex-1 overflow-y-auto px-3 pb-4 text-[13px]">
-    <div class="px-2 mt-1 mb-1 text-[11px] uppercase tracking-wider text-white/40">Workspace</div>
-    <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if current == 'dashboard' and not ns %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard</a>
-    <a href="{% url 'transactions:borrow_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'borrow_dashboard' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="arrow-left-right" class="w-4 h-4"></i> Key Transactions</a>
+  <nav aria-label="Main navigation" class="sidebar-nav">
+    <div class="sidebar-section-title">Workspace</div>
+    <a href="{% url 'dashboard' %}" {% if current == 'dashboard' and not ns %}aria-current="page"{% endif %} class="sidebar-link{% if current == 'dashboard' and not ns %} is-active{% endif %}">
+      <i data-lucide="layout-dashboard"></i><span>Dashboard</span>
+    </a>
+    <a href="{% url 'transactions:borrow_dashboard' %}" {% if ns == 'transactions' and current == 'borrow_dashboard' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'borrow_dashboard' %} is-active{% endif %}">
+      <i data-lucide="arrow-left-right"></i><span>Key Transactions</span>
+    </a>
 
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Inventory</div>
-    <a href="{% url 'keys:key_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="key-round" class="w-4 h-4"></i> Key Inventory</a>
-    <a href="{% url 'facilities:building_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'facilities' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="building-2" class="w-4 h-4"></i> Buildings &amp; Rooms</a>
-    <a href="{% url 'keys:category_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'keys' and current == 'category_list' or current == 'category_create' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="tags" class="w-4 h-4"></i> Key Categories</a>
+    <div class="sidebar-section-title">Inventory</div>
+    <a href="{% url 'keys:key_list' %}" {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %} is-active{% endif %}">
+      <i data-lucide="key-round"></i><span>Key Inventory</span>
+    </a>
+    <a href="{% url 'facilities:building_list' %}" {% if ns == 'facilities' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'facilities' %} is-active{% endif %}">
+      <i data-lucide="building-2"></i><span>Buildings &amp; Rooms</span>
+    </a>
+    <a href="{% url 'keys:category_list' %}" {% if ns == 'keys' and current == 'category_list' or current == 'category_create' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'keys' and current == 'category_list' or current == 'category_create' %} is-active{% endif %}">
+      <i data-lucide="tags"></i><span>Key Categories</span>
+    </a>
 
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">People &amp; Security</div>
-    <a href="{% url 'accounts:borrower_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'borrower_list' or current == 'borrower_create' or current == 'borrower_update' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="users" class="w-4 h-4"></i> Borrowers</a>
+    <div class="sidebar-section-title">People &amp; Security</div>
+    <a href="{% url 'accounts:borrower_list' %}" {% if ns == 'accounts' and current != 'pending_user_list' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'accounts' and current != 'pending_user_list' %} is-active{% endif %}">
+      <i data-lucide="users"></i><span>Borrowers</span>
+    </a>
     {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'accounts:pending_user_list' %}" class="flex items-center justify-between px-3 py-2 rounded-lg mb-0.5 {% if ns == 'accounts' and current == 'pending_user_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <div class="flex items-center gap-2 min-w-0">
-        <i data-lucide="user-check" class="w-4 h-4 shrink-0"></i>
-        <span class="truncate">Pending Approvals</span>
-      </div>
+    <a href="{% url 'accounts:pending_user_list' %}" {% if ns == 'accounts' and current == 'pending_user_list' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'accounts' and current == 'pending_user_list' %} is-active{% endif %}">
+      <i data-lucide="user-check"></i><span>Pending Approvals</span>
       {% if pending_approvals_count > 0 %}
-      <span class="inline-flex items-center justify-center px-1.5 py-0.5 text-[11px] font-bold rounded-full bg-amber-400 text-stone-900 ml-2" title="{{ pending_approvals_count }} pending approval{{ pending_approvals_count|pluralize }}">
-        {{ pending_approvals_count }}
-      </span>
+      <span class="sidebar-badge" title="{{ pending_approvals_count }} pending approval{{ pending_approvals_count|pluralize }}">{{ pending_approvals_count }}</span>
       {% endif %}
     </a>
     {% endif %}
-    <a href="{% url 'transactions:shift_history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'shift_history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="shield-check" class="w-4 h-4"></i> Guard Shifts</a>
+    <a href="{% url 'transactions:shift_history' %}" {% if ns == 'transactions' and current == 'shift_history' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'shift_history' %} is-active{% endif %}">
+      <i data-lucide="shield-check"></i><span>Guard Shifts</span>
+    </a>
 
-    <div class="px-2 mt-4 mb-1 text-[11px] uppercase tracking-wider text-white/40">Management</div>
-    <a href="{% url 'transactions:history' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'transactions' and current == 'history' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="chart-column" class="w-4 h-4"></i> Reports &amp; History</a>
+    <div class="sidebar-section-title">Management</div>
+    <a href="{% url 'transactions:history' %}" {% if ns == 'transactions' and current == 'history' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'history' %} is-active{% endif %}">
+      <i data-lucide="chart-column"></i><span>Reports &amp; History</span>
+    </a>
     {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'scheduling:room_timetable' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'room_timetable' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="calendar" class="w-4 h-4"></i> Room Timetable</a>
-    <a href="{% url 'scheduling:schedule_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'schedule_list' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="calendar-days" class="w-4 h-4"></i> Schedule List</a>
-    <a href="{% url 'scheduling:free_rooms' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 {% if ns == 'scheduling' and current == 'free_rooms' %}bg-white text-[#0F2E1F] font-semibold{% else %}text-white/80 hover:bg-white/10{% endif %}">
-      <i data-lucide="search-check" class="w-4 h-4"></i> Room Finder</a>
+    <a href="{% url 'scheduling:room_timetable' %}" {% if ns == 'scheduling' and current == 'room_timetable' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'scheduling' and current == 'room_timetable' %} is-active{% endif %}">
+      <i data-lucide="calendar"></i><span>Room Timetable</span>
+    </a>
+    <a href="{% url 'scheduling:schedule_list' %}" {% if ns == 'scheduling' and current == 'schedule_list' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'scheduling' and current == 'schedule_list' %} is-active{% endif %}">
+      <i data-lucide="calendar-days"></i><span>Schedule List</span>
+    </a>
+    <a href="{% url 'scheduling:free_rooms' %}" {% if ns == 'scheduling' and current == 'free_rooms' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'scheduling' and current == 'free_rooms' %} is-active{% endif %}">
+      <i data-lucide="search-check"></i><span>Room Finder</span>
+    </a>
     {% endif %}
   </nav>
 
-  <div class="p-3">
-    <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-      <div class="w-8 h-8 rounded-full bg-white text-[#0F2E1F] flex items-center justify-center text-xs font-bold">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
-      <div class="leading-tight flex-1 min-w-0">
-        <div class="text-[13px] font-semibold truncate">{{ user.get_full_name|default:user.username }}</div>
-        <div class="text-[11px] text-white/60 uppercase">{{ user.get_role_display }}</div>
-      </div>
-      <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out"><i data-lucide="log-out" class="w-4 h-4 text-white/60 hover:text-white"></i></button>
+  <div class="sidebar-account">
+    <div class="sidebar-avatar">{{ user.username|slice:":2"|upper|default:"GU" }}</div>
+    <div class="sidebar-account-copy">
+      <div class="sidebar-account-name">{{ user.get_full_name|default:user.username }}</div>
+      <div class="sidebar-account-role">{{ user.get_role_display|default:"GUARD" }}</div>
     </div>
+    <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out" class="sidebar-logout">
+      <i data-lucide="log-out"></i>
+    </button>
   </div>
 </aside>
 {% endwith %}
