@@ -473,3 +473,312 @@ class RoleSplitDashboardTests(TestCase):
         self.assertIsNone(res.context["shift"])
         self.assertEqual(res.context["my_released_count"], 0)
         self.assertContains(res, "Off Duty")
+
+
+
+# ---------------------------------------------------------------------------
+# F6.3 — Guard Shift History Upgrade Tests
+# ---------------------------------------------------------------------------
+
+@TESTSERVER
+class ShiftHistoryUpgradeTests(TestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(code="CCS", name="Computer Studies")
+        self.admin = User.objects.create_user(
+            username="admin_shifts", email="admin_shifts@example.edu", password="pw",
+            first_name="Admin", last_name="Boss",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+        )
+        self.guard1 = User.objects.create_user(
+            username="guard_one", email="guard1@example.edu", password="pw",
+            first_name="John", last_name="Guard",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        self.guard2 = User.objects.create_user(
+            username="guard_two", email="guard2@example.edu", password="pw",
+            first_name="Jane", last_name="Officer",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        self.staff = User.objects.create_user(
+            username="staff_user", email="staff@example.edu", password="pw",
+            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED,
+        )
+
+        self.building = Building.objects.create(code="ENG", name="Engineering")
+        self.room = Room.objects.create(building=self.building, room_code="101", capacity=30)
+        self.category = KeyCategory.objects.create(name="Classroom")
+        self.key1 = Key.objects.create(key_code="ENG-101-1", room=self.room, category=self.category, copy_number=1)
+        self.key2 = Key.objects.create(key_code="ENG-101-2", room=self.room, category=self.category, copy_number=2)
+
+        self.borrower = Borrower.objects.create(
+            id_number="BORR-001", first_name="Alan", last_name="Turing",
+            borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept,
+        )
+
+        now = timezone.now()
+
+        # Guard 1 ended shift with 2 transactions
+        self.shift1 = GuardShift.objects.create(
+            guard=self.guard1, post="East Gate", is_on_duty=False,
+            shift_end=now - timedelta(hours=2),
+        )
+        GuardShift.objects.filter(pk=self.shift1.pk).update(
+            shift_start=now - timedelta(hours=5),
+            shift_end=now - timedelta(hours=2),
+        )
+        self.shift1.refresh_from_db()
+
+        self.txn1 = BorrowTransaction.objects.create(
+            transaction_no="TXN-S1-01", key=self.key1, borrower=self.borrower,
+            room=self.room, released_by=self.guard1, guard_shift=self.shift1,
+            status=BorrowTransaction.Status.RETURNED,
+        )
+        self.txn2 = BorrowTransaction.objects.create(
+            transaction_no="TXN-S1-02", key=self.key2, borrower=self.borrower,
+            room=self.room, released_by=self.guard1, guard_shift=self.shift1,
+            status=BorrowTransaction.Status.RETURNED,
+        )
+
+        # Guard 2 active shift with 0 transactions
+        self.shift2 = GuardShift.objects.create(
+            guard=self.guard2, post="North Gate", is_on_duty=True,
+        )
+
+        self.url = reverse("transactions:shift_history")
+
+    def test_anonymous_redirected_to_login(self):
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("login", res.url)
+
+    def test_unauthorized_role_gets_403(self):
+        self.client.force_login(self.staff)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_guard_sees_only_own_shifts(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.context["is_admin"])
+
+        for s in res.context["shifts"]:
+            self.assertEqual(s.guard, self.guard1)
+
+        self.assertContains(res, "East Gate")
+        self.assertNotContains(res, "North Gate")
+        self.assertNotContains(res, "Jane Officer")
+        self.assertNotContains(res, 'id="guard-filter"')
+
+    def test_guard_cannot_bypass_scoping_with_get_param(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(f"{self.url}?guard={self.guard2.pk}")
+        self.assertEqual(res.status_code, 200)
+        for s in res.context["shifts"]:
+            self.assertEqual(s.guard, self.guard1)
+        self.assertNotContains(res, "North Gate")
+
+    def test_admin_sees_all_shifts_and_guard_filter(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.context["is_admin"])
+
+        self.assertContains(res, "East Gate")
+        self.assertContains(res, "North Gate")
+        self.assertContains(res, "John Guard")
+        self.assertContains(res, "Jane Officer")
+        self.assertContains(res, 'id="guard-filter"')
+
+    def test_admin_filters_by_guard_id(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(f"{self.url}?guard={self.guard1.pk}")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["guard_filter"], str(self.guard1.pk))
+
+        for s in res.context["shifts"]:
+            self.assertEqual(s.guard, self.guard1)
+
+        self.assertContains(res, "East Gate")
+        self.assertNotContains(res, "North Gate")
+        self.assertContains(res, "Clear")
+
+    def test_admin_filters_by_guard_username(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(f"{self.url}?guard=guard_two")
+        self.assertEqual(res.status_code, 200)
+        for s in res.context["shifts"]:
+            self.assertEqual(s.guard, self.guard2)
+
+        self.assertContains(res, "North Gate")
+        self.assertNotContains(res, "East Gate")
+
+    def test_admin_filter_no_results(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(f"{self.url}?guard=nonexistent_guard")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.context["shifts"]), 0)
+        self.assertContains(res, "No shifts found for this guard filter.")
+
+    def test_columns_and_data_present(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(f"{self.url}?guard={self.guard1.pk}")
+        self.assertEqual(res.status_code, 200)
+
+        # Columns
+        self.assertContains(res, ">Guard<")
+        self.assertContains(res, ">Post<")
+        self.assertContains(res, ">Start<")
+        self.assertContains(res, ">End<")
+        self.assertContains(res, ">Duration<")
+        self.assertContains(res, ">Transactions<")
+        self.assertContains(res, ">Duty Status<")
+
+        # Data for shift1
+        self.assertContains(res, "John Guard")
+        self.assertContains(res, "@guard_one")
+        self.assertContains(res, "East Gate")
+        self.assertContains(res, "3h 00m")
+        self.assertContains(res, "2")
+        self.assertContains(res, "ENDED")
+
+    def test_on_duty_pill_for_active_shift(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+
+        res = self.client.get(f"{self.url}?guard={self.guard2.pk}")
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "ON DUTY")
+
+    def test_pagination(self):
+        self.client.force_login(self.guard1)
+        GuardShift.objects.filter(guard=self.guard1).update(is_on_duty=False)
+        base_time = timezone.now() - timedelta(days=30)
+        new_shifts = [
+            GuardShift(
+                guard=self.guard1,
+                post=f"Post-{i}",
+                is_on_duty=False,
+                shift_end=base_time + timedelta(hours=i * 2 + 1),
+            )
+            for i in range(25)
+        ]
+        GuardShift.objects.bulk_create(new_shifts)
+
+        total_guard1_shifts = GuardShift.objects.filter(guard=self.guard1).count()
+        self.assertGreater(total_guard1_shifts, 20)
+
+        # Page 1
+        res_p1 = self.client.get(self.url)
+        self.assertEqual(res_p1.status_code, 200)
+        self.assertEqual(len(res_p1.context["shifts"]), 20)
+        self.assertEqual(res_p1.context["page_obj"].number, 1)
+        self.assertContains(res_p1, f"Showing 1-20 of {total_guard1_shifts}")
+        self.assertContains(res_p1, "page=2")
+
+        # Page 2
+        res_p2 = self.client.get(f"{self.url}?page=2")
+        self.assertEqual(res_p2.status_code, 200)
+        expected_p2_count = total_guard1_shifts - 20
+        self.assertEqual(len(res_p2.context["shifts"]), expected_p2_count)
+        self.assertEqual(res_p2.context["page_obj"].number, 2)
+        self.assertContains(res_p2, f"Showing 21-{total_guard1_shifts} of {total_guard1_shifts}")
+
+    def test_pagination_preserves_filter_params(self):
+        self.client.force_login(self.admin)
+        GuardShift.objects.filter(guard=self.admin).delete()
+        base_time = timezone.now() - timedelta(days=30)
+        new_shifts = [
+            GuardShift(
+                guard=self.guard1,
+                post=f"Eng-Post-{i}",
+                is_on_duty=False,
+                shift_end=base_time + timedelta(hours=i * 2 + 1),
+            )
+            for i in range(25)
+        ]
+        GuardShift.objects.bulk_create(new_shifts)
+
+        res = self.client.get(f"{self.url}?guard={self.guard1.pk}&page=1")
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, f"guard={self.guard1.pk}")
+        self.assertContains(res, "page=2")
+
+
+@TESTSERVER
+class GuardShiftModelTests(TestCase):
+    def setUp(self):
+        self.guard = User.objects.create_user(
+            username="guard_model", email="guard_model@example.edu", password="pw",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+
+    def test_duration_and_display_ended_shift(self):
+        now = timezone.now()
+        shift = GuardShift.objects.create(
+            guard=self.guard, post="Gate 1", is_on_duty=False,
+            shift_end=now,
+        )
+        # Test 45 min
+        GuardShift.objects.filter(pk=shift.pk).update(
+            shift_start=now - timedelta(minutes=45),
+            shift_end=now,
+        )
+        shift.refresh_from_db()
+        self.assertEqual(shift.duration, timedelta(minutes=45))
+        self.assertEqual(shift.duration_display, "45m")
+        self.assertEqual(shift.duty_status, "ENDED")
+
+        # Test 2h 15m
+        GuardShift.objects.filter(pk=shift.pk).update(
+            shift_start=now - timedelta(hours=2, minutes=15),
+            shift_end=now,
+        )
+        shift.refresh_from_db()
+        self.assertEqual(shift.duration_display, "2h 15m")
+
+        # Test 1d 3h 10m
+        GuardShift.objects.filter(pk=shift.pk).update(
+            shift_start=now - timedelta(days=1, hours=3, minutes=10),
+            shift_end=now,
+        )
+        shift.refresh_from_db()
+        self.assertEqual(shift.duration_display, "1d 3h 10m")
+
+        # Test < 1m
+        GuardShift.objects.filter(pk=shift.pk).update(
+            shift_start=now - timedelta(seconds=20),
+            shift_end=now,
+        )
+        shift.refresh_from_db()
+        self.assertEqual(shift.duration_display, "< 1m")
+
+    def test_duration_active_shift(self):
+        now = timezone.now()
+        shift = GuardShift.objects.create(
+            guard=self.guard, post="Main Gate", is_on_duty=True,
+        )
+        GuardShift.objects.filter(pk=shift.pk).update(
+            shift_start=now - timedelta(hours=1, minutes=30),
+        )
+        shift.refresh_from_db()
+        self.assertIsNotNone(shift.duration)
+        self.assertEqual(shift.duty_status, "ON DUTY")
+        self.assertTrue(shift.duration_display.startswith("1h 30m"))
+
+    def test_duration_none_when_ended_without_end_time(self):
+        shift = GuardShift.objects.create(
+            guard=self.guard, post="Main Gate", is_on_duty=False, shift_end=None,
+        )
+        self.assertIsNone(shift.duration)
+        self.assertEqual(shift.duration_display, "—")
