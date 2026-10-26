@@ -448,20 +448,6 @@ def transaction_history(request):
         "guards": guards,
         "statuses": BorrowTransaction.Status.choices,
         "querystring": querystring,
-    today_only = request.GET.get("today", "").strip()
-    txns = BorrowTransaction.objects.select_related(
-        "key__room__building", "borrower", "released_by", "received_by").all()
-    if today_only:
-        txns = txns.filter(borrowed_at__date=timezone.localdate())
-    if q:
-        txns = txns.filter(
-            Q(transaction_no__icontains=q) | Q(key__key_code__icontains=q)
-            | Q(borrower__first_name__icontains=q) | Q(borrower__last_name__icontains=q)
-            | Q(borrower__id_number__icontains=q))
-    return render(request, "transactions/history.html", {
-        "txns": txns[:200],
-        "q": q,
-        "today_only": bool(today_only),
     })
 
 

@@ -1,90 +1,769 @@
 {% extends "base.html" %}
-{% block title %}Reports &amp; Analytics — KEYTRACK{% endblock %}
+{% block title %}Reports — KEYTRACK{% endblock %}
+{% block crumb %}Reports{% endblock %}
+
 {% block content %}
-<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+<!-- Page Header -->
+<div class="flex items-start justify-between flex-wrap gap-4 mb-6">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; Analytics</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">High-level key usage analytics, overdue records, and operational reports.</p>
+    <div class="flex items-center gap-2">
+      <h1 class="text-[22px] font-extrabold tracking-tight text-stone-900">Reports</h1>
+      <span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+        Administrator
+      </span>
+    </div>
+    <p class="text-[13px] text-stone-500 mt-1">
+      Comprehensive utilization analytics, overdue tracking, guard operations, and borrower activity.
+    </p>
+  </div>
+
+  <div class="flex items-center gap-2 flex-wrap">
+    <!-- Quick jump links for desktop -->
+    <div class="hidden xl:flex items-center gap-1.5 bg-white p-1 rounded-xl border border-stone-200 text-[12px] shadow-sm">
+      <a href="#summary-cards" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Overview</a>
+      <a href="#section-key-utilisation" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Key Utilisation</a>
+      <a href="#section-overdue" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Overdue</a>
+      <a href="#section-guard-activity" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Guard Activity</a>
+      <a href="#section-room-usage" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Room Usage</a>
+      <a href="#section-borrower-frequency" class="px-2.5 py-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium">Borrower Frequency</a>
+    </div>
+
+    <!-- Complete Suite Export Actions -->
+    <div class="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-stone-200 text-[12px] shadow-sm">
+      <span class="text-[11px] font-bold text-stone-400 uppercase tracking-wider px-2">Export All:</span>
+      <a
+        href="{% url 'reports:export' 'all' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Download Complete Excel Workbook (All 5 Sheets + Executive Summary)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Full Excel (.xlsx)</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'all' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-700 hover:bg-rose-800 text-white px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Download Complete Executive PDF Report"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-200"></i>
+        <span>Full PDF (.pdf)</span>
+      </a>
+    </div>
   </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-center justify-between">
-      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Total Transactions</span>
-      <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
-        <i data-lucide="history" class="w-4 h-4"></i>
+<!-- Date Filter Bar -->
+<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-6">
+  <form method="get" action="{% url 'reports:index' %}" id="report-filter-form" class="flex flex-col lg:flex-row items-stretch lg:items-end justify-between gap-4">
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+      <div class="flex items-center gap-2 text-stone-700 font-semibold text-[13px] shrink-0 mr-1">
+        <div class="w-8 h-8 rounded-lg bg-emerald-50 text-[#1E6B4A] flex items-center justify-center">
+          <i data-lucide="calendar-range" class="w-4 h-4"></i>
+        </div>
+        <span>Date Range</span>
+      </div>
+
+      <div class="flex-1 sm:max-w-[200px]">
+        <label for="start_date" class="block text-[11px] uppercase font-bold text-stone-500 mb-1">Start Date</label>
+        <input
+          type="date"
+          id="start_date"
+          name="start_date"
+          value="{{ start_date }}"
+          class="w-full rounded-lg border border-stone-300 bg-stone-50/50 px-3 py-2 text-[13px] text-stone-800 focus:bg-white focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none"
+        >
+      </div>
+
+      <div class="flex-1 sm:max-w-[200px]">
+        <label for="end_date" class="block text-[11px] uppercase font-bold text-stone-500 mb-1">End Date</label>
+        <input
+          type="date"
+          id="end_date"
+          name="end_date"
+          value="{{ end_date }}"
+          class="w-full rounded-lg border border-stone-300 bg-stone-50/50 px-3 py-2 text-[13px] text-stone-800 focus:bg-white focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none"
+        >
+      </div>
+
+      <div class="flex items-center gap-2 pt-1 sm:pt-4">
+        <button
+          type="submit"
+          class="inline-flex items-center justify-center gap-1.5 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors shadow-sm"
+        >
+          <i data-lucide="filter" class="w-4 h-4"></i>
+          <span>Apply Filters</span>
+        </button>
+
+        {% if is_filtered %}
+        <a
+          href="{% url 'reports:index' %}"
+          class="inline-flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
+          title="Clear all date filters"
+        >
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          <span>Reset</span>
+        </a>
+        {% endif %}
       </div>
     </div>
-    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ total_txns }}</div>
-    <div class="text-[12px] text-stone-500 mt-0.5">Lifetime checkouts &amp; returns</div>
-  </div>
 
+    <!-- Active filter state indicator -->
+    <div class="flex items-center gap-2 text-[12px] pt-1">
+      {% if is_filtered %}
+        <span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">
+          <i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600"></i>
+          Filtering:
+          <span class="font-bold">
+            {% if start_date and end_date %}
+              {{ start_date }} to {{ end_date }}
+            {% elif start_date %}
+              From {{ start_date }}
+            {% elif end_date %}
+              Until {{ end_date }}
+            {% endif %}
+          </span>
+        </span>
+      {% else %}
+        <span class="text-stone-400 flex items-center gap-1">
+          <i data-lucide="info" class="w-3.5 h-3.5"></i> Showing all available records
+        </span>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if date_error %}
+  <div class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-[13px] flex items-center gap-2">
+    <i data-lucide="alert-circle" class="w-4 h-4 text-red-600 shrink-0"></i>
+    <span>{{ date_error }}</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Report Summary Cards -->
+<div id="summary-cards" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
   <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-center justify-between">
-      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Active Checkouts</span>
-      <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Total Borrowings</div>
+      <div class="w-7 h-7 rounded-lg bg-emerald-50 text-[#1E6B4A] flex items-center justify-center">
         <i data-lucide="arrow-left-right" class="w-4 h-4"></i>
       </div>
     </div>
-    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ active_txns }}</div>
-    <div class="text-[12px] text-stone-500 mt-0.5">Currently out with borrowers</div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-1.5">{{ summary.total_borrowings }}</div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Transactions in period</div>
   </div>
 
   <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-center justify-between">
-      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Overdue Keys</span>
-      <div class="w-8 h-8 rounded-lg bg-red-50 text-red-700 flex items-center justify-center">
-        <i data-lucide="clock" class="w-4 h-4"></i>
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Currently Out</div>
+      <div class="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+        <i data-lucide="key" class="w-4 h-4"></i>
       </div>
     </div>
-    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ overdue_txns }}</div>
-    <div class="text-[12px] text-stone-500 mt-0.5">Past scheduled deadline</div>
+    <div class="text-[24px] font-extrabold text-blue-600 mt-1.5">{{ summary.currently_borrowed }}</div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Active unreturned keys</div>
   </div>
 
   <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-    <div class="flex items-center justify-between">
-      <span class="text-[12px] font-semibold text-stone-500 uppercase tracking-wider">Returned Keys</span>
-      <div class="w-8 h-8 rounded-lg bg-green-50 text-green-700 flex items-center justify-center">
-        <i data-lucide="check" class="w-4 h-4"></i>
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Overdue Keys</div>
+      <div class="w-7 h-7 rounded-lg {% if summary.overdue_count > 0 %}bg-red-50 text-red-600{% else %}bg-stone-50 text-stone-400{% endif %} flex items-center justify-center">
+        <i data-lucide="clock-alert" class="w-4 h-4"></i>
       </div>
     </div>
-    <div class="text-[24px] font-extrabold text-stone-900 mt-2">{{ returned_txns }}</div>
-    <div class="text-[12px] text-stone-500 mt-0.5">Safely returned to rack</div>
+    <div class="text-[24px] font-extrabold {% if summary.overdue_count > 0 %}text-red-600{% else %}text-stone-900{% endif %} mt-1.5">
+      {{ summary.overdue_count }}
+    </div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Past expected return</div>
   </div>
-</div>
 
-<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-6">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="font-bold text-[15px] text-stone-900">Standard Reports</h2>
-    <span class="text-[12px] text-stone-500">Export &amp; Review</span>
-  </div>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="p-4 rounded-xl border border-stone-100 bg-stone-50/50 flex items-start gap-3">
-      <div class="w-9 h-9 rounded-lg bg-white border border-stone-200 flex items-center justify-center text-stone-700 shrink-0">
-        <i data-lucide="calendar" class="w-4 h-4"></i>
-      </div>
-      <div>
-        <h3 class="font-semibold text-[13px] text-stone-900">Key Utilization by Department</h3>
-        <p class="text-[12px] text-stone-500 mt-0.5">Summary of frequency and duration of key checkouts grouped by academic department.</p>
-        <a href="{% url 'transactions:history' %}" class="inline-flex items-center gap-1 text-[12px] font-medium text-[#1E6B4A] hover:underline mt-2">
-          View transaction records <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
-        </a>
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Returned Keys</div>
+      <div class="w-7 h-7 rounded-lg bg-green-50 text-green-700 flex items-center justify-center">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
       </div>
     </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-1.5">{{ summary.returned_count }}</div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Completed returns</div>
+  </div>
 
-    <div class="p-4 rounded-xl border border-stone-100 bg-stone-50/50 flex items-start gap-3">
-      <div class="w-9 h-9 rounded-lg bg-white border border-stone-200 flex items-center justify-center text-stone-700 shrink-0">
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Active Borrowers</div>
+      <div class="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+        <i data-lucide="users" class="w-4 h-4"></i>
+      </div>
+    </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-1.5">{{ summary.active_borrowers }}</div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Borrowers with activity</div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
+    <div class="flex items-start justify-between">
+      <div class="text-[12px] font-medium text-stone-500">Guards on Duty</div>
+      <div class="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
         <i data-lucide="shield-check" class="w-4 h-4"></i>
       </div>
-      <div>
-        <h3 class="font-semibold text-[13px] text-stone-900">Guard Shift Performance Log</h3>
-        <p class="text-[12px] text-stone-500 mt-0.5">Detailed breakdown of transactions released and returned during each guard duty shift.</p>
-        <a href="{% url 'transactions:shift_history' %}" class="inline-flex items-center gap-1 text-[12px] font-medium text-[#1E6B4A] hover:underline mt-2">
-          View guard shift log <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
-        </a>
-      </div>
     </div>
+    <div class="text-[24px] font-extrabold text-stone-900 mt-1.5">{{ summary.active_guards }}</div>
+    <div class="text-[11px] text-stone-400 mt-0.5">Guards handling keys</div>
   </div>
 </div>
+
+<!-- ========================================================================= -->
+<!-- 1. KEY UTILISATION REPORT -->
+<!-- ========================================================================= -->
+<section id="section-key-utilisation" class="bg-white rounded-xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
+  <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-emerald-50 text-[#1E6B4A] flex items-center justify-center">
+          <i data-lucide="key-round" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h2 class="text-[16px] font-extrabold text-stone-900 tracking-tight">Key Utilisation Report</h2>
+          <p class="text-[12px] text-stone-500">Frequency of key borrowings, active checkouts, and return counts.</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <a
+        href="{% url 'reports:export' 'key_utilisation' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Key Utilisation to Excel (.xlsx)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-700"></i>
+        <span>Excel</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'key_utilisation' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Key Utilisation to PDF (.pdf)"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-700"></i>
+        <span>PDF</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="bg-stone-50/70 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500">
+          <th class="py-3 px-4 font-bold">Key Code</th>
+          <th class="py-3 px-4 font-bold">Room / Building</th>
+          <th class="py-3 px-4 font-bold">Category</th>
+          <th class="py-3 px-4 font-bold min-w-[180px]">Utilisation Frequency</th>
+          <th class="py-3 px-4 font-bold text-center">Active Borrowed</th>
+          <th class="py-3 px-4 font-bold text-center">Returned</th>
+          <th class="py-3 px-4 font-bold">Status</th>
+          <th class="py-3 px-4 font-bold">Last Borrowed</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in key_utilisation %}
+        <tr class="hover:bg-stone-50/80 transition-colors">
+          <td class="py-3 px-4 font-mono font-semibold text-stone-900">
+            {{ row.key_code }}
+          </td>
+          <td class="py-3 px-4">
+            <span class="font-medium text-stone-800">{{ row.room_display }}</span>
+          </td>
+          <td class="py-3 px-4 text-stone-600">
+            {{ row.category_name }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <span class="font-bold text-stone-900 w-6 text-right">{{ row.total_borrowings }}</span>
+              <div class="flex-1 bg-stone-100 rounded-full h-2 overflow-hidden max-w-[120px]">
+                <div class="bg-[#1E6B4A] h-2 rounded-full transition-all duration-300" style="width: {{ row.utilization_pct }}%;"></div>
+              </div>
+              <span class="text-[11px] text-stone-400">{{ row.utilization_pct }}%</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            {% if row.currently_borrowed > 0 %}
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-800 font-bold text-[12px]">
+                {{ row.currently_borrowed }}
+              </span>
+            {% else %}
+              <span class="text-stone-300">0</span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4 text-center font-medium text-stone-700">
+            {{ row.returned_count }}
+          </td>
+          <td class="py-3 px-4">
+            {% include "partials/status_pill.html" with status=row.status %}
+          </td>
+          <td class="py-3 px-4 text-stone-500 text-[12px]">
+            {% if row.last_borrowed_at %}
+              {{ row.last_borrowed_at|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-300">Never</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="py-8 text-center text-stone-400">
+            <div class="flex flex-col items-center justify-center gap-2">
+              <i data-lucide="key-round" class="w-8 h-8 text-stone-300"></i>
+              <p class="font-medium">No key utilisation records found for this period.</p>
+              <p class="text-[12px] text-stone-400">Keys will appear here once registered or borrowed.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================================= -->
+<!-- 2. OVERDUE REPORT -->
+<!-- ========================================================================= -->
+<section id="section-overdue" class="bg-white rounded-xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
+  <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
+          <i data-lucide="clock-alert" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 class="text-[16px] font-extrabold text-stone-900 tracking-tight">Overdue Report</h2>
+            {% if overdue_count > 0 %}
+            <span class="bg-red-100 text-red-800 text-[11px] font-bold px-2 py-0.5 rounded-full border border-red-200">
+              {{ overdue_count }} overdue
+            </span>
+            {% endif %}
+          </div>
+          <p class="text-[12px] text-stone-500">Unreturned keys past their expected return time with borrower contact details.</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <a
+        href="{% url 'reports:export' 'overdue' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Overdue Report to Excel (.xlsx)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-700"></i>
+        <span>Excel</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'overdue' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Overdue Report to PDF (.pdf)"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-700"></i>
+        <span>PDF</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="bg-stone-50/70 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500">
+          <th class="py-3 px-4 font-bold">Transaction</th>
+          <th class="py-3 px-4 font-bold">Borrower &amp; Contact</th>
+          <th class="py-3 px-4 font-bold">Key / Room</th>
+          <th class="py-3 px-4 font-bold">Borrowed Date</th>
+          <th class="py-3 px-4 font-bold">Expected Return</th>
+          <th class="py-3 px-4 font-bold">Overdue Duration</th>
+          <th class="py-3 px-4 font-bold">Status</th>
+          <th class="py-3 px-4 font-bold">Released By</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in overdue_list %}
+        <tr class="bg-red-50/20 hover:bg-red-50/40 transition-colors">
+          <td class="py-3 px-4 font-mono font-semibold text-stone-900 text-[12px]">
+            {{ row.transaction_no }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="font-semibold text-stone-900">{{ row.borrower_name }}</div>
+            <div class="text-[11px] text-stone-500 flex items-center gap-2 flex-wrap mt-0.5">
+              <span>ID: {{ row.borrower_id }}</span>
+              <span>· {{ row.borrower_type }}</span>
+              {% if row.borrower_phone %}
+              <span>· <i data-lucide="phone" class="w-3 h-3 inline"></i> {{ row.borrower_phone }}</span>
+              {% endif %}
+            </div>
+            {% if row.borrower_email %}
+            <div class="text-[11px] text-stone-400 mt-0.5">{{ row.borrower_email }}</div>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4">
+            <div class="font-mono font-bold text-stone-900">{{ row.key_code }}</div>
+            <div class="text-[11px] text-stone-500">{{ row.room_display }}</div>
+          </td>
+          <td class="py-3 px-4 text-stone-600 text-[12px]">
+            {{ row.borrowed_at|date:"M j, Y, g:i A" }}
+          </td>
+          <td class="py-3 px-4 text-red-700 font-medium text-[12px]">
+            {% if row.expected_return_at %}
+              {{ row.expected_return_at|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-400">Not set</span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4">
+            <span class="inline-flex items-center gap-1 bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[11px] font-bold border border-red-200">
+              <i data-lucide="alert-triangle" class="w-3 h-3 text-red-600"></i>
+              {{ row.overdue_duration }}
+            </span>
+          </td>
+          <td class="py-3 px-4">
+            {% include "partials/status_pill.html" with status=row.status %}
+          </td>
+          <td class="py-3 px-4 text-stone-600 text-[12px]">
+            {{ row.released_by }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="py-10 text-center text-stone-400">
+            <div class="flex flex-col items-center justify-center gap-2">
+              <div class="w-10 h-10 rounded-full bg-green-50 text-green-600 flex items-center justify-center">
+                <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+              </div>
+              <p class="font-bold text-stone-700">No overdue keys found</p>
+              <p class="text-[12px] text-stone-400">All borrowed keys are returned or within their expected return times.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================================= -->
+<!-- 3. PER-GUARD ACTIVITY REPORT -->
+<!-- ========================================================================= -->
+<section id="section-guard-activity" class="bg-white rounded-xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
+  <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h2 class="text-[16px] font-extrabold text-stone-900 tracking-tight">Per-Guard Activity Report</h2>
+          <p class="text-[12px] text-stone-500">Summary of key checkouts released and returns handled by guard personnel.</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <a
+        href="{% url 'reports:export' 'guard_activity' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Guard Activity to Excel (.xlsx)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-700"></i>
+        <span>Excel</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'guard_activity' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Guard Activity to PDF (.pdf)"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-700"></i>
+        <span>PDF</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="bg-stone-50/70 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500">
+          <th class="py-3 px-4 font-bold">Guard Personnel</th>
+          <th class="py-3 px-4 font-bold text-center">Keys Released</th>
+          <th class="py-3 px-4 font-bold text-center">Keys Received</th>
+          <th class="py-3 px-4 font-bold min-w-[180px]">Total Transactions</th>
+          <th class="py-3 px-4 font-bold text-center">Shifts Logged</th>
+          <th class="py-3 px-4 font-bold">Most Recent Activity</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in guard_activity %}
+        <tr class="hover:bg-stone-50/80 transition-colors">
+          <td class="py-3 px-4">
+            <div class="font-semibold text-stone-900">{{ row.guard_name }}</div>
+            <div class="text-[11px] text-stone-500">@{{ row.username }} · {{ row.role }}</div>
+          </td>
+          <td class="py-3 px-4 text-center font-medium text-stone-800">
+            {{ row.keys_released }}
+          </td>
+          <td class="py-3 px-4 text-center font-medium text-stone-800">
+            {{ row.keys_returned }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <span class="font-bold text-stone-900 w-6 text-right">{{ row.total_transactions }}</span>
+              <div class="flex-1 bg-stone-100 rounded-full h-2 overflow-hidden max-w-[120px]">
+                <div class="bg-amber-600 h-2 rounded-full transition-all duration-300" style="width: {{ row.activity_pct }}%;"></div>
+              </div>
+              <span class="text-[11px] text-stone-400">{{ row.activity_pct }}%</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center font-medium text-stone-600">
+            {{ row.shifts_count }}
+          </td>
+          <td class="py-3 px-4 text-stone-500 text-[12px]">
+            {% if row.most_recent_activity %}
+              {{ row.most_recent_activity|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-300">No activity</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="py-8 text-center text-stone-400">
+            <div class="flex flex-col items-center justify-center gap-2">
+              <i data-lucide="shield" class="w-8 h-8 text-stone-300"></i>
+              <p class="font-medium">No guard transaction activity recorded for this period.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================================= -->
+<!-- 4. PER-ROOM USAGE REPORT -->
+<!-- ========================================================================= -->
+<section id="section-room-usage" class="bg-white rounded-xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
+  <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+          <i data-lucide="door-open" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h2 class="text-[16px] font-extrabold text-stone-900 tracking-tight">Per-Room Usage Report</h2>
+          <p class="text-[12px] text-stone-500">Key transactions grouped by room location and building.</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <a
+        href="{% url 'reports:export' 'room_usage' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Room Usage to Excel (.xlsx)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-700"></i>
+        <span>Excel</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'room_usage' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Room Usage to PDF (.pdf)"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-700"></i>
+        <span>PDF</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="bg-stone-50/70 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500">
+          <th class="py-3 px-4 font-bold">Room Identifier</th>
+          <th class="py-3 px-4 font-bold">Building &amp; Type</th>
+          <th class="py-3 px-4 font-bold">Associated Keys</th>
+          <th class="py-3 px-4 font-bold min-w-[180px]">Total Borrowings</th>
+          <th class="py-3 px-4 font-bold text-center">Currently Borrowed</th>
+          <th class="py-3 px-4 font-bold">Most Recent Usage</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in room_usage %}
+        <tr class="hover:bg-stone-50/80 transition-colors">
+          <td class="py-3 px-4 font-bold text-stone-900">
+            {{ row.room_display }}
+            {% if row.room_name %}
+            <div class="text-[11px] font-normal text-stone-500">{{ row.room_name }}</div>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4 text-stone-600">
+            <span class="font-medium">{{ row.building_code }}</span> · {{ row.room_type }}
+          </td>
+          <td class="py-3 px-4 font-mono text-[12px] text-stone-700">
+            {{ row.associated_keys }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <span class="font-bold text-stone-900 w-6 text-right">{{ row.total_borrowings }}</span>
+              <div class="flex-1 bg-stone-100 rounded-full h-2 overflow-hidden max-w-[120px]">
+                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: {{ row.usage_pct }}%;"></div>
+              </div>
+              <span class="text-[11px] text-stone-400">{{ row.usage_pct }}%</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            {% if row.currently_borrowed > 0 %}
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-800 font-bold text-[12px]">
+                {{ row.currently_borrowed }}
+              </span>
+            {% else %}
+              <span class="text-stone-300">0</span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4 text-stone-500 text-[12px]">
+            {% if row.last_used_at %}
+              {{ row.last_used_at|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-300">Never</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="py-8 text-center text-stone-400">
+            <div class="flex flex-col items-center justify-center gap-2">
+              <i data-lucide="building" class="w-8 h-8 text-stone-300"></i>
+              <p class="font-medium">No room usage records available for this period.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================================= -->
+<!-- 5. BORROWER FREQUENCY REPORT -->
+<!-- ========================================================================= -->
+<section id="section-borrower-frequency" class="bg-white rounded-xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
+  <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <i data-lucide="users" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h2 class="text-[16px] font-extrabold text-stone-900 tracking-tight">Borrower Frequency Report</h2>
+          <p class="text-[12px] text-stone-500">Ranking of users by key borrowing frequency, active loans, and return history.</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <a
+        href="{% url 'reports:export' 'borrower_frequency' %}?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Borrower Frequency to Excel (.xlsx)"
+      >
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-700"></i>
+        <span>Excel</span>
+      </a>
+      <a
+        href="{% url 'reports:export' 'borrower_frequency' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+        class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors shadow-sm"
+        title="Export Borrower Frequency to PDF (.pdf)"
+      >
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-700"></i>
+        <span>PDF</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <thead>
+        <tr class="bg-stone-50/70 border-b border-stone-200 text-left text-[11px] uppercase tracking-wider text-stone-500">
+          <th class="py-3 px-4 font-bold">Borrower Details</th>
+          <th class="py-3 px-4 font-bold">Type / Department</th>
+          <th class="py-3 px-4 font-bold min-w-[180px]">Total Borrowings</th>
+          <th class="py-3 px-4 font-bold text-center">Currently Active</th>
+          <th class="py-3 px-4 font-bold text-center">Returned</th>
+          <th class="py-3 px-4 font-bold">Last Borrowed Date</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for row in borrower_frequency %}
+        <tr class="hover:bg-stone-50/80 transition-colors">
+          <td class="py-3 px-4">
+            <div class="font-semibold text-stone-900">{{ row.borrower_name }}</div>
+            <div class="text-[11px] text-stone-500">ID: {{ row.id_number }}</div>
+          </td>
+          <td class="py-3 px-4 text-stone-600">
+            <span class="font-medium">{{ row.borrower_type }}</span> · {{ row.department }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <span class="font-bold text-stone-900 w-6 text-right">{{ row.total_borrowings }}</span>
+              <div class="flex-1 bg-stone-100 rounded-full h-2 overflow-hidden max-w-[120px]">
+                <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: {{ row.frequency_pct }}%;"></div>
+              </div>
+              <span class="text-[11px] text-stone-400">{{ row.frequency_pct }}%</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            {% if row.currently_active > 0 %}
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-800 font-bold text-[12px]">
+                {{ row.currently_active }}
+              </span>
+            {% else %}
+              <span class="text-stone-300">0</span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-4 text-center font-medium text-stone-700">
+            {{ row.returned_borrowings }}
+          </td>
+          <td class="py-3 px-4 text-stone-500 text-[12px]">
+            {% if row.last_borrowed_at %}
+              {{ row.last_borrowed_at|date:"M j, Y, g:i A" }}
+            {% else %}
+              <span class="text-stone-300">Never</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="py-8 text-center text-stone-400">
+            <div class="flex flex-col items-center justify-center gap-2">
+              <i data-lucide="user-x" class="w-8 h-8 text-stone-300"></i>
+              <p class="font-medium">No borrower records found for this period.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Ensure date filter input validation on submission
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('report-filter-form');
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+      const start = document.getElementById('start_date').value;
+      const end = document.getElementById('end_date').value;
+
+      if (start && end && start > end) {
+        e.preventDefault();
+        alert('Validation error: Start date cannot be later than end date.');
+      }
+    });
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
+  });
+</script>
 {% endblock %}
