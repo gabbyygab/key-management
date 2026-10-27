@@ -231,11 +231,26 @@ def key_availability(request):
         )
     if status:
         keys = keys.filter(status=status)
+
+    # B8.11: replace the hard keys[:200] slice with real pagination so the
+    # full inventory stays auditable instead of being silently cut off.
+    paginator = Paginator(keys, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    # Keep search/filter params in pager links (drop only the page param).
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
+
     return render(
         request,
         "keys/key_availability.html",
         {
-            "keys": keys[:200],
+            "keys": page_obj,
+            "page_obj": page_obj,
+            "querystring": querystring,
             "q": q,
             "status": status,
             "statuses": Key.Status.choices,

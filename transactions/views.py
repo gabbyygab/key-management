@@ -220,9 +220,21 @@ def borrow_dashboard(request):
                 if selected_key:
                     selected_key_schedule = get_room_today_schedule(selected_key.room)
 
-    borrowed = (BorrowTransaction.objects
-                .select_related("key__room__building", "borrower", "released_by")
-                .filter(status=BorrowTransaction.Status.ACTIVE)[:100])
+    # B8.11: replace the hard borrowed[:100] slice with real pagination so the
+    # currently-out list stays complete and pageable (noscript fallback too).
+    borrowed_paginator = Paginator(
+        BorrowTransaction.objects
+        .select_related("key__room__building", "borrower", "released_by")
+        .filter(status=BorrowTransaction.Status.ACTIVE),
+        25,
+    )
+    borrowed_page = borrowed_paginator.get_page(request.GET.get("page"))
+
+    # Keep search/borrower state in pager links (drop only the page param).
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
 
     shift = get_active_shift(request.user)
 
@@ -231,7 +243,8 @@ def borrow_dashboard(request):
         "borrowers": borrowers, "selected": selected,
         "active_txn": active_txn, "available_keys": available_keys,
         "selected_key": selected_key, "selected_key_schedule": selected_key_schedule,
-        "borrowed": borrowed, "shift": shift,
+        "borrowed": borrowed_page, "page_obj": borrowed_page,
+        "querystring": querystring, "shift": shift,
     })
 
 
