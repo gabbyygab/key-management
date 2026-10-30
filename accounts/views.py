@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
+from django.core.paginator import Paginator
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -85,8 +86,20 @@ def borrower_list(request):
         borrowers = borrowers.filter(
             Q(first_name__icontains=q) | Q(last_name__icontains=q)
             | Q(id_number__icontains=q))
+
+    # B8.11: replace the hard borrowers[:100] slice with real pagination.
+    paginator = Paginator(borrowers, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
+
     return render(request, "accounts/borrower_list.html",
-                  {"borrowers": borrowers[:100], "q": q})
+                  {"borrowers": page_obj, "page_obj": page_obj,
+                   "querystring": querystring, "q": q})
 
 
 @admin_required
@@ -216,11 +229,24 @@ def user_list(request):
     if role_filter:
         users = users.filter(role=role_filter)
     users = users.order_by("-date_joined")
+
+    # B8.11: replace the hard users[:100] slice with real pagination.
+    paginator = Paginator(users, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
+
     return render(
         request,
         "accounts/user_list.html",
         {
-            "users": users[:100],
+            "users": page_obj,
+            "page_obj": page_obj,
+            "querystring": querystring,
             "roles": User.Role.choices,
             "q": q,
             "role_filter": role_filter,
@@ -239,8 +265,23 @@ def borrower_lookup(request):
             | Q(last_name__icontains=q)
             | Q(id_number__icontains=q)
         )
+    # B8.11: replace the hard borrowers[:100] slice with real pagination.
+    paginator = Paginator(borrowers, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
+
     return render(
         request,
         "accounts/borrower_lookup.html",
-        {"borrowers": borrowers[:100], "q": q},
+        {
+            "borrowers": page_obj,
+            "page_obj": page_obj,
+            "querystring": querystring,
+            "q": q,
+        },
     )

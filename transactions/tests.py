@@ -473,3 +473,332 @@ class RoleSplitDashboardTests(TestCase):
         self.assertIsNone(res.context["shift"])
         self.assertEqual(res.context["my_released_count"], 0)
         self.assertContains(res, "Off Duty")
+
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class PosTodayInRoomWidgetTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.guard = User.objects.create_user(
+            "guard_pos", "guard_pos@example.com", "x",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+        )
+        cls.shift = GuardShift.objects.create(
+            guard=cls.guard,
+            shift_start=timezone.now(),
+            is_on_duty=True,
+            post="Main Desk",
+        )
+        cls.borrower = Borrower.objects.create(
+            first_name="Ada",
+            last_name="Lovelace",
+            id_number="FAC-ADA",
+            borrower_type=Borrower.BorrowerType.FACULTY,
+            is_authorized=True,
+            is_active=True,
+        )
+        cls.building = Building.objects.create(code="ENG", name="Engineering")
+        cls.room = Room.objects.create(building=cls.building, room_code="101", capacity=30)
+        cls.category = KeyCategory.objects.create(name="Master")
+        cls.key = Key.objects.create(
+            key_code="ENG-101-01",
+            room=cls.room,
+            category=cls.category,
+            copy_number=1,
+            status=Key.Status.AVAILABLE,
+        )
+
+    def test_available_keys_have_today_schedule_attached(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        keys = res.context["available_keys"]
+        self.assertGreater(len(keys), 0)
+        key_obj = keys[0]
+        self.assertTrue(hasattr(key_obj, "today_schedule"))
+        self.assertIsNotNone(key_obj.today_schedule)
+        self.assertEqual(key_obj.today_schedule["room"], self.room)
+
+        self.assertContains(res, f'data-pos-toggle-schedule="{self.key.pk}"')
+        self.assertIn("Today's schedule", res.content.decode("utf-8"))
+        self.assertContains(res, f'data-pos-schedule-panel="{self.key.pk}"')
+
+    def test_selected_key_surfaces_today_in_room_widget(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}&key_id={self.key.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["selected_key"], self.key)
+        self.assertIsNotNone(res.context["selected_key_schedule"])
+        self.assertContains(res, "today-in-room-widget")
+        self.assertContains(res, "Today in ENG-101")
+
+    def test_selected_key_widget_is_read_only_on_pos(self):
+        self.client.force_login(self.guard)
+        url = reverse("transactions:borrow_dashboard")
+        res = self.client.get(f"{url}?borrower_id={self.borrower.pk}&key_id={self.key.pk}")
+
+        self.assertEqual(res.status_code, 200)
+        # Should not show admin edit or timetable management links
+        self.assertNotContains(res, "Weekly timetable")
+# ---------------------------------------------------------------------------
+# F6.2 — Transaction history upgrades and CSV export tests
+# ---------------------------------------------------------------------------
+
+@TESTSERVER
+class TransactionHistoryUpgradeTests(TestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(code="CCS", name="Computer Studies")
+        self.admin = User.objects.create_user(
+            username="admin_history", email="admin_history@example.edu", password="pw",
+            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED)
+        self.guard1 = User.objects.create_user(
+            username="guard_alpha", email="guard_alpha@example.edu", password="pw",
+            first_name="Alpha", last_name="Guard",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+        self.guard2 = User.objects.create_user(
+            username="guard_beta", email="guard_beta@example.edu", password="pw",
+            first_name="Beta", last_name="Guard",
+            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+
+        self.shift1 = GuardShift.objects.create(guard=self.guard1, post="Main Gate", is_on_duty=True)
+        self.shift2 = GuardShift.objects.create(guard=self.guard2, post="North Gate", is_on_duty=True)
+
+        self.bldg_eng = Building.objects.create(code="ENG", name="Engineering")
+        self.bldg_ccs = Building.objects.create(code="CCS", name="Computing")
+
+        self.room_eng = Room.objects.create(building=self.bldg_eng, room_code="101", name="ENG Lab 1")
+        self.room_ccs = Room.objects.create(building=self.bldg_ccs, room_code="202", name="CCS Lab 2")
+
+        self.cat = KeyCategory.objects.create(name="Lab")
+
+        self.key_eng = Key.objects.create(key_code="ENG-101-1", room=self.room_eng, category=self.cat, copy_number=1)
+        self.key_ccs = Key.objects.create(key_code="CCS-202-1", room=self.room_ccs, category=self.cat, copy_number=1)
+
+        self.borrower1 = Borrower.objects.create(
+            id_number="B-101", first_name="Alice", last_name="Smith",
+            borrower_type=Borrower.BorrowerType.STUDENT, department=self.dept)
+        self.borrower2 = Borrower.objects.create(
+            id_number="B-102", first_name="Bob", last_name="Jones",
+            borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept)
+
+        self.url = reverse("transactions:history")
+        self.export_url = reverse("transactions:export_csv")
+
+        now = timezone.now()
+        self.txn_active = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0001",
+            key=self.key_eng,
+            borrower=self.borrower1,
+            room=self.room_eng,
+            purpose="Thesis work",
+            released_by=self.guard1,
+            guard_shift=self.shift1,
+            status=BorrowTransaction.Status.ACTIVE,
+            borrowed_at=now - timedelta(hours=2),
+            expected_return_at=now + timedelta(hours=2),
+        )
+
+        self.txn_returned = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0002",
+            key=self.key_ccs,
+            borrower=self.borrower2,
+            room=self.room_ccs,
+            purpose="Class session",
+            released_by=self.guard1,
+            guard_shift=self.shift1,
+            received_by=self.guard2,
+            returned_at=now - timedelta(hours=1),
+            return_confirmed=True,
+            status=BorrowTransaction.Status.RETURNED,
+            remarks="Key returned in good condition",
+            borrowed_at=now - timedelta(hours=5),
+        )
+
+        self.txn_overdue = BorrowTransaction.objects.create(
+            transaction_no="TXN-20261023-0003",
+            key=self.key_eng,
+            borrower=self.borrower1,
+            room=self.room_eng,
+            purpose="Late exam review",
+            released_by=self.guard2,
+            guard_shift=self.shift2,
+            status=BorrowTransaction.Status.OVERDUE,
+            remarks="Override: Dean approved emergency weekend room access",
+            borrowed_at=now - timedelta(days=2),
+            expected_return_at=now - timedelta(days=1),
+        )
+        BorrowTransaction.objects.filter(pk=self.txn_active.pk).update(borrowed_at=now - timedelta(hours=2))
+        BorrowTransaction.objects.filter(pk=self.txn_returned.pk).update(borrowed_at=now - timedelta(hours=5))
+        BorrowTransaction.objects.filter(pk=self.txn_overdue.pk).update(borrowed_at=now - timedelta(days=2))
+
+    def test_anonymous_redirected_to_login(self):
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn(reverse("accounts:login"), res.url)
+
+    def test_guard_can_view_history_without_csv_export(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Reports &amp; History")
+        self.assertContains(res, "TXN-20261023-0001")
+        self.assertNotContains(res, "Export CSV")
+
+    def test_admin_can_view_history_with_csv_export(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Reports &amp; History")
+        self.assertContains(res, "Export CSV")
+        self.assertContains(res, reverse("transactions:export_csv"))
+
+    def test_search_filter(self):
+        self.client.force_login(self.guard1)
+        # Search by key code
+        res_key = self.client.get(self.url, {"q": "CCS-202-1"})
+        self.assertEqual(res_key.status_code, 200)
+        self.assertEqual(len(res_key.context["txns"]), 1)
+        self.assertEqual(res_key.context["txns"][0].transaction_no, "TXN-20261023-0002")
+
+        # Search by borrower name
+        res_borrower = self.client.get(self.url, {"q": "Bob"})
+        self.assertEqual(res_borrower.status_code, 200)
+        self.assertEqual(len(res_borrower.context["txns"]), 1)
+        self.assertEqual(res_borrower.context["txns"][0].transaction_no, "TXN-20261023-0002")
+
+        # Search by transaction number
+        res_txn = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertEqual(res_txn.status_code, 200)
+        self.assertEqual(len(res_txn.context["txns"]), 1)
+        self.assertEqual(res_txn.context["txns"][0].transaction_no, "TXN-20261023-0003")
+
+    def test_status_filter(self):
+        self.client.force_login(self.guard1)
+        res_active = self.client.get(self.url, {"status": "ACTIVE"})
+        self.assertEqual(len(res_active.context["txns"]), 1)
+        self.assertEqual(res_active.context["txns"][0].status, BorrowTransaction.Status.ACTIVE)
+
+        res_returned = self.client.get(self.url, {"status": "RETURNED"})
+        self.assertEqual(len(res_returned.context["txns"]), 1)
+        self.assertEqual(res_returned.context["txns"][0].status, BorrowTransaction.Status.RETURNED)
+
+        res_overdue = self.client.get(self.url, {"status": "OVERDUE"})
+        self.assertEqual(len(res_overdue.context["txns"]), 1)
+        self.assertEqual(res_overdue.context["txns"][0].status, BorrowTransaction.Status.OVERDUE)
+
+    def test_building_filter(self):
+        self.client.force_login(self.guard1)
+        res_eng = self.client.get(self.url, {"building": "ENG"})
+        self.assertEqual(len(res_eng.context["txns"]), 2)
+        for t in res_eng.context["txns"]:
+            self.assertEqual(t.room.building.code, "ENG")
+
+        res_ccs = self.client.get(self.url, {"building": "CCS"})
+        self.assertEqual(len(res_ccs.context["txns"]), 1)
+        self.assertEqual(res_ccs.context["txns"][0].room.building.code, "CCS")
+
+    def test_guard_filter(self):
+        self.client.force_login(self.guard1)
+        # guard2 released TXN-3 and received TXN-2
+        res_guard2 = self.client.get(self.url, {"guard": str(self.guard2.pk)})
+        self.assertEqual(len(res_guard2.context["txns"]), 2)
+        txn_nos = {t.transaction_no for t in res_guard2.context["txns"]}
+        self.assertEqual(txn_nos, {"TXN-20261023-0002", "TXN-20261023-0003"})
+
+    def test_date_range_filter(self):
+        self.client.force_login(self.guard1)
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        three_days_ago = today - timedelta(days=3)
+
+        # Transactions within the last day (should find TXN-1 and TXN-2, exclude TXN-3 from 2 days ago)
+        res = self.client.get(self.url, {"start_date": yesterday.isoformat(), "end_date": today.isoformat()})
+        self.assertEqual(len(res.context["txns"]), 2)
+        self.assertNotIn("TXN-20261023-0003", [t.transaction_no for t in res.context["txns"]])
+
+        # Transactions starting 3 days ago up to yesterday (should find TXN-3 only)
+        res_old = self.client.get(self.url, {"start_date": three_days_ago.isoformat(), "end_date": yesterday.isoformat()})
+        self.assertEqual(len(res_old.context["txns"]), 1)
+        self.assertEqual(res_old.context["txns"][0].transaction_no, "TXN-20261023-0003")
+
+    def test_pagination(self):
+        self.client.force_login(self.guard1)
+        # Create 22 more transactions so we have 25 total
+        now = timezone.now()
+        for i in range(4, 26):
+            BorrowTransaction.objects.create(
+                transaction_no=f"TXN-PAG-{i:04d}",
+                key=self.key_eng,
+                borrower=self.borrower1,
+                room=self.room_eng,
+                released_by=self.guard1,
+                guard_shift=self.shift1,
+                status=BorrowTransaction.Status.ACTIVE,
+                borrowed_at=now - timedelta(minutes=i),
+            )
+
+        # Page 1 should contain 20 items and pager should indicate 25 total
+        res_page1 = self.client.get(self.url)
+        self.assertEqual(res_page1.status_code, 200)
+        self.assertEqual(len(res_page1.context["txns"]), 20)
+        self.assertEqual(res_page1.context["page_obj"].paginator.count, 25)
+        self.assertTrue(res_page1.context["page_obj"].has_next())
+        self.assertContains(res_page1, "Showing <span class=\"font-semibold text-stone-800\">1</span> to <span class=\"font-semibold text-stone-800\">20</span> of <span class=\"font-semibold text-stone-800\">25</span> results")
+
+        # Page 2 should contain 5 items
+        res_page2 = self.client.get(self.url, {"page": "2"})
+        self.assertEqual(res_page2.status_code, 200)
+        self.assertEqual(len(res_page2.context["txns"]), 5)
+        self.assertFalse(res_page2.context["page_obj"].has_next())
+        self.assertTrue(res_page2.context["page_obj"].has_previous())
+
+    def test_overdue_highlighting(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertContains(res, 'data-is-overdue="true"')
+        self.assertContains(res, "border-l-red-500")
+
+    def test_row_metadata_and_override_reason_in_html(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
+        self.assertContains(res, 'data-released-by="Beta Guard"')
+        self.assertContains(res, 'data-shift-post="North Gate"')
+        self.assertContains(res, 'data-override-reason="Dean approved emergency weekend room access"')
+        self.assertEqual(self.txn_overdue.override_reason, "Dean approved emergency weekend room access")
+
+    def test_csv_export_guard_forbidden(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.export_url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_csv_export_admin_allowed_and_filters(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(self.export_url, {"status": "RETURNED"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("attachment; filename=", res["Content-Disposition"])
+
+        content = res.content.decode("utf-8")
+        lines = content.strip().splitlines()
+        # Header + 1 returned txn
+        self.assertEqual(len(lines), 2)
+        header = lines[0]
+        self.assertIn("Transaction No", header)
+        self.assertIn("Status", header)
+        self.assertIn("Released By", header)
+        self.assertIn("Received By", header)
+        self.assertIn("Guard Shift Post", header)
+        self.assertIn("Override Reason", header)
+
+        data_row = lines[1]
+        self.assertIn("TXN-20261023-0002", data_row)
+        self.assertIn("RETURNED", data_row)
+        self.assertIn("CCS-202-1", data_row)
+        self.assertIn("Bob Jones", data_row)
+        self.assertIn("Beta Guard", data_row)
+        self.assertIn("Key returned in good condition", data_row)

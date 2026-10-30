@@ -12,7 +12,7 @@
 {% for room in rooms %}
   <div class="py-2.5 text-[13px] flex justify-between gap-3">
     <span>
-      <b class="font-mono">{{ room.building.code }}-{{ room.room_code }}</b>
+      <a href="{% url 'facilities:room_detail' room.pk %}" class="font-mono font-bold text-stone-900 hover:text-[#1E6B4A] hover:underline">{{ room.building.code }}-{{ room.room_code }}</a>
       <span class="text-stone-500">· {{ room.name|default:room.room_code }}</span>
       <span class="ml-2 text-stone-400">{{ room.room_type|title }}</span>
     </span>

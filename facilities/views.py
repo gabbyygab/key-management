@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.forms import BuildingForm, RoomForm
 from accounts.permissions import admin_required
+from scheduling.services import get_room_today_schedule
 from .models import Building, Room
 
 
@@ -58,3 +59,19 @@ def room_update(request, pk):
         messages.success(request, f"Room {obj} updated.")
         return redirect("facilities:room_list")
     return render(request, "facilities/room_form.html", {"form": form, "title": "Edit room"})
+
+
+@admin_required
+def room_detail(request, pk):
+    room = get_object_or_404(
+        Room.objects.select_related("building"),
+        pk=pk,
+    )
+    keys = room.keys.select_related("category").all().order_by("copy_number", "key_code")
+    today_schedule = get_room_today_schedule(room)
+
+    return render(request, "facilities/room_detail.html", {
+        "room": room,
+        "keys": keys,
+        "today_schedule": today_schedule,
+    })

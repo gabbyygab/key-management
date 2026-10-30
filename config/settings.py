@@ -24,7 +24,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="127.0.0.1,localhost", cast=Csv())
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="127.0.0.1,localhost,testserver", cast=Csv())
 
 
 # Application definition
@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'transactions',
     'notifications',
     'scheduling',
+    'reports',
 ]
 
 MIDDLEWARE = [
@@ -88,7 +89,7 @@ LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATICFILES_DIRS = [BASE_DIR / "static", BASE_DIR / "images"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Tailwind source lives in the repo so hand-written CSS survives a rebuild.

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class GuardShift(models.Model):
@@ -16,6 +17,37 @@ class GuardShift(models.Model):
 
     def __str__(self):
         return f"{self.guard} @ {self.post} ({self.shift_start:%Y-%m-%d %H:%M})"
+
+    @property
+    def duration(self):
+        """Timedelta representing shift duration, or elapsed time if still on duty."""
+        end = self.shift_end or (timezone.now() if self.is_on_duty else None)
+        if not end or not self.shift_start:
+            return None
+        return end - self.shift_start
+
+    @property
+    def duration_display(self):
+        """Human-readable duration string, e.g. '2h 15m' or '< 1m'."""
+        delta = self.duration
+        if delta is None:
+            return "—"
+        total_seconds = max(0, int(delta.total_seconds()))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        days, hours = divmod(hours, 24)
+        if days > 0:
+            return f"{days}d {hours}h {minutes:02d}m"
+        elif hours > 0:
+            return f"{hours}h {minutes:02d}m"
+        elif minutes > 0:
+            return f"{minutes}m"
+        else:
+            return "< 1m"
+
+    @property
+    def duty_status(self):
+        return "ON DUTY" if self.is_on_duty else "ENDED"
 
 
 class BorrowTransaction(models.Model):
@@ -53,3 +85,33 @@ class BorrowTransaction(models.Model):
 
     def __str__(self):
         return self.transaction_no
+
+    @property
+    def is_overdue(self):
+        if self.status == self.Status.OVERDUE:
+            return True
+        if self.status == self.Status.ACTIVE and self.expected_return_at:
+            return timezone.now() >= self.expected_return_at
+        return False
+
+    @property
+    def override_reason(self):
+        if self.remarks:
+            for line in self.remarks.splitlines():
+                s = line.strip()
+                if s.lower().startswith("override:"):
+                    return s[len("override:"):].strip()
+                if s.lower().startswith("[override]"):
+                    return s[len("[override]"):].strip(" :")
+        try:
+            from audit.models import ActivityLog
+            log = ActivityLog.objects.filter(
+                action=ActivityLog.Action.OVERRIDE,
+                model_name="BorrowTransaction",
+                object_id=str(self.pk),
+            ).first()
+            if log:
+                return log.description
+        except Exception:
+            pass
+        return ""
