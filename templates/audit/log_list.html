@@ -8,20 +8,52 @@
   </div>
 </div>
 
-<form method="get" class="flex gap-2" role="search" aria-label="Search audit log">
-  <label for="audit-q" class="sr-only">Search description or object</label>
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+<form method="get" class="flex flex-wrap gap-2 items-end" role="search" aria-label="Filter audit log">
+  <label for="audit-q" class="sr-only">Search description or target</label>
+  <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-    <input id="audit-q" name="q" value="{{ q }}" placeholder="Search action description or target..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+    <input id="audit-q" name="q" value="{{ q }}" placeholder="Search description or target..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
-  <label for="action-filter" class="sr-only">Filter by action</label>
-  <select id="action-filter" name="action" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2">
+
+  <label for="audit-user" class="sr-only">Filter by user</label>
+  <select id="audit-user" name="user" class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[150px]">
+    <option value="">All users</option>
+    {% for pk, username, first, last in filter_users %}
+    <option value="{{ pk }}" {% if user_filter == pk|stringformat:"s" %}selected{% endif %}>
+      {{ first|default:username }} {{ last|default:"" }} <span class="text-stone-400 text-[11px] font-mono">({{ username }})</span>
+    </option>
+    {% endfor %}
+  </select>
+
+  <label for="audit-action" class="sr-only">Filter by action</label>
+  <select id="audit-action" name="action" class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[130px]">
     <option value="">All actions</option>
     {% for val, label in actions %}
     <option value="{{ val }}" {% if action == val %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Filter</button>
+
+  <label for="audit-model" class="sr-only">Filter by model</label>
+  <select id="audit-model" name="model" class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[140px]">
+    <option value="">All models</option>
+    {% for m in models %}
+    <option value="{{ m }}" {% if model_filter == m %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="audit-start" class="sr-only">From date</label>
+  <input type="date" id="audit-start" name="start_date" value="{{ start_date }}"
+         class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[130px]">
+
+  <label for="audit-end" class="sr-only">To date</label>
+  <input type="date" id="audit-end" name="end_date" value="{{ end_date }}"
+         class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[130px]">
+
+  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">Filter</button>
+
+  {% if q or action or user_filter or model_filter or start_date or end_date %}
+    <a href="{% url 'audit:log_list' %}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0">Reset</a>
+  {% endif %}
 </form>
 
 <div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
@@ -32,7 +64,9 @@
         <th scope="col" class="p-3 font-medium">Timestamp</th>
         <th scope="col" class="p-3 font-medium">Action</th>
         <th scope="col" class="p-3 font-medium">User</th>
-        <th scope="col" class="p-3 font-medium">Description / Target</th>
+        <th scope="col" class="p-3 font-medium">Model</th>
+        <th scope="col" class="p-3 font-medium">Object</th>
+        <th scope="col" class="p-3 font-medium">Description</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-stone-100">
@@ -40,28 +74,29 @@
       <tr class="hover:bg-stone-50/60">
         <td class="p-3 text-stone-500 font-mono text-[12px] whitespace-nowrap">{{ log.created_at|date:"M j, Y, g:i:s A" }}</td>
         <td class="p-3 whitespace-nowrap">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold
-            {% if log.action == 'BORROW' or log.action == 'CREATE' %}bg-blue-50 text-blue-800 border border-blue-200
-            {% elif log.action == 'RETURN' or log.action == 'APPROVE' %}bg-green-50 text-green-800 border border-green-200
-            {% elif log.action == 'DELETE' or log.action == 'REJECT' %}bg-red-50 text-red-800 border border-red-200
-            {% elif log.action == 'OVERRIDE' %}bg-amber-50 text-amber-800 border border-amber-200
-            {% else %}bg-stone-100 text-stone-700 border border-stone-200{% endif %}">
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border {{ log.action_bg }} {{ log.action_text }} {{ log.action_border }}">
+            {% if log.action_icon %}
+              <i data-lucide="{{ log.action_icon }}" class="w-3 h-3 shrink-0"></i>
+            {% endif %}
             {{ log.get_action_display }}
           </span>
         </td>
         <td class="p-3 font-medium text-stone-900 whitespace-nowrap">
-          {{ log.user.get_full_name|default:log.user.username|default:"System" }}
+          {{ log.user_label }}
+          {% if log.user_username %} <span class="text-stone-400 text-[11px] font-mono ml-1">({{ log.user_username }})</span>{% endif %}
         </td>
-        <td class="p-3 text-stone-700">
-          {{ log.description|default:log.object_repr|default:"—" }}
-        </td>
+        <td class="p-3 text-stone-600 font-mono text-[12px] whitespace-nowrap">{{ log.model_name|default:"—" }}</td>
+        <td class="p-3 text-stone-700 whitespace-nowrap">{{ log.object_repr|default:"—" }}</td>
+        <td class="p-3 text-stone-700">{{ log.description|default:"—" }}</td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4" class="p-6 text-center text-stone-500">No audit events recorded yet.</td>
+        <td colspan="6" class="p-6 text-center text-stone-500">No audit events recorded yet.</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+{% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
 {% endblock %}
