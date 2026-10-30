@@ -414,7 +414,9 @@ Then, by hand:
   **by typing it directly** — hidden links prove nothing.
 - A guard with no open shift must be blocked from releasing a key, with a clear message,
   *before* filling the form (`F3.8`).
-- POS screen at **1366×768** (the target lab monitor).
+- POS screen at **1366×768** (the target lab monitor): borrower search, key release,
+  and currently-out list fit as three independently scrollable panes without page
+  scrolling. Below desktop width, verify the same panes work through the three tabs.
 - Keyboard-only pass on any modal you touched: Tab stays inside, Escape closes, focus
   returns to the trigger.
 - Watch for blank icons — that means a missing `lucide.createIcons()`.
