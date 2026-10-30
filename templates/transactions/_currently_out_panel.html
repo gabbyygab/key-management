@@ -91,5 +91,7 @@ block below keeps the old full-page POST return working without JS.
       </div>
       {% empty %}<p class="text-[13px] text-stone-400">No keys out right now.</p>{% endfor %}
     </div>
+
+    {% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
   </noscript>
 </section>

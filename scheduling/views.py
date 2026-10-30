@@ -14,7 +14,9 @@ from accounts.models import Borrower
 from facilities.models import Building, Room
 from .forms import FreeRoomQueryForm, ScheduleBlockForm
 from .models import ScheduleBlock, Subject, Term
-from .services import find_conflicts, find_free_rooms, get_room_timetable
+from .services import (
+    find_conflicts, find_free_rooms, get_room_timetable, get_room_today_schedule
+)
 
 
 def api_role_required(*roles):
@@ -417,3 +419,66 @@ def free_rooms_api(request):
         "floor": r.floor,
     } for r in _search(form)]
     return JsonResponse({"results": results, "count": len(results), "stub": True})
+
+
+@api_role_required("ADMIN", "GUARD")
+def room_today_schedule_api(request, pk):
+    """
+    GET /api/scheduling/rooms/<pk>/today/
+    Returns JSON and rendered HTML partial for the 'today in this room' widget.
+    Accessible to admins and guards (for POS screen key selection).
+    """
+    from django.template.loader import render_to_string
+
+    room = Room.objects.select_related("building").filter(pk=pk).first()
+    if not room:
+        return JsonResponse({"error": "Room not found."}, status=404)
+
+    schedule = get_room_today_schedule(room)
+    cb = schedule.get("current_block")
+    nb = schedule.get("next_block")
+
+    html = render_to_string("scheduling/_today_in_room.html", {
+        "schedule": schedule,
+        "read_only": True,
+        "compact": True,
+        "user": request.user,
+    }, request=request)
+
+    return JsonResponse({
+        "room_id": room.pk,
+        "room_code": room.room_code,
+        "building_code": room.building.code,
+        "room_label": f"{room.building.code}-{room.room_code}",
+        "date": schedule["date"].isoformat(),
+        "date_str": schedule["date_str"],
+        "day_name": schedule["day_name"],
+        "current_time": schedule["current_time_str"],
+        "is_occupied": schedule["is_occupied"],
+        "has_schedule_today": schedule["has_schedule_today"],
+        "all_day_free": schedule["all_day_free"],
+        "done_for_day": schedule["done_for_day"],
+        "current_block": {
+            "id": cb["id"],
+            "title": cb["title"],
+            "display_title": cb["display_title"],
+            "subject_code": cb["subject_code"],
+            "instructor": cb["instructor_name"],
+            "start_time": cb["start_time_str"],
+            "end_time": cb["end_time_str"],
+            "time_display": cb["time_display"],
+            "time_remaining_min": cb["time_remaining_min"],
+        } if cb else None,
+        "next_block": {
+            "id": nb["id"],
+            "title": nb["title"],
+            "display_title": nb["display_title"],
+            "subject_code": nb["subject_code"],
+            "instructor": nb["instructor_name"],
+            "start_time": nb["start_time_str"],
+            "end_time": nb["end_time_str"],
+            "time_display": nb["time_display"],
+            "time_until_start_min": nb["time_until_start_min"],
+        } if nb else None,
+        "html": html,
+    })

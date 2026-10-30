@@ -60,4 +60,6 @@
     </tbody>
   </table>
 </div>
+
+{% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
 {% endblock %}

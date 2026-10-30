@@ -19,6 +19,7 @@ from audit.models import ActivityLog
 from facilities.models import Building, Room
 from keys.models import Key
 from scheduling.models import ScheduleBlock, ScheduleException
+from scheduling.services import get_room_today_schedule
 from .models import BorrowTransaction, GuardShift
 from .services import (
     BorrowError,
@@ -181,6 +182,7 @@ def borrow_dashboard(request):
     q_borrower = request.GET.get("q_borrower", "").strip()
     q_key = request.GET.get("q_key", "").strip()
     borrower_id = request.GET.get("borrower_id", "").strip()
+    key_id = request.GET.get("key_id", "").strip()
 
     borrowers = Borrower.objects.select_related("department").filter(is_active=True)
     if q_borrower:
@@ -192,6 +194,8 @@ def borrow_dashboard(request):
     selected = None
     active_txn = None
     available_keys = []
+    selected_key = None
+    selected_key_schedule = None
     if borrower_id:
         selected = Borrower.objects.filter(pk=borrower_id).first()
         if selected:
@@ -204,11 +208,33 @@ def borrow_dashboard(request):
                         Q(key_code__icontains=q_key) | Q(room__room_code__icontains=q_key)
                         | Q(room__building__code__icontains=q_key)
                         | Q(description__icontains=q_key))
-                available_keys = keys[:30]
+                available_keys = list(keys[:30])
+                room_schedules = {}
+                for k in available_keys:
+                    if k.room_id not in room_schedules:
+                        room_schedules[k.room_id] = get_room_today_schedule(k.room)
+                    k.today_schedule = room_schedules[k.room_id]
 
-    borrowed = (BorrowTransaction.objects
-                .select_related("key__room__building", "borrower", "released_by")
-                .filter(status=BorrowTransaction.Status.ACTIVE)[:100])
+            if key_id:
+                selected_key = Key.objects.select_related("room__building", "category").filter(pk=key_id).first()
+                if selected_key:
+                    selected_key_schedule = get_room_today_schedule(selected_key.room)
+
+    # B8.11: replace the hard borrowed[:100] slice with real pagination so the
+    # currently-out list stays complete and pageable (noscript fallback too).
+    borrowed_paginator = Paginator(
+        BorrowTransaction.objects
+        .select_related("key__room__building", "borrower", "released_by")
+        .filter(status=BorrowTransaction.Status.ACTIVE),
+        25,
+    )
+    borrowed_page = borrowed_paginator.get_page(request.GET.get("page"))
+
+    # Keep search/borrower state in pager links (drop only the page param).
+    params = request.GET.copy()
+    if "page" in params:
+        del params["page"]
+    querystring = params.urlencode()
 
     shift = get_active_shift(request.user)
 
@@ -216,7 +242,9 @@ def borrow_dashboard(request):
         "q_borrower": q_borrower, "q_key": q_key,
         "borrowers": borrowers, "selected": selected,
         "active_txn": active_txn, "available_keys": available_keys,
-        "borrowed": borrowed, "shift": shift,
+        "selected_key": selected_key, "selected_key_schedule": selected_key_schedule,
+        "borrowed": borrowed_page, "page_obj": borrowed_page,
+        "querystring": querystring, "shift": shift,
     })
 
 
@@ -433,20 +461,6 @@ def transaction_history(request):
         "guards": guards,
         "statuses": BorrowTransaction.Status.choices,
         "querystring": querystring,
-    today_only = request.GET.get("today", "").strip()
-    txns = BorrowTransaction.objects.select_related(
-        "key__room__building", "borrower", "released_by", "received_by").all()
-    if today_only:
-        txns = txns.filter(borrowed_at__date=timezone.localdate())
-    if q:
-        txns = txns.filter(
-            Q(transaction_no__icontains=q) | Q(key__key_code__icontains=q)
-            | Q(borrower__first_name__icontains=q) | Q(borrower__last_name__icontains=q)
-            | Q(borrower__id_number__icontains=q))
-    return render(request, "transactions/history.html", {
-        "txns": txns[:200],
-        "q": q,
-        "today_only": bool(today_only),
     })
 
 

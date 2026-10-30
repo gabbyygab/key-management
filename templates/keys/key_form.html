@@ -1,15 +1,28 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ title }} — KEYTRACK{% endblock %}
+
 {% block content %}
-<div class="max-w-2xl bg-white rounded-xl shadow-sm border border-stone-200 p-6">
-<h1 class="text-[20px] font-extrabold">{{ title }}</h1>
-<p class="text-[13px] text-stone-500">Keys must link to a room and category.</p>
-<form method="post" class="mt-4 space-y-3">{% csrf_token %}
-{{ form.as_p }}
-<div class="flex gap-2 pt-1">
-<button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Save</button>
-<a href="{% url 'keys:key_list' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px]">Cancel</a>
+<div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+  <div class="flex items-center justify-between mb-4 pb-3 border-b border-stone-200">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center text-[#1E6B4A] shrink-0">
+        <i data-lucide="key" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="text-[18px] font-bold text-stone-900">{{ title }}</h1>
+        <p class="text-[12px] text-stone-500">Physical key inventory record</p>
+      </div>
+    </div>
+    <a href="{% url 'keys:key_list' %}" class="text-stone-400 hover:text-stone-600 p-1.5 rounded-lg border border-stone-200 bg-white" title="Return to key inventory">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </a>
+  </div>
+
+  {% include "keys/_key_form_modal.html" %}
 </div>
-</form>
-</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/key-modal.js' %}"></script>
 {% endblock %}
