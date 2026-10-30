@@ -5,10 +5,42 @@ from django.db import models
 class KeyCategory(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         verbose_name_plural = "key categories"
         ordering = ["name"]
+
+    @property
+    def key_count(self):
+        return self.__dict__.get("key_count", self.keys.count())
+
+    @key_count.setter
+    def key_count(self, value):
+        self.__dict__["key_count"] = value
+
+    @property
+    def borrowed_count(self):
+        return self.__dict__.get(
+            "borrowed_count",
+            self.keys.filter(status__in=[Key.Status.BORROWED, Key.Status.OVERDUE]).count(),
+        )
+
+    @borrowed_count.setter
+    def borrowed_count(self, value):
+        self.__dict__["borrowed_count"] = value
+
+    @property
+    def borrowed_keys_count(self):
+        return self.borrowed_count
+
+    @property
+    def active_keys_count(self):
+        return self.keys.filter(status=Key.Status.AVAILABLE).count()
+
+    @property
+    def is_in_use(self):
+        return self.keys.exists()
 
     def __str__(self):
         return self.name
