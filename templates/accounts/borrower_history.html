@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ borrower.full_name }} history — KEYTRACK{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{% url 'accounts:borrower_list' %}" class="text-[13px] text-stone-500 hover:underline">← Borrowers</a>
+  <h1 class="mt-1 text-[22px] font-extrabold tracking-tight">{{ borrower.full_name }}</h1>
+  <p class="text-[13px] text-stone-500 mt-0.5"><span class="font-mono">{{ borrower.id_number }}</span> · {{ borrower.get_borrower_type_display }}{% if borrower.department %} · {{ borrower.department }}{% endif %}</p>
+</div>
+<div class="rounded-xl border border-stone-200 bg-white shadow-sm">
+  {% include "accounts/_borrower_history_table.html" %}
+</div>
+{% endblock %}

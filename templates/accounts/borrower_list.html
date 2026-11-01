@@ -4,44 +4,102 @@
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Borrowers</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">People allowed to borrow keys — searched by guards at release.</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">People allowed to borrow keys. Guards search this list at release.</p>
   </div>
-  <a href="{% url 'accounts:borrower_create' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ Add user</a>
-</div>
-<form method="get" class="flex gap-2" role="search" aria-label="Search borrowers">
-  <label for="borrower-q" class="sr-only">Search borrower name or ID number</label>
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
-    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-    <input id="borrower-q" name="q" value="{{ q }}" placeholder="Search name or ID number..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
-  </div>
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
-</form>
-<div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-<table class="min-w-full text-[13px]">
-<caption class="sr-only">Borrowers</caption>
-<thead><tr class="text-left text-[11px] uppercase tracking-wide text-stone-500">
-<th scope="col" class="p-3 font-medium">ID No</th><th scope="col" class="p-3 font-medium">Name</th><th scope="col" class="p-3 font-medium">Type</th><th scope="col" class="p-3 font-medium">Contact</th><th scope="col" class="p-3 font-medium">Authorized</th><th scope="col" class="p-3 font-medium">Active</th><th scope="col" class="p-3"><span class="sr-only">Actions</span></th></tr></thead>
-<tbody class="divide-y divide-stone-100">
-{% for b in borrowers %}
-<tr class="hover:bg-stone-50/60">
-  <td class="p-3 font-mono">{{ b.id_number }}</td>
-  <td class="p-3 font-semibold">{{ b.last_name }}, {{ b.first_name }}</td>
-  <td class="p-3">{{ b.borrower_type }}</td>
-  <td class="p-3">{{ b.contact_number|default:"—" }}</td>
-  <td class="p-3">{% if b.can_borrow %}<span class="bg-green-50 text-green-800 border border-green-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> YES</span>{% else %}<span class="bg-red-50 text-red-800 border border-red-200 px-2 py-0.5 rounded-full text-[11px] font-semibold"><span aria-hidden="true">●</span> NO</span>{% endif %}</td>
-  <td class="p-3">{{ b.is_active|yesno:"Yes,No" }}</td>
-  <td class="p-3 flex gap-2 whitespace-nowrap">
-    <a href="{% url 'accounts:borrower_update' b.pk %}" class="font-medium hover:underline">Edit<span class="sr-only"> {{ b.last_name }}, {{ b.first_name }}</span></a>
-    <form method="post" action="{% url 'accounts:borrower_toggle' b.pk %}">{% csrf_token %}
-      <button class="text-stone-600 hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.last_name }}, {{ b.first_name }}</span></button>
-    </form>
-  </td>
-</tr>
-{% empty %}<tr><td colspan="7" class="p-6 text-center text-stone-500">No users found. Add one to allow borrowing.</td></tr>
-{% endfor %}
-</tbody>
-</table>
+  <a href="{% url 'accounts:borrower_create' %}" data-modal-form="borrower-modal" data-modal-refresh="#borrower-list-region"
+     class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="user-plus" aria-hidden="true" class="w-4 h-4"></i><span>Add borrower</span>
+  </a>
 </div>
 
-{% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
+<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter borrowers">
+  <label for="borrower-q" class="sr-only">Search borrower name or ID number</label>
+  <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="borrower-q" name="q" value="{{ q }}" placeholder="Search name or ID number…" autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+  </div>
+  <label for="borrower-type" class="sr-only">Borrower type</label>
+  <select id="borrower-type" name="type" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All types</option>
+    {% for code, label in borrower_types %}<option value="{{ code }}" {% if type_filter == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <label for="borrower-dept" class="sr-only">Department</label>
+  <select id="borrower-dept" name="department" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All departments</option>
+    {% for d in departments %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d }}</option>{% endfor %}
+  </select>
+  <label for="borrower-auth" class="sr-only">Authorization</label>
+  <select id="borrower-auth" name="auth" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">Any authorization</option>
+    <option value="authorized" {% if auth_filter == "authorized" %}selected{% endif %}>Authorized</option>
+    <option value="unauthorized" {% if auth_filter == "unauthorized" %}selected{% endif %}>Not authorized</option>
+    <option value="expired" {% if auth_filter == "expired" %}selected{% endif %}>Authorization expired</option>
+    <option value="holding" {% if auth_filter == "holding" %}selected{% endif %}>Holding a key now</option>
+  </select>
+  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or type_filter or dept_filter or auth_filter %}<a href="{% url 'accounts:borrower_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+</form>
+
+<div id="borrower-list-region">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Borrowers</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 font-semibold">ID No</th>
+          <th scope="col" class="p-3.5 font-semibold">Name</th>
+          <th scope="col" class="p-3.5 font-semibold">Type · Department</th>
+          <th scope="col" class="p-3.5 font-semibold">Contact</th>
+          <th scope="col" class="p-3.5 font-semibold">Can borrow</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for b in borrowers %}
+        <tr class="hover:bg-stone-50/60{% if not b.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5 font-mono">{{ b.id_number }}</td>
+          <td class="p-3.5">
+            <span class="font-semibold">{{ b.last_name }}, {{ b.first_name }}</span>
+            {% if b.is_holding %}<span class="ml-1 inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800"><i data-lucide="key" aria-hidden="true" class="w-3 h-3"></i>Holding a key</span>{% endif %}
+          </td>
+          <td class="p-3.5">{{ b.get_borrower_type_display }}{% if b.department %}<div class="text-[12px] text-stone-500">{{ b.department }}</div>{% endif %}</td>
+          <td class="p-3.5">{{ b.contact_number|default:"—" }}</td>
+          <td class="p-3.5 whitespace-nowrap">
+            {% if not b.is_authorized %}
+              {% include "partials/status_pill.html" with status="UNAUTHORIZED" label="Not authorized" %}
+            {% elif b.authorized_until and b.authorized_until < today %}
+              {% include "partials/status_pill.html" with status="OVERDUE" label="Expired" %}
+              <div class="mt-0.5 text-[11px] text-stone-500">since {{ b.authorized_until|date:"M d, Y" }}</div>
+            {% else %}
+              {% include "partials/status_pill.html" with status="AUTHORIZED" label="Yes" %}
+              {% if b.authorized_until %}<div class="mt-0.5 text-[11px] text-stone-500">until {{ b.authorized_until|date:"M d, Y" }}</div>{% endif %}
+            {% endif %}
+          </td>
+          <td class="p-3.5">{% if b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'accounts:borrower_history' b.pk %}" data-modal-form="borrower-history-modal"
+                 class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="history" aria-hidden="true" class="w-3.5 h-3.5"></i>History<span class="sr-only"> for {{ b.full_name }}</span></a>
+              <a href="{% url 'accounts:borrower_update' b.pk %}" data-modal-form="borrower-modal" data-modal-refresh="#borrower-list-region"
+                 class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ b.full_name }}</span></a>
+              <form method="post" action="{% url 'accounts:borrower_toggle' b.pk %}" class="inline"
+                    {% if b.is_active %}data-confirm="Guards will no longer find this borrower at release. Their transaction history is kept." data-confirm-title="Deactivate borrower" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ b.id_number }} · {{ b.full_name }}"{% endif %}>
+                {% csrf_token %}
+                <button type="submit" class="font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.full_name }}</span></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% include "partials/empty_state.html" with colspan=7 icon="users" title="No borrowers found" message="Try a different filter, or add a borrower so guards can release keys to them." %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="borrowers" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="borrower-modal" modal_label="Borrower form" %}
+{% include "partials/ajax_modal_shell.html" with modal_id="borrower-history-modal" modal_size="xl" modal_label="Borrower history" %}
 {% endblock %}

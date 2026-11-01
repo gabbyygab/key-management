@@ -399,7 +399,7 @@ class RoleSplitDashboardTests(TestCase):
         )
 
         self.client.force_login(self.admin)
-        # Login signal creates an active shift for the admin user; remove it so only the guard is on duty
+        # Shifts are only opened for guards now; the delete stays as a no-op guard.
         GuardShift.objects.filter(guard=self.admin).delete()
 
         res = self.client.get(self.url)
@@ -414,7 +414,12 @@ class RoleSplitDashboardTests(TestCase):
         self.assertEqual(len(res.context["guards_on_duty"]), 1)
         self.assertEqual(len(res.context["today_schedule"]), 1)
         self.assertEqual(len(res.context["overdue_keys"]), 1)
-        self.assertEqual(len(res.context["recent_audit"]), 1)
+        # The seeded CREATE row plus the LOGIN row force_login now writes (B6.2).
+        self.assertEqual(len(res.context["recent_audit"]), 2)
+        self.assertEqual(
+            {log.action for log in res.context["recent_audit"]},
+            {ActivityLog.Action.CREATE, ActivityLog.Action.LOGIN},
+        )
 
         self.assertContains(res, "Admin Dashboard")
         self.assertContains(res, "Key Availability by Building")

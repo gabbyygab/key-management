@@ -1,86 +1,31 @@
-import json
 from datetime import timedelta
-from functools import wraps
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.http import JsonResponse
-from django.shortcuts import redirect, render
+from django.core.paginator import Paginator
+from django.db import transaction as db_transaction
+from django.db.models import Exists, OuterRef, Q
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
-from accounts.decorators import role_required
+from accounts.api import api_role_required, read_body
+from accounts.crud import is_modal, querystring_without_page
 from accounts.models import Borrower
+from accounts.permissions import admin_required
+from audit.services import Action, form_changes, log_activity
 from facilities.models import Building, Room
-from .forms import FreeRoomQueryForm, ScheduleBlockForm
-from .models import ScheduleBlock, Subject, Term
+from .forms import FreeRoomQueryForm, ScheduleBlockForm, ScheduleExceptionForm
+from .models import ScheduleBlock, ScheduleException, Subject, Term
 from .services import (
-    find_conflicts, find_free_rooms, get_room_timetable, get_room_today_schedule
+    find_conflicts, find_free_rooms, get_room_timetable, get_room_today_schedule,
 )
 
-
-def api_role_required(*roles):
-    """role_required for JSON endpoints: 403 JSON, never a login redirect."""
-    def decorator(view):
-        @wraps(view)
-        def wrapper(request, *args, **kwargs):
-            user = request.user
-            if user.is_authenticated and (user.is_superuser or user.role in roles):
-                return view(request, *args, **kwargs)
-            return JsonResponse({"error": "You do not have permission."}, status=403)
-        return wrapper
-    return decorator
-
-
 DURATIONS = [(60, "1h"), (90, "1.5h"), (120, "2h"), (180, "3h")]
-
-
-def _sample_schedule_rows():
-    """Fallback schedule rows used until scheduling models are populated."""
-    return [
-        {
-            "pk": 1,
-            "term": "2026 Fall",
-            "room": "CCS-204",
-            "building": "CCS",
-            "subject": "CS 101",
-            "title": "Intro to Programming",
-            "instructor": "P. Nguyen",
-            "day": 0,
-            "day_label": "Mon",
-            "start_time": "09:00",
-            "end_time": "10:30",
-            "is_active": True,
-        },
-        {
-            "pk": 2,
-            "term": "2026 Fall",
-            "room": "ENG-118",
-            "building": "ENG",
-            "subject": "MTH 210",
-            "title": "Discrete Math",
-            "instructor": "A. Patel",
-            "day": 2,
-            "day_label": "Wed",
-            "start_time": "13:00",
-            "end_time": "14:30",
-            "is_active": True,
-        },
-        {
-            "pk": 3,
-            "term": "2027 Spring",
-            "room": "LAB-3",
-            "building": "SCI",
-            "subject": "BIO 220",
-            "title": "Lab II",
-            "instructor": "R. Garcia",
-            "day": 4,
-            "day_label": "Fri",
-            "start_time": "10:00",
-            "end_time": "12:00",
-            "is_active": False,
-        },
-    ]
+DAY_LABELS = [(str(v), label) for v, label in ScheduleBlock.DayOfWeek.choices]
 
 
 def _default_slot():
@@ -95,73 +40,157 @@ def _default_slot():
 
 def _search(form):
     d = form.cleaned_data
+    term = d.get("term") or Term.objects.filter(is_active=True).order_by("-start_date").first()
     return find_free_rooms(day_of_week=d["day"], start_time=d["start"], end_time=d["end"],
-                           building=d["building"], room_type=d["room_type"],
+                           term=term, building=d["building"], room_type=d["room_type"],
                            min_capacity=d["min_capacity"])
 
 
-@role_required("ADMIN")
+def _form_context(form=None, **initial):
+    """Everything the shared schedule-block modal needs."""
+    terms = Term.objects.all().order_by("-is_active", "-start_date")
+    if form is None:
+        form = ScheduleBlockForm(initial={"is_active": True, "start_time": "09:00",
+                                          "end_time": "10:30", "day_of_week": 0, **initial})
+    return {"form": form, "terms": terms}
+
+
+def _block_queryset():
+    return (ScheduleBlock.objects
+            .select_related("term", "room__building", "subject", "instructor"))
+
+
+def _conflicting_ids():
+    """Active blocks that overlap another active block in the same room, day
+    and term — one query (correlated EXISTS), not a loop."""
+    overlap = ScheduleBlock.objects.filter(
+        room=OuterRef("room"), term=OuterRef("term"), day_of_week=OuterRef("day_of_week"),
+        is_active=True, start_time__lt=OuterRef("end_time"), end_time__gt=OuterRef("start_time"),
+    ).exclude(pk=OuterRef("pk"))
+    return (ScheduleBlock.objects.filter(is_active=True)
+            .annotate(clash=Exists(overlap)).filter(clash=True).values_list("pk", flat=True))
+
+
+@admin_required
 def schedule_list(request):
-    rows = _sample_schedule_rows()
+    """F5.4 table view of real ScheduleBlocks, with filters + bulk toggle.
 
+    The "Conflicts" sidebar entry lands here with ?conflicts=1, which narrows
+    the list to blocks that overlap another active block (only possible for
+    rows created before validation existed, or via raw imports)."""
     if request.method == "POST":
-        action = request.POST.get("bulk_action")
-        selected = request.POST.getlist("selected_schedule")
-        if action in {"activate", "deactivate"}:
-            if selected:
-                messages.success(request, f"{len(selected)} schedule block(s) marked {action}.")
-            else:
-                messages.warning(request, "Select at least one schedule block to apply the action.")
-        else:
-            messages.warning(request, "Choose an action before submitting.")
-        return redirect("scheduling:schedule_list")
+        return _bulk_toggle(request)
 
-    term = request.GET.get("term", "")
-    building = request.GET.get("building", "")
-    room = request.GET.get("room", "")
-    day = request.GET.get("day", "")
-    instructor = (request.GET.get("instructor", "") or "").strip()
+    term = request.GET.get("term", "").strip()
+    building = request.GET.get("building", "").strip()
+    room = request.GET.get("room", "").strip()
+    day = request.GET.get("day", "").strip()
+    instructor = request.GET.get("instructor", "").strip()
+    state = request.GET.get("state", "").strip()
+    only_conflicts = (request.GET.get("conflicts") == "1"
+                      or request.resolver_match.url_name == "conflicts")
 
-    filtered = []
-    for row in rows:
-        if term and row["term"] != term:
-            continue
-        if building and row["building"] != building:
-            continue
-        if room and row["room"] != room:
-            continue
-        if day and str(row["day"]) != str(day):
-            continue
-        if instructor and instructor.lower() not in row["instructor"].lower():
-            continue
-        filtered.append(row)
+    blocks = _block_queryset()
+    if term.isdigit():
+        blocks = blocks.filter(term_id=int(term))
+    if building.isdigit():
+        blocks = blocks.filter(room__building_id=int(building))
+    if room.isdigit():
+        blocks = blocks.filter(room_id=int(room))
+    if day.isdigit():
+        blocks = blocks.filter(day_of_week=int(day))
+    if instructor:
+        blocks = blocks.filter(Q(instructor__first_name__icontains=instructor)
+                               | Q(instructor__last_name__icontains=instructor)
+                               | Q(instructor__id_number__icontains=instructor))
+    if state == "active":
+        blocks = blocks.filter(is_active=True)
+    elif state == "inactive":
+        blocks = blocks.filter(is_active=False)
+    conflict_ids = set(_conflicting_ids())
+    if only_conflicts:
+        blocks = blocks.filter(pk__in=conflict_ids)
+    blocks = blocks.order_by("term__start_date", "day_of_week", "start_time", "room__room_code")
 
-    building_choices = list(Building.objects.filter(is_active=True).values_list("code", "name"))
-    room_choices = list(Room.objects.filter(is_active=True).values_list("room_code", "room_code"))
-    day_choices = [("", "Any day")] + [
-        (str(i), label) for i, label in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-    ]
+    page_obj = Paginator(blocks, 30).get_page(request.GET.get("page"))
+    for b in page_obj:
+        b.has_conflict = b.pk in conflict_ids
 
     ctx = {
-        "rows": filtered,
-        "term": term,
-        "building": building,
-        "room": room,
-        "day": day,
-        "instructor": instructor,
-        "terms": ["2026 Fall", "2027 Spring", "2027 Summer"],
-        "buildings": [
-            {"code": code, "name": name} for code, name in building_choices
-        ] + [{"code": "CCS", "name": "Computing"}, {"code": "ENG", "name": "Engineering"}],
-        "rooms": [
-            {"code": code, "label": label} for code, label in room_choices
-        ] + [{"code": "CCS-204", "label": "CCS-204"}, {"code": "ENG-118", "label": "ENG-118"}],
-        "days": day_choices,
+        "blocks": page_obj,
+        "page_obj": page_obj,
+        "querystring": querystring_without_page(request),
+        "term": term, "building": building, "room": room, "day": day,
+        "instructor": instructor, "state": state, "only_conflicts": only_conflicts,
+        "conflict_count": len(conflict_ids),
+        "buildings": Building.objects.filter(is_active=True).order_by("code"),
+        "rooms": Room.objects.filter(is_active=True).select_related("building")
+                     .order_by("building__code", "room_code"),
+        "days": DAY_LABELS,
+        **_form_context(),
     }
     return render(request, "scheduling/schedule_list.html", ctx)
 
 
-@role_required("ADMIN")
+def _bulk_toggle(request):
+    action = request.POST.get("bulk_action")
+    ids = [int(i) for i in request.POST.getlist("selected_schedule") if i.isdigit()]
+    if action not in {"activate", "deactivate"}:
+        messages.warning(request, "Choose an action before submitting.")
+    elif not ids:
+        messages.warning(request, "Select at least one schedule block to apply the action.")
+    else:
+        activate = action == "activate"
+        skipped = []
+        changed = 0
+        with db_transaction.atomic():
+            for block in ScheduleBlock.objects.select_for_update().filter(pk__in=ids):
+                if block.is_active == activate:
+                    continue
+                if activate and find_conflicts(block.room, block.day_of_week, block.start_time,
+                                               block.end_time, block.term,
+                                               exclude_block_id=block.pk):
+                    skipped.append(block.title)
+                    continue
+                block.is_active = activate
+                block.save(update_fields=["is_active", "updated_at"])
+                changed += 1
+                log_activity(request.user, Action.UPDATE, obj=block, request=request,
+                             description=f"Schedule block '{block.title}' {action}d (bulk).")
+        messages.success(request, f"{changed} schedule block(s) {action}d.")
+        if skipped:
+            messages.warning(request, "Not activated because they would conflict: "
+                                      + ", ".join(skipped))
+    url = reverse("scheduling:schedule_list")
+    qs = request.POST.get("return_qs", "")
+    return redirect(f"{url}?{qs}" if qs else url)
+
+
+@admin_required
+@require_POST
+def schedule_toggle(request, pk):
+    block = get_object_or_404(_block_queryset(), pk=pk)
+    if not block.is_active:
+        clash = find_conflicts(block.room, block.day_of_week, block.start_time, block.end_time,
+                               block.term, exclude_block_id=block.pk)
+        if clash:
+            messages.error(request, f"Cannot reactivate '{block.title}': it overlaps "
+                                    + ", ".join(c.title for c in clash) + ".")
+            return redirect("scheduling:schedule_list")
+    block.is_active = not block.is_active
+    block.save(update_fields=["is_active", "updated_at"])
+    state = "activated" if block.is_active else "deactivated"
+    log_activity(request.user, Action.UPDATE, obj=block, request=request,
+                 description=f"Schedule block '{block.title}' {state}.")
+    messages.success(request, f"'{block.title}' {state}.")
+    nxt = request.POST.get("next", "")
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
+                                               require_https=request.is_secure()):
+        return redirect(nxt)
+    return redirect("scheduling:schedule_list")
+
+
+@admin_required
 def room_timetable(request):
     """Weekly timetable grid for one room and term (F5.1)."""
     terms = Term.objects.all().order_by("-is_active", "-start_date")
@@ -173,14 +202,14 @@ def room_timetable(request):
 
     term_param = request.GET.get("term", "").strip()
     selected_term = None
-    if term_param:
+    if term_param.isdigit():
         selected_term = terms.filter(pk=term_param).first()
     if not selected_term:
         selected_term = terms.filter(is_active=True).first() or terms.first()
 
     room_param = request.GET.get("room", "").strip()
     selected_room = None
-    if room_param:
+    if room_param.isdigit():
         selected_room = rooms.filter(pk=room_param).first()
     if not selected_room:
         selected_room = rooms.first()
@@ -197,6 +226,9 @@ def room_timetable(request):
             if not instance and not obj.created_by:
                 obj.created_by = request.user
             obj.save()
+            log_activity(request.user, Action.UPDATE if instance else Action.CREATE, obj=obj,
+                         request=request, description=f"Schedule block '{obj.title}' saved.",
+                         changes=form_changes(form) if instance else None)
             messages.success(request, f"Schedule block '{obj.title}' saved successfully.")
             redirect_url = reverse("scheduling:room_timetable")
             params = urlencode({"room": obj.room_id, "term": obj.term_id})
@@ -259,23 +291,17 @@ def room_timetable(request):
 
 
 @api_role_required("ADMIN")
+@require_POST
 def conflict_check_api(request):
     """
     POST /api/scheduling/check-conflict/
     Payload: {room, day_of_week, start_time, end_time, term, exclude_block_id}
     Returns: {available: bool, conflicts: [...]}
     """
-    if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-
-    data = None
-    if request.content_type == "application/json" or (request.body and request.body.startswith(b"{")):
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except Exception:
-            data = None
-    if data is None:
-        data = request.POST
+    try:
+        data = read_body(request)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=422)
 
     room_id = data.get("room")
     term_id = data.get("term")
@@ -284,17 +310,17 @@ def conflict_check_api(request):
     end_time = data.get("end_time")
     exclude_block_id = data.get("exclude_block_id") or None
 
-    if not all([room_id, term_id, day_of_week is not None, start_time, end_time]):
+    if not all([room_id, term_id, day_of_week not in (None, ""), start_time, end_time]):
         return JsonResponse({"error": "Missing required fields"}, status=422)
 
     try:
         room = Room.objects.get(pk=room_id)
         term = Term.objects.get(pk=term_id)
         day_of_week = int(day_of_week)
-    except (Room.DoesNotExist, Term.DoesNotExist, ValueError):
+    except (Room.DoesNotExist, Term.DoesNotExist, ValueError, TypeError):
         return JsonResponse({"error": "Invalid room, term, or day"}, status=422)
 
-    # Client error check if end <= start
+    # Client error check if end <= start ("HH:MM" strings compare correctly)
     if str(end_time) <= str(start_time):
         return JsonResponse({
             "available": False,
@@ -311,58 +337,96 @@ def conflict_check_api(request):
         exclude_block_id=exclude_block_id,
     )
 
-    conflict_list = []
-    for c in conflicts:
-        conflict_list.append({
-            "id": c.pk,
-            "title": c.title,
-            "instructor": c.instructor.full_name if c.instructor else "",
-            "start_time": c.start_time.strftime("%H:%M"),
-            "end_time": c.end_time.strftime("%H:%M"),
-            "day_of_week": c.get_day_of_week_display(),
-        })
-
     return JsonResponse({
         "available": len(conflicts) == 0,
-        "conflicts": conflict_list,
+        "conflicts": [_conflict_payload(c) for c in conflicts],
     })
 
 
+def _conflict_payload(c):
+    return {
+        "id": c.pk,
+        "title": c.title,
+        "instructor": c.instructor.full_name if c.instructor else "",
+        "start_time": c.start_time.strftime("%H:%M"),
+        "end_time": c.end_time.strftime("%H:%M"),
+        "day_of_week": c.get_day_of_week_display(),
+    }
+
+
 @api_role_required("ADMIN")
+@require_POST
 def schedule_block_save_api(request):
     """
     POST /api/scheduling/blocks/
-    Creates or updates a ScheduleBlock via JSON or multipart/form-data.
-    """
-    if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
+    Creates or updates a ScheduleBlock via JSON or form data.
 
-    data = None
-    if request.content_type == "application/json" or (request.body and request.body.startswith(b"{")):
-        try:
-            data = json.loads(request.body.decode("utf-8"))
-        except Exception:
-            data = None
-    if data is None:
-        data = request.POST
+    Optional "repeat_days": [int, ...] creates one block per extra day (F5.2
+    "Repeat on"). Every copy is validated; any conflict rolls the whole batch
+    back and answers 422 with the conflicting blocks.
+    """
+    try:
+        data = read_body(request)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=422)
 
     block_id = data.get("block_id") or data.get("id")
     instance = None
     if block_id:
         instance = ScheduleBlock.objects.filter(pk=block_id).first()
+        if instance is None:
+            return JsonResponse({"error": "Schedule block not found."}, status=404)
 
     form = ScheduleBlockForm(data, instance=instance)
     if not form.is_valid():
         return JsonResponse(form.errors, status=422)
 
-    obj = form.save(commit=False)
-    if not instance and not obj.created_by:
-        obj.created_by = request.user
-    obj.save()
+    repeat_days = []
+    if not instance:
+        raw = data.get("repeat_days") or []
+        if hasattr(data, "getlist"):
+            raw = data.getlist("repeat_days")
+        try:
+            repeat_days = sorted({int(d) for d in raw} - {form.cleaned_data["day_of_week"]})
+        except (TypeError, ValueError):
+            return JsonResponse({"repeat_days": ["Invalid day."]}, status=422)
+        if any(d < 0 or d > 6 for d in repeat_days):
+            return JsonResponse({"repeat_days": ["Invalid day."]}, status=422)
+
+    with db_transaction.atomic():
+        obj = form.save(commit=False)
+        if not instance and not obj.created_by:
+            obj.created_by = request.user
+        obj.save()
+        created = [obj]
+        for day in repeat_days:
+            clash = find_conflicts(obj.room, day, obj.start_time, obj.end_time, obj.term)
+            if clash:
+                db_transaction.set_rollback(True)
+                return JsonResponse({
+                    "error": f"Repeat on {ScheduleBlock.DayOfWeek(day).label} conflicts with: "
+                             + ", ".join(f"{c.title} ({c.start_time:%H:%M}–{c.end_time:%H:%M})"
+                                         for c in clash),
+                    "conflicts": [_conflict_payload(c) for c in clash],
+                }, status=422)
+            copy = ScheduleBlock.objects.create(
+                term=obj.term, room=obj.room, subject=obj.subject, title=obj.title,
+                instructor=obj.instructor, day_of_week=day, start_time=obj.start_time,
+                end_time=obj.end_time, is_active=obj.is_active, created_by=request.user)
+            created.append(copy)
+
+    for b in created:
+        log_activity(request.user, Action.UPDATE if instance else Action.CREATE, obj=b,
+                     request=request,
+                     description=f"Schedule block '{b.title}' "
+                                 f"({b.get_day_of_week_display()} {b.start_time:%H:%M}–{b.end_time:%H:%M}) "
+                                 f"{'updated' if instance else 'created'}.",
+                     changes=form_changes(form) if instance else None)
 
     status_code = 200 if instance else 201
     return JsonResponse({
         "success": True,
+        "created": len(created),
         "block": {
             "id": obj.pk,
             "title": obj.title,
@@ -375,23 +439,61 @@ def schedule_block_save_api(request):
 
 
 @api_role_required("ADMIN")
+@require_POST
 def schedule_block_delete_api(request, pk):
     """
     POST /api/scheduling/blocks/<int:pk>/delete/
-    Deletes a ScheduleBlock.
-    """
-    if request.method != "POST":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
 
+    Soft delete: the block is deactivated (it drops off the timetable and out
+    of conflict checks) but stays in the database with its exceptions and the
+    audit trail. Reactivate it from the schedule list.
+    """
     block = ScheduleBlock.objects.filter(pk=pk).first()
     if not block:
         return JsonResponse({"error": "Schedule block not found."}, status=404)
 
-    block.delete()
-    return JsonResponse({"success": True})
+    block.is_active = False
+    block.save(update_fields=["is_active", "updated_at"])
+    log_activity(request.user, Action.DELETE, obj=block, request=request,
+                 description=f"Schedule block '{block.title}' removed from the timetable "
+                             "(deactivated).")
+    return JsonResponse({"success": True, "is_active": False})
 
 
-@role_required("ADMIN")
+@admin_required
+def exception_create(request, pk):
+    """F5.5: cancel / move / change the room of one date's meeting."""
+    block = get_object_or_404(_block_queryset(), pk=pk)
+    initial = {}
+    if request.GET.get("date"):
+        initial["date"] = request.GET["date"]
+    form = ScheduleExceptionForm(request.POST or None, block=block, initial=initial)
+    modal = is_modal(request)
+    ctx = {"form": form, "block": block, "is_modal": modal,
+           "title": f"Exception · {block.title}",
+           "exceptions": block.exceptions.select_related("replacement_room__building")
+                              .order_by("-date")[:10]}
+    if request.method == "POST":
+        if form.is_valid():
+            exc = form.save(commit=False)
+            exc.schedule_block = block
+            exc.save()
+            log_activity(request.user, Action.UPDATE, obj=block, request=request,
+                         description=f"{exc.get_exception_type_display()} on {exc.date:%Y-%m-%d}"
+                                     f" for '{block.title}'. {exc.reason}".strip())
+            msg = f"{exc.get_exception_type_display()} recorded for {exc.date:%b %d}."
+            if modal:
+                return HttpResponse(msg, status=201)
+            messages.success(request, msg)
+            return redirect("scheduling:schedule_list")
+        if modal:
+            return render(request, "scheduling/_exception_modal.html", ctx, status=422)
+    if modal:
+        return render(request, "scheduling/_exception_modal.html", ctx)
+    return render(request, "scheduling/exception_form.html", ctx)
+
+
+@admin_required
 def free_rooms(request):
     # GET with filters renders results server-side too (no-JS fallback).
     if "day" in request.GET:
@@ -400,7 +502,9 @@ def free_rooms(request):
     else:
         form = FreeRoomQueryForm(initial=_default_slot())
         rooms = None
-    return render(request, "scheduling/free_rooms.html", {"form": form, "rooms": rooms, "durations": DURATIONS})
+    return render(request, "scheduling/free_rooms.html", {
+        "form": form, "rooms": rooms, "durations": DURATIONS, **_form_context(),
+    })
 
 
 @api_role_required("ADMIN")
@@ -418,7 +522,7 @@ def free_rooms_api(request):
         "capacity": r.capacity,
         "floor": r.floor,
     } for r in _search(form)]
-    return JsonResponse({"results": results, "count": len(results), "stub": True})
+    return JsonResponse({"results": results, "count": len(results)})
 
 
 @api_role_required("ADMIN", "GUARD")

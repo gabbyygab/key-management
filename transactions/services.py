@@ -160,3 +160,151 @@ def return_key_with_condition(*, transaction_id, guard, remarks="", condition="O
         txn.key.status = _CONDITION_KEY_STATUS[condition]
         txn.key.save(update_fields=["status", "updated_at"])
     return txn
+
+
+# ---------------------------------------------------------------------------
+# POS wrapper (B4.1 / B4.3 / B5.5 / B6.2)
+#
+# borrow_key() above is the verified rule engine and is NOT modified. This
+# wraps it in one outer atomic block so that:
+#   1. borrow_key's own rules (shift, authorization, one active key, key
+#      availability) are checked first and win;
+#   2. the schedule check (SCHEDULE_ENFORCEMENT) runs afterwards — raising
+#      here rolls the borrow back, so a warning never leaves a half-issued key;
+#   3. expected_return_at is filled from the scheduled block (B4.3) or the
+#      guard's pick, and an override reason lands in remarks + the audit log.
+# ---------------------------------------------------------------------------
+
+class ScheduleWarning(BorrowError):
+    """The room is scheduled to someone else right now and no override reason
+    was given. Carries the schedule payload so the POS can show who/when."""
+
+    def __init__(self, message, *, schedule):
+        super().__init__(message)
+        self.schedule = schedule
+
+
+def _open_statuses():
+    return [BorrowTransaction.Status.ACTIVE, BorrowTransaction.Status.OVERDUE]
+
+
+@db_transaction.atomic
+def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
+               override_reason="", request=None, now=None):
+    from django.conf import settings
+
+    from audit.services import Action, log_activity
+    from scheduling.services import schedule_check_for_room
+
+    now = now or timezone.now()
+    override_reason = (override_reason or "").strip()
+
+    # borrow_key's one-key rule only looks at ACTIVE rows; once mark_overdue
+    # has flipped a row to OVERDUE the borrower would slip through. Close that
+    # gap here rather than editing borrow_key.
+    overdue = (BorrowTransaction.objects.filter(
+        borrower=borrower, status=BorrowTransaction.Status.OVERDUE)
+        .select_related("key").first())
+    if overdue:
+        raise BorrowError(
+            f"{borrower.full_name} has an overdue key ({overdue.key.key_code}). Return it first.")
+
+    if expected_return_at is not None and expected_return_at <= now:
+        raise BorrowError("Expected return time must be in the future.")
+
+    if not Key.objects.filter(pk=key_id).exists():
+        raise BorrowError("Key not found.")
+
+    txn = borrow_key(key_id=key_id, borrower=borrower, guard=guard,
+                     purpose=purpose, request=request)
+
+    mode = getattr(settings, "SCHEDULE_ENFORCEMENT", "warn")
+    check = {"state": "free", "current": None}
+    if mode != "off":
+        check = schedule_check_for_room(txn.room, borrower_id=borrower.pk,
+                                        when=timezone.localtime(now))
+    overridden = False
+    if check["state"] == "other":
+        cur = check["current"] or {}
+        who = cur.get("instructor") or "another class"
+        msg = (f"Room {txn.room} is scheduled to {who} ({cur.get('title', '')}, "
+               f"{cur.get('time_display', '')}) right now.")
+        public = {k: v for k, v in check.items() if not k.startswith("_")}
+        if mode == "block":
+            raise ScheduleWarning(msg + " Borrowing is blocked by schedule enforcement.",
+                                  schedule=public)
+        if not override_reason:
+            raise ScheduleWarning(msg + " Enter a reason to override.", schedule=public)
+        overridden = True
+
+    fields = []
+    due = expected_return_at or check.get("_expected_return_dt")
+    if due:
+        txn.expected_return_at = due
+        fields.append("expected_return_at")
+    if overridden:
+        txn.remarks = f"Override: {override_reason}"
+        fields.append("remarks")
+    if fields:
+        txn.save(update_fields=fields + ["updated_at"])
+
+    log_activity(guard, Action.BORROW, obj=txn, request=request,
+                 description=f"Released {txn.key.key_code} to {borrower.full_name} "
+                             f"({borrower.id_number}).")
+    if overridden:
+        cur = check["current"] or {}
+        log_activity(guard, Action.OVERRIDE, obj=txn, request=request,
+                     description=override_reason,
+                     changes={"scheduled_block": cur.get("id"),
+                              "scheduled_to": cur.get("instructor"),
+                              "block_time": cur.get("time_display")})
+    return txn
+
+
+def log_return(txn, *, guard, condition="OK", request=None):
+    from audit.services import Action, log_activity
+    log_activity(guard, Action.RETURN, obj=txn, request=request,
+                 description=f"Received {txn.key.key_code} from {txn.borrower.full_name} "
+                             f"(condition: {condition}).")
+
+
+def mark_overdue(*, now=None):
+    """B4.4: flip ACTIVE transactions past expected_return_at to OVERDUE, and
+    their keys BORROWED -> OVERDUE. Idempotent: a second run finds nothing.
+    Returns the number of transactions updated."""
+    now = now or timezone.now()
+    with db_transaction.atomic():
+        qs = (BorrowTransaction.objects.select_for_update()
+              .filter(status=BorrowTransaction.Status.ACTIVE,
+                      expected_return_at__isnull=False,
+                      expected_return_at__lt=now))
+        key_ids = list(qs.values_list("key_id", flat=True))
+        if not key_ids:
+            return 0
+        count = BorrowTransaction.objects.filter(
+            status=BorrowTransaction.Status.ACTIVE,
+            expected_return_at__isnull=False,
+            expected_return_at__lt=now,
+        ).update(status=BorrowTransaction.Status.OVERDUE, updated_at=now)
+        Key.objects.filter(pk__in=key_ids, status=Key.Status.BORROWED).update(
+            status=Key.Status.OVERDUE, updated_at=now)
+    return count
+
+
+def parse_due(raw):
+    """expected_return_at from the POS: an ISO datetime or the browser's
+    datetime-local value ("2026-10-31T17:30"), read in the server's local time.
+    Raises ValueError with a guard-readable message when it can't be parsed."""
+    from django.utils.dateparse import parse_datetime
+
+    if not raw:
+        return None
+    try:
+        dt = parse_datetime(str(raw))
+    except ValueError:
+        dt = None
+    if dt is None:
+        raise ValueError("Expected return time is not a valid date/time.")
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt

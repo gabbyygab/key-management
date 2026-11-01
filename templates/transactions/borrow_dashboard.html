@@ -2,24 +2,50 @@
 {% load static %}
 {% block title %}Key Transactions — KEYTRACK{% endblock %}
 {% block content %}
+{% comment %}
+  F3.1–F3.9 guard POS. Three panes: find borrower → pick key & confirm →
+  currently out. Everything server-rendered below is the no-JS fallback (plain
+  GET searches and a POST to borrow_confirm). pos.js swaps the [data-pos-js]
+  blocks in and drives the JSON APIs instead: live search, scanner Enter,
+  building chips, schedule check, typed override and expected return.
+{% endcomment %}
 <div data-pos-root
      data-shift-active="{% if shift %}1{% else %}0{% endif %}"
      data-selected-borrower="{% if selected %}1{% else %}0{% endif %}"
+     data-selected-borrower-id="{% if selected %}{{ selected.pk }}{% endif %}"
+     data-enforcement="{{ schedule_enforcement }}"
+     data-borrower-search-url="{% url 'accounts_api:borrower_search' %}"
+     data-key-search-url="{% url 'keys_api:search' %}"
+     data-key-detail-url="{% url 'keys_api:detail' 0 %}"
+     data-borrow-url="{% url 'transactions_api:borrow' %}"
      class="flex h-[calc(100dvh-9rem)] min-h-0 flex-col gap-3 overflow-hidden md:h-[calc(100dvh-6.5rem)]">
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
     <div>
       <h1 class="text-[22px] font-extrabold tracking-tight">Key Transactions</h1>
       <p class="mt-0.5 text-[13px] text-stone-500">Release keys and record returns.</p>
     </div>
-    {% comment %} role=status announces the current shift state to screen readers. {% endcomment %}
-    <div id="shift" role="status">
-      {% if shift %}
-        <span class="inline-block rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">● On duty: {{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</span>
-      {% else %}
-        <span class="inline-block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">No active shift — log out and back in to start one.</span>
-      {% endif %}
+    <div class="flex flex-wrap items-center gap-2">
+      {% comment %} role=status announces the current shift state to screen readers. {% endcomment %}
+      <div id="shift" role="status">
+        {% if shift %}
+          <span class="inline-block rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">● On duty: {{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</span>
+        {% else %}
+          <span class="inline-block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">No active shift — log out and back in to start one.</span>
+        {% endif %}
+      </div>
+      <button type="button" data-modal-open="pos-help-modal"
+              class="hidden items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50 md:inline-flex"
+              aria-keyshortcuts="Shift+?">
+        <i data-lucide="keyboard" aria-hidden="true" class="h-4 w-4 text-stone-500"></i>Shortcuts
+      </button>
     </div>
   </div>
+
+  {% if not shift %}
+  <p data-pos-blocked-notice role="alert" class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+    <b>Releasing is blocked.</b> Every key release is recorded against your shift, and you don't have one open. Log out and back in to start it. Returns still work.
+  </p>
+  {% endif %}
 
   {% comment %} F3.9 shortcuts are only useful on keyboard devices. {% endcomment %}
   <p class="hidden shrink-0 text-[12px] text-stone-500 md:block">
@@ -27,7 +53,9 @@
     <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">/</kbd> or
     <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">F1</kbd> borrower ·
     <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">F2</kbd> key ·
-    <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Esc</kbd> clear search
+    <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Enter</kbd> pick / confirm ·
+    <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Esc</kbd> clear ·
+    <kbd class="rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">?</kbd> all shortcuts
   </p>
 
   <div class="grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-stone-200 bg-white p-1 lg:hidden"
@@ -50,6 +78,7 @@
   </div>
 
   <div class="grid min-h-0 flex-1 gap-3 lg:grid-cols-[3fr_4fr_3fr]">
+    {# ================= 1 · Borrower ================= #}
     <section id="pos-panel-borrowers" data-pos-panel="borrowers" role="tabpanel"
              aria-labelledby="pos-tab-borrowers"
              class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm lg:flex">
@@ -60,13 +89,14 @@
           <div class="flex min-w-0 flex-1 items-center rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 focus-within:border-[#1E6B4A]">
             <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
             <input id="pos-q-borrower" name="q_borrower" data-pos-borrower-search value="{{ q_borrower }}"
-                   placeholder="Name or ID number..." autocomplete="off"
+                   placeholder="Name or ID number…" autocomplete="off" aria-keyshortcuts="F1 /"
+                   aria-controls="pos-borrower-results"
                    class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
           </div>
           <button class="shrink-0 rounded-lg bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Search</button>
         </form>
       </div>
-      <div class="min-h-0 flex-1 divide-y divide-stone-100 overflow-y-auto p-2"
+      <div id="pos-borrower-results" class="min-h-0 flex-1 divide-y divide-stone-100 overflow-y-auto p-2"
            role="region" aria-label="Borrower search results" aria-live="polite" data-pos-borrower-results>
         {% for b in borrowers %}
         <a href="{% url 'transactions:borrow_dashboard' %}?q_borrower={{ q_borrower|urlencode }}&amp;borrower_id={{ b.pk }}"
@@ -84,9 +114,93 @@
       </div>
     </section>
 
+    {# ================= 2 · Key + confirm ================= #}
     <section id="pos-panel-release" data-pos-panel="release" role="tabpanel"
              aria-labelledby="pos-tab-release"
              class="hidden min-h-0 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm lg:flex">
+
+      {# ---- JS UI (hidden until pos.js takes over) ---- #}
+      <div data-pos-js class="hidden min-h-0 flex-1 flex-col">
+        <div class="shrink-0 border-b border-stone-100 p-4">
+          <h2 class="font-bold text-[14px]">2 · Select key and confirm</h2>
+          <div data-pos-borrower-card class="mt-2">
+            <p class="text-[13px] text-stone-500">Choose a borrower in the first pane to begin.</p>
+          </div>
+        </div>
+
+        <div data-pos-key-area class="hidden min-h-0 flex-1 flex-col">
+          <div class="shrink-0 space-y-2 border-b border-stone-100 p-4">
+            <form data-pos-key-form-js role="search" aria-label="Search available keys" class="flex gap-2">
+              <label for="pos-q-key-js" class="sr-only">Key code, room, or scan a key tag</label>
+              <div class="flex min-w-0 flex-1 items-center rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 focus-within:border-[#1E6B4A]">
+                <i data-lucide="scan-line" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+                <input id="pos-q-key-js" data-pos-key-search-js placeholder="Key code, room, or scan…" autocomplete="off"
+                       aria-keyshortcuts="F2" aria-controls="pos-key-results-js"
+                       class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+              </div>
+            </form>
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter keys by building" data-pos-building-chips>
+              <button type="button" data-building="" aria-pressed="true"
+                      class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[12px] font-medium text-stone-700 aria-pressed:border-[#1E6B4A] aria-pressed:bg-[#1E6B4A] aria-pressed:text-white">All</button>
+              {% for b in buildings %}
+              <button type="button" data-building="{{ b.pk }}" aria-pressed="false" title="{{ b.name }}"
+                      class="rounded-full border border-stone-200 bg-white px-2.5 py-1 font-mono text-[12px] font-medium text-stone-700 aria-pressed:border-[#1E6B4A] aria-pressed:bg-[#1E6B4A] aria-pressed:text-white">{{ b.code }}</button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto p-3">
+            {# Confirm panel (F3.5): shown once a key is picked #}
+            <div data-pos-confirm class="hidden mb-3 rounded-xl border-2 border-[#1E6B4A] bg-emerald-50/30 p-4" aria-labelledby="pos-confirm-title">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <h3 id="pos-confirm-title" class="text-[13px] font-semibold uppercase tracking-wider text-stone-500">Releasing</h3>
+                  <p class="mt-0.5 text-[15px]"><b class="font-mono" data-confirm-key></b> <span class="text-stone-500" data-confirm-room></span></p>
+                  <p class="text-[13px] text-stone-600">to <b data-confirm-borrower></b></p>
+                </div>
+                <button type="button" data-pos-unselect-key class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50">Change key</button>
+              </div>
+
+              <div data-confirm-schedule class="mt-3 hidden rounded-lg border px-3 py-2 text-[13px]" role="status"></div>
+
+              <form data-pos-confirm-form class="mt-3 space-y-3" novalidate>
+                <div>
+                  <label for="pos-purpose" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Purpose <span class="font-normal normal-case text-stone-400">(optional)</span></label>
+                  <input id="pos-purpose" name="purpose" maxlength="255" placeholder="e.g. Class, meeting, cleaning"
+                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
+                </div>
+                <div>
+                  <label for="pos-due" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Expected return <span class="font-normal normal-case text-stone-400">(optional)</span></label>
+                  <input id="pos-due" name="expected_return_at" type="datetime-local" aria-describedby="pos-due-help"
+                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
+                  <p id="pos-due-help" class="mt-1 text-[12px] text-stone-500">Pre-filled with the end of the borrower's scheduled class when there is one. Keys past this time show as overdue.</p>
+                </div>
+
+                {# F3.6 schedule warning + typed override #}
+                <div data-confirm-override class="hidden rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p class="text-[13px] font-semibold text-amber-900" data-override-message></p>
+                  <label for="pos-override" class="mt-2 mb-1 block text-[12px] font-semibold uppercase tracking-wider text-amber-900">Reason for override <span class="text-red-600" aria-hidden="true">*</span></label>
+                  <textarea id="pos-override" name="override_reason" rows="2" minlength="5" aria-describedby="pos-override-help"
+                            class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px] focus:border-amber-600 focus:ring-1 focus:ring-amber-600"></textarea>
+                  <p id="pos-override-help" class="mt-1 text-[12px] text-amber-800">Required. Recorded on the transaction and in the audit log.</p>
+                </div>
+
+                <p data-confirm-error role="alert" class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"></p>
+
+                <button type="submit" data-pos-release
+                        class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#14342A] px-3 py-2.5 text-[14px] font-semibold text-white hover:bg-[#0F2E1F] disabled:cursor-not-allowed disabled:opacity-50">
+                  <i data-lucide="check" aria-hidden="true" class="h-4 w-4"></i><span data-release-label>Confirm release</span>
+                </button>
+              </form>
+            </div>
+
+            <div id="pos-key-results-js" class="space-y-2" role="region" aria-label="Available keys" aria-live="polite" data-pos-key-results-js></div>
+          </div>
+        </div>
+      </div>
+
+      {# ---- No-JS fallback (server-rendered) ---- #}
+      <div data-pos-server class="flex min-h-0 flex-1 flex-col">
       <div class="shrink-0 border-b border-stone-100 p-4">
         <h2 class="font-bold text-[14px]">2 · Select key and confirm</h2>
         {% if selected %}
@@ -110,9 +224,6 @@
             ({{ active_txn.transaction_no }}). Return it before releasing another key.
           </p>
         {% else %}
-          <p data-pos-blocked-notice role="alert" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
-            You must start a shift before releasing keys. Log out and back in to start one.
-          </p>
           <form method="get" class="mt-3 flex gap-2" role="search" aria-label="Search available keys" data-pos-key-form>
             <input type="hidden" name="borrower_id" value="{{ selected.pk }}">
             <input type="hidden" name="q_borrower" value="{{ q_borrower }}">
@@ -120,7 +231,7 @@
             <div class="flex min-w-0 flex-1 items-center rounded-lg border border-stone-200 bg-[#FAF7F0] px-3 focus-within:border-[#1E6B4A]">
               <i data-lucide="key-round" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
               <input id="pos-q-key" name="q_key" data-pos-key-search value="{{ q_key }}"
-                     placeholder="Key code, room..." autocomplete="off"
+                     placeholder="Key code, room…" autocomplete="off"
                      class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
             </div>
             <button class="shrink-0 rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] hover:bg-stone-50">Find</button>
@@ -128,7 +239,7 @@
 
           <div class="mt-3 space-y-2" role="region" aria-label="Available keys" data-pos-key-results>
             {% for k in available_keys %}
-            <div class="rounded-xl border border-stone-200 p-3 transition-colors duration-150 {% if selected_key and selected_key.pk == k.pk %}bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-300{% else %}hover:border-stone-300{% endif %}"
+            <div class="rounded-xl border border-stone-200 p-3 {% if selected_key and selected_key.pk == k.pk %}bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-300{% endif %}"
                  data-pos-key-card="{{ k.pk }}" data-room-id="{{ k.room.pk }}">
               <form method="post" action="{% url 'transactions:borrow_confirm' %}">
                 {% csrf_token %}
@@ -137,37 +248,36 @@
                 <div class="flex flex-wrap items-center gap-1.5 text-[13px]">
                   <b class="font-mono text-stone-900">{{ k.key_code }}</b>
                   <span class="truncate text-stone-500">· {{ k.room }}</span>
-                  {% if k.today_schedule %}
-                    {% if k.today_schedule.is_occupied %}
-                      <span class="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
-                        <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-600"></span> In session
-                      </span>
-                    {% elif k.today_schedule.has_schedule_today %}
-                      <span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">
-                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-600"></span> Free now
-                      </span>
-                    {% else %}
-                      <span class="inline-flex items-center rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-stone-400">Free today</span>
-                    {% endif %}
+                  {% if k.today_schedule.is_occupied %}
+                    <span class="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">In session</span>
                   {% endif %}
-                  <button type="button" class="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-[#1E6B4A] hover:underline"
-                          data-pos-toggle-schedule="{{ k.pk }}" aria-controls="pos-schedule-{{ k.pk }}"
-                          aria-expanded="{% if selected_key and selected_key.pk == k.pk %}true{% else %}false{% endif %}">
+                  {# Without JS this reloads with key_id set, which opens the panel below. #}
+                  <a href="?borrower_id={{ selected.pk }}&amp;q_borrower={{ q_borrower|urlencode }}&amp;q_key={{ q_key|urlencode }}&amp;key_id={{ k.pk }}#pos-schedule-{{ k.pk }}"
+                     class="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-[#1E6B4A] hover:underline"
+                     data-pos-toggle-schedule="{{ k.pk }}" aria-controls="pos-schedule-{{ k.pk }}">
                     <i data-lucide="calendar" aria-hidden="true" class="h-3 w-3"></i> Today's schedule
-                  </button>
+                  </a>
                 </div>
                 <label for="pos-purpose-{{ k.pk }}" class="sr-only">Purpose for key {{ k.key_code }}</label>
-                <input id="pos-purpose-{{ k.pk }}" name="purpose" placeholder="Purpose (optional)" data-pos-key-input="{{ k.pk }}"
-                       class="mt-2 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
-                <button type="submit" data-pos-release class="mt-2 w-full rounded-lg bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">
+                <input id="pos-purpose-{{ k.pk }}" name="purpose" placeholder="Purpose (optional)"
+                       class="mt-2 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+                <label for="pos-due-{{ k.pk }}" class="mt-2 block text-[12px] text-stone-500">Expected return (optional)</label>
+                <input id="pos-due-{{ k.pk }}" name="expected_return_at" type="datetime-local"
+                       class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+                {% if k.today_schedule.is_occupied %}
+                <label for="pos-override-{{ k.pk }}" class="mt-2 block text-[12px] text-amber-800">Room is scheduled right now. Reason to override (required if it isn't this borrower's class):</label>
+                <input id="pos-override-{{ k.pk }}" name="override_reason"
+                       class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px]">
+                {% endif %}
+                <button type="submit" {% if not shift %}disabled{% endif %} class="mt-2 w-full rounded-lg bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] disabled:opacity-50">
                   Confirm release<span class="sr-only"> of {{ k.key_code }} to {{ selected.full_name }}</span>
                 </button>
               </form>
-
-              {# Read-only "Today in this room" widget (toggled by pos.js bindRoomScheduleToggle) #}
               <div id="pos-schedule-{{ k.pk }}" class="mt-2.5 border-t border-stone-100 pt-2 {% if not selected_key or selected_key.pk != k.pk %}hidden{% endif %}"
                    data-pos-schedule-panel="{{ k.pk }}" data-room-id="{{ k.room.pk }}" role="region" aria-label="Schedule for room {{ k.room }}">
-                {% if k.today_schedule %}
+                {% if selected_key and selected_key.pk == k.pk and selected_key_schedule %}
+                  {% include "scheduling/_today_in_room.html" with schedule=selected_key_schedule compact=True read_only=True %}
+                {% elif k.today_schedule %}
                   {% include "scheduling/_today_in_room.html" with schedule=k.today_schedule compact=True read_only=True %}
                 {% endif %}
               </div>
@@ -184,8 +294,10 @@
         <p class="mt-2 text-[13px] text-stone-500">Select a borrower to view available keys.</p>
       </div>
       {% endif %}
+      </div>
     </section>
 
+    {# ================= 3 · Currently out ================= #}
     <div id="pos-panel-out" data-pos-panel="out" role="tabpanel"
          aria-labelledby="pos-tab-out"
          class="hidden min-h-0 flex-col lg:flex">
@@ -193,6 +305,28 @@
     </div>
   </div>
   {% include "transactions/_return_modal.html" %}
+</div>
+
+{{ selected_json|json_script:"pos-selected-borrower" }}
+
+{# F3.9 shortcut reference #}
+<div id="pos-help-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="pos-help-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="flex items-center justify-between border-b border-stone-200 px-5 py-4">
+      <h2 id="pos-help-title" class="text-[15px] font-bold text-stone-900">Keyboard shortcuts</h2>
+      <button type="button" data-modal-close aria-label="Close" class="rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50"><i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i></button>
+    </div>
+    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-5 py-4 text-[13px]">
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">F1</kbd> / <kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">/</kbd></dt><dd>Focus borrower search</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">↑</kbd> <kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">↓</kbd></dt><dd>Move through results</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Enter</kbd> in a search</dt><dd>Pick the exact match or the only result (works with a barcode scanner)</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">F2</kbd></dt><dd>Focus key search</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Ctrl</kbd>+<kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Enter</kbd></dt><dd>Confirm the release</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Esc</kbd></dt><dd>Clear the search you're in, or the picked key</dd>
+      <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">?</kbd></dt><dd>Show this list</dd>
+    </dl>
+  </div>
 </div>
 {% endblock %}
 

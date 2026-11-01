@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Guard Posts — KEYTRACK{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Guard Posts</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">Where guards are stationed. A guard's assigned post is stamped on every shift they open.</p>
+  </div>
+  <a href="{% url 'facilities:post_create' %}" data-modal-form="post-modal" data-modal-refresh="#post-list-region"
+     class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i><span>Add post</span>
+  </a>
+</div>
+
+<div id="post-list-region">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Guard posts</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 font-semibold">Post</th>
+          <th scope="col" class="p-3.5 font-semibold">Building</th>
+          <th scope="col" class="p-3.5 font-semibold">Assigned guards</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for p in posts %}
+        <tr class="hover:bg-stone-50/60{% if not p.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5 font-semibold text-stone-900">{{ p.name }}</td>
+          <td class="p-3.5">{% if p.building %}<span class="font-mono">{{ p.building.code }}</span> <span class="text-stone-500">· {{ p.building.name }}</span>{% else %}<span class="text-stone-400">—</span>{% endif %}</td>
+          <td class="p-3.5"><a href="{% url 'accounts:user_list' %}?role=GUARD" class="font-mono hover:underline">{{ p.guard_count }}</a></td>
+          <td class="p-3.5">{% if p.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'facilities:post_update' p.pk %}" data-modal-form="post-modal" data-modal-refresh="#post-list-region"
+                 class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ p.name }}</span></a>
+              <form method="post" action="{% url 'facilities:post_toggle' p.pk %}" class="inline"
+                    {% if p.is_active %}data-confirm="Guards assigned here keep the assignment, but new shifts will be recorded at Main Desk." data-confirm-title="Deactivate guard post" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ p.name }}"{% endif %}>
+                {% csrf_token %}
+                <button type="submit" class="font-medium {% if p.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if p.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ p.name }}</span></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% include "partials/empty_state.html" with colspan=5 icon="shield" title="No guard posts yet" message="Add posts such as Main Gate or Lobby, then assign guards to them from Users & Guards." %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="post-modal" modal_size="md" modal_label="Guard post form" %}
+{% endblock %}

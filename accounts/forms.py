@@ -1,9 +1,10 @@
 from django import forms
+from django.contrib.auth import password_validation
 from django.db.models import Q
 
-from facilities.models import Building, Room
+from facilities.models import Building, GuardPost, Room
 from keys.models import Key, KeyCategory
-from .models import Borrower
+from .models import Borrower, Department, User
 
 TAILWIND = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"
 
@@ -202,17 +203,13 @@ class BuildingForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = Building
         fields = ("code", "name", "description", "is_active")
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for name, f in self.fields.items():
-            if isinstance(f.widget, forms.CheckboxInput):
-                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
-            else:
-                f.widget.attrs.setdefault("class", TAILWIND)
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
 
-class RoomForm(forms.ModelForm):
+class RoomForm(StyledFormMixin, forms.ModelForm):
+    """B3.1 — the unique_room_per_building constraint surfaces as a field
+    error instead of an IntegrityError 500."""
+
     class Meta:
         model = Room
         fields = (
@@ -228,8 +225,178 @@ class RoomForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for name, f in self.fields.items():
-            if isinstance(f.widget, forms.CheckboxInput):
-                f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
-            else:
-                f.widget.attrs.setdefault("class", TAILWIND)
+        qs = Building.objects.filter(is_active=True)
+        if self.instance and self.instance.pk and self.instance.building_id:
+            qs = Building.objects.filter(Q(is_active=True) | Q(pk=self.instance.building_id))
+        self.fields["building"].queryset = qs
+
+    def clean(self):
+        cleaned = super().clean()
+        building = cleaned.get("building")
+        code = cleaned.get("room_code")
+        if building and code:
+            clash = Room.objects.filter(building=building, room_code__iexact=code)
+            if self.instance and self.instance.pk:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                self.add_error(
+                    "room_code",
+                    f"Room {code} already exists in {building.code}. Room codes must be "
+                    "unique within a building (the same code is fine in another building).",
+                )
+        capacity = cleaned.get("capacity")
+        if capacity is not None and capacity < 0:
+            self.add_error("capacity", "Capacity cannot be negative.")
+        return cleaned
+
+
+class RoomBulkForm(StyledFormMixin, forms.Form):
+    """F4.2 bulk-add helper: generate e.g. rooms 101-110 in one go."""
+    building = forms.ModelChoiceField(queryset=Building.objects.filter(is_active=True))
+    prefix = forms.CharField(max_length=20, required=False,
+                             help_text='Optional text before the number, e.g. "RM" gives RM101.')
+    start_number = forms.IntegerField(min_value=0, initial=101)
+    end_number = forms.IntegerField(min_value=0, initial=110)
+    room_type = forms.ChoiceField(choices=Room.RoomType.choices, initial=Room.RoomType.CLASSROOM)
+    floor = forms.IntegerField(required=False)
+    capacity = forms.IntegerField(required=False, min_value=0)
+
+    MAX_ROOMS = 100
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_number"), cleaned.get("end_number")
+        if start is not None and end is not None:
+            if end < start:
+                self.add_error("end_number", "End number must be greater than or equal to the start.")
+            elif end - start + 1 > self.MAX_ROOMS:
+                self.add_error("end_number", f"At most {self.MAX_ROOMS} rooms can be generated at once.")
+        return cleaned
+
+
+class GuardPostForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = GuardPost
+        fields = ("name", "building", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["building"].required = False
+        self.fields["building"].empty_label = "— Not tied to a building —"
+
+
+class _UserFieldsMixin:
+    """Shared validation for the admin user forms (B2.1)."""
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip()
+        if not email:
+            raise forms.ValidationError("Email is required.")
+        qs = User.objects.filter(email__iexact=email)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("Another account already uses this email address.")
+        return email
+
+    def clean_employee_id(self):
+        emp = (self.cleaned_data.get("employee_id") or "").strip()
+        if not emp:
+            return None  # unique + null: store NULL, never "", or two blanks collide
+        qs = User.objects.filter(employee_id__iexact=emp)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("Another account already uses this employee ID.")
+        return emp
+
+
+USER_FIELDS = ("username", "first_name", "last_name", "email", "employee_id",
+               "contact_number", "role", "department", "assigned_post")
+
+
+def _tune_user_fields(form):
+    form.fields["email"].required = True
+    form.fields["department"].queryset = Department.objects.filter(is_active=True)
+    form.fields["department"].required = False
+    form.fields["assigned_post"].queryset = GuardPost.objects.filter(is_active=True)
+    form.fields["assigned_post"].required = False
+    form.fields["assigned_post"].label = "Guard post"
+    form.fields["assigned_post"].help_text = "Guards only: where their shift is recorded on login."
+    form.fields["assigned_post"].empty_label = "— Main Desk (default) —"
+
+
+class UserCreateForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
+    password1 = forms.CharField(label="Password", strip=False,
+                                widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    password2 = forms.CharField(label="Confirm password", strip=False,
+                                widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+
+    class Meta:
+        model = User
+        fields = USER_FIELDS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _tune_user_fields(self)
+
+    def clean(self):
+        cleaned = super().clean()
+        p1, p2 = cleaned.get("password1"), cleaned.get("password2")
+        if p1 and p2 and p1 != p2:
+            self.add_error("password2", "The two passwords do not match.")
+        elif p1:
+            candidate = User(username=cleaned.get("username") or "",
+                             email=cleaned.get("email") or "",
+                             first_name=cleaned.get("first_name") or "",
+                             last_name=cleaned.get("last_name") or "")
+            try:
+                password_validation.validate_password(p1, candidate)
+            except forms.ValidationError as e:
+                self.add_error("password1", e)
+        return cleaned
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data["password1"])
+        if commit:
+            user.save()
+        return user
+
+
+class UserEditForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = User
+        fields = USER_FIELDS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _tune_user_fields(self)
+
+
+class AdminPasswordResetForm(StyledFormMixin, forms.Form):
+    new_password1 = forms.CharField(label="New password", strip=False,
+                                    widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    new_password2 = forms.CharField(label="Confirm new password", strip=False,
+                                    widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned = super().clean()
+        p1, p2 = cleaned.get("new_password1"), cleaned.get("new_password2")
+        if p1 and p2 and p1 != p2:
+            self.add_error("new_password2", "The two passwords do not match.")
+        elif p1:
+            try:
+                password_validation.validate_password(p1, self.user)
+            except forms.ValidationError as e:
+                self.add_error("new_password1", e)
+        return cleaned
+
+    def save(self):
+        self.user.set_password(self.cleaned_data["new_password1"])
+        self.user.save(update_fields=["password"])
+        return self.user

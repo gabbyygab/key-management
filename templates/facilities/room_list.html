@@ -4,22 +4,97 @@
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Rooms</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Manage room assignments and capacity.</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">Room codes are unique within a building. Inactive rooms are hidden from borrowing and the room finder.</p>
   </div>
-  <a href="{% url 'facilities:room_create' %}" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ Add room</a>
-</div>
-<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 divide-y divide-stone-100">
-{% for room in rooms %}
-  <div class="py-2.5 text-[13px] flex justify-between gap-3">
-    <span>
-      <a href="{% url 'facilities:room_detail' room.pk %}" class="font-mono font-bold text-stone-900 hover:text-[#1E6B4A] hover:underline">{{ room.building.code }}-{{ room.room_code }}</a>
-      <span class="text-stone-500">· {{ room.name|default:room.room_code }}</span>
-      <span class="ml-2 text-stone-400">{{ room.room_type|title }}</span>
-    </span>
-    <a href="{% url 'facilities:room_update' room.pk %}" class="font-medium hover:underline inline-flex items-center gap-1">Edit <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i></a>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{% url 'facilities:building_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="building-2" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Buildings</span>
+    </a>
+    <a href="{% url 'facilities:room_bulk_create' %}" data-modal-form="room-bulk-modal" data-modal-refresh="#room-list-region"
+       class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="layers" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Bulk add</span>
+    </a>
+    <a href="{% url 'facilities:room_create' %}{% if building_id %}?building={{ building_id }}{% endif %}" data-modal-form="room-modal" data-modal-refresh="#room-list-region"
+       class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i><span>Add room</span>
+    </a>
   </div>
-{% empty %}
-  <p class="text-stone-400 text-[13px]">No rooms yet.</p>
-{% endfor %}
 </div>
+
+<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter rooms">
+  <label for="room-q" class="sr-only">Search room code or name</label>
+  <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+    <input id="room-q" name="q" value="{{ q }}" placeholder="Search room code or name…" autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+  </div>
+  <label for="room-building" class="sr-only">Building</label>
+  <select id="room-building" name="building" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All buildings</option>
+    {% for b in buildings %}<option value="{{ b.pk }}" {% if building_id == b.pk|stringformat:"s" %}selected{% endif %}>{{ b.code }}{% if not b.is_active %} (inactive){% endif %}</option>{% endfor %}
+  </select>
+  <label for="room-type" class="sr-only">Room type</label>
+  <select id="room-type" name="room_type" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All types</option>
+    {% for code, label in room_types %}<option value="{{ code }}" {% if room_type == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <label for="room-status" class="sr-only">Room status</label>
+  <select id="room-status" name="status" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All statuses</option>
+    {% for code, label in statuses %}<option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or building_id or room_type or status %}<a href="{% url 'facilities:room_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+</form>
+
+<div id="room-list-region">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Rooms</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 font-semibold">Room</th>
+          <th scope="col" class="p-3.5 font-semibold">Type</th>
+          <th scope="col" class="p-3.5 font-semibold">Floor · Capacity</th>
+          <th scope="col" class="p-3.5 font-semibold">Keys</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for room in rooms %}
+        <tr class="hover:bg-stone-50/60{% if not room.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5">
+            <a href="{% url 'facilities:room_detail' room.pk %}" class="font-mono font-bold text-stone-900 hover:text-[#1E6B4A] hover:underline">{{ room.building.code }}-{{ room.room_code }}</a>
+            {% if room.name %}<div class="text-[12px] text-stone-500">{{ room.name }}</div>{% endif %}
+          </td>
+          <td class="p-3.5">{{ room.get_room_type_display }}</td>
+          <td class="p-3.5 font-mono text-[12px]">{{ room.floor|default:"—" }} · {{ room.capacity|default:"—" }}</td>
+          <td class="p-3.5 font-mono">{{ room.key_count }}</td>
+          <td class="p-3.5 whitespace-nowrap">
+            {% if room.is_active %}{% include "partials/status_pill.html" with status=room.status label=room.get_status_display %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}
+          </td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:room_timetable' %}?room={{ room.pk }}" class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="calendar" aria-hidden="true" class="w-3.5 h-3.5"></i>Timetable<span class="sr-only"> for {{ room }}</span></a>
+              <a href="{% url 'facilities:room_update' room.pk %}" data-modal-form="room-modal" data-modal-refresh="#room-list-region"
+                 class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ room }}</span></a>
+              <form method="post" action="{% url 'facilities:room_toggle' room.pk %}" class="inline"
+                    {% if room.is_active %}data-confirm="The room and its keys will no longer be offered for borrowing or in the room finder." data-confirm-title="Deactivate room" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ room.building.code }}-{{ room.room_code }}{% if room.name %} · {{ room.name }}{% endif %}"{% endif %}>
+                {% csrf_token %}
+                <button type="submit" class="font-medium {% if room.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if room.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ room }}</span></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% include "partials/empty_state.html" with colspan=6 icon="door-open" title="No rooms found" message="Try a different filter, or add rooms one at a time or in bulk." %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="rooms" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="room-modal" modal_label="Room form" %}
+{% include "partials/ajax_modal_shell.html" with modal_id="room-bulk-modal" modal_label="Bulk add rooms" %}
 {% endblock %}

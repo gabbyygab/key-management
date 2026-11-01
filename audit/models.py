@@ -29,6 +29,7 @@ class ActivityLog(models.Model):
     changes = models.JSONField(default=dict, blank=True)
     description = models.TextField(blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

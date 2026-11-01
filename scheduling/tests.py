@@ -46,7 +46,7 @@ class FreeRoomsTests(TestCase):
         self.client.force_login(self.admin)
         res = self.client.get(self.api, {**SLOT, "room_type": "LABORATORY"})
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {"count": 1, "stub": True, "results": [{
+        self.assertEqual(res.json(), {"count": 1, "results": [{
             "id": self.lab.pk, "room_code": "LAB1", "name": "",
             "building": {"id": self.ccs.pk, "code": "CCS", "name": "Computing"},
             "room_type": "LABORATORY", "room_type_display": "Laboratory",
@@ -102,7 +102,9 @@ class FreeRoomsTests(TestCase):
         res = self.client.get(reverse("scheduling:schedule_list"))
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "id=\"schedule-list-form\"")
-        self.assertContains(res, 'data-modal-open="schedule-edit-modal"')
+        # The real block editor (shared with the timetable), not a sample-data dialog.
+        self.assertContains(res, 'id="schedule-form-modal"')
+        self.assertContains(res, "data-schedule-new")
 
     def test_page_forbidden_for_guard(self):
         self.client.force_login(self.guard)
@@ -407,11 +409,12 @@ class RoomTimetableTests(TestCase):
         self.assertEqual(res_update.status_code, 200)
         self.assertEqual(ScheduleBlock.objects.get(pk=block_id).title, "Math 101 Advanced")
 
-        # Delete
+        # "Delete" is a soft delete: the row stays for history, inactive.
         delete_url = reverse("scheduling:schedule_block_delete", kwargs={"pk": block_id})
         res_del = self.client.post(delete_url)
         self.assertEqual(res_del.status_code, 200)
-        self.assertFalse(ScheduleBlock.objects.filter(pk=block_id).exists())
+        self.assertTrue(ScheduleBlock.objects.filter(pk=block_id).exists())
+        self.assertFalse(ScheduleBlock.objects.get(pk=block_id).is_active)
 
     def test_save_block_api_conflict_returns_422(self):
         self.client.force_login(self.admin)
