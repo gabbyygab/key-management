@@ -1,14 +1,37 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} — KEYTRACK{% endblock %}
+
 {% block content %}
-<div class="max-w-xl bg-white rounded-xl border border-stone-200 shadow-sm p-6">
-  <h1 class="text-[20px] font-extrabold">{{ title }}</h1>
-  <p class="text-[13px] text-stone-500">Categories group keys by purpose or cabinet.</p>
-  <form method="post" class="mt-4 space-y-3">{% csrf_token %}
-    {{ form.as_p }}
-    <div class="flex gap-2 pt-1">
-      <button class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Save</button>
-      <a href="{% url 'keys:category_list' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px]">Cancel</a>
+<div class="max-w-xl mx-auto bg-white rounded-2xl border border-stone-200 shadow-sm p-6">
+  <div class="flex items-center gap-3 pb-4 border-b border-stone-100">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+      <i data-lucide="tags" class="h-5 w-5"></i>
+    </div>
+    <div>
+      <h1 class="text-[20px] font-extrabold text-stone-900">{{ title }}</h1>
+      <p class="text-[13px] text-stone-500">Categories group keys by purpose, access level, or cabinet.</p>
+    </div>
+  </div>
+
+  <form method="post" class="mt-5 space-y-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    {% include "partials/form_field.html" with field=form.name field_label="Category Name" %}
+    {% include "partials/form_field.html" with field=form.description field_label="Description" field_optional=True %}
+
+    <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+      <a href="{% url 'keys:category_list' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
+        Cancel
+      </a>
+      <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-5 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+        <i data-lucide="check" class="w-4 h-4"></i>
+        <span>Save Category</span>
+      </button>
     </div>
   </form>
 </div>

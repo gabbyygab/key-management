@@ -48,6 +48,11 @@
     <a href="{% url 'transactions:shift_history' %}" {% if ns == 'transactions' and current == 'shift_history' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'shift_history' %} is-active{% endif %}">
       <i data-lucide="shield-check"></i><span>Guard Shifts</span>
     </a>
+    {% if user.is_superuser or user.role == "ADMIN" %}
+    <a href="{% url 'audit:log_list' %}" {% if ns == 'audit' and current == 'log_list' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'audit' and current == 'log_list' %} is-active{% endif %}">
+      <i data-lucide="clipboard-list"></i><span>Audit Log</span>
+    </a>
+    {% endif %}
 
     <div class="sidebar-section-title">Management</div>
     <a href="{% url 'transactions:history' %}" {% if ns == 'transactions' and current == 'history' %}aria-current="page"{% endif %} class="sidebar-link{% if ns == 'transactions' and current == 'history' %} is-active{% endif %}">

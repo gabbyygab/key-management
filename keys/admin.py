@@ -1,7 +1,16 @@
 from django.contrib import admin
 from .models import KeyCategory, Key
 
-admin.site.register(KeyCategory)
+
+@admin.register(KeyCategory)
+class KeyCategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "key_count", "description")
+    list_filter = ("is_active",)
+    search_fields = ("name", "description")
+
+    def key_count(self, obj):
+        return obj.key_count
+    key_count.short_description = "Keys"
 
 
 @admin.register(Key)
