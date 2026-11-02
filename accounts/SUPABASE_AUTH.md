@@ -24,10 +24,17 @@ admin screens ──► push_password / push_profile / push_active (service-role
    SUPABASE_AUTH_ENABLED=True
    ```
 2. `python manage.py migrate` (adds `accounts_user.supabase_uid`).
-3. In the Supabase dashboard, **Authentication → Sign In / Providers**: turn
-   **off** "Allow new users to sign up". Only KEYTRACK admins should create
-   accounts. The backend refuses unlinked Supabase users anyway, but there is no
-   reason to let strangers into `auth.users`.
+3. **Only admins add accounts.** Run `supabase/only_keytrack_creates_users.sql`
+   once in the Supabase SQL editor. It refuses any `auth.users` row that lacks
+   `app_metadata.keytrack_provisioned`, a flag only the service-role key can set,
+   so public sign-up, OAuth, magic links and the dashboard's "Add user" all fail.
+   Accounts are made only from KEYTRACK's **Users → Add user** (admin role).
+   Also turn **off** "Allow new users to sign up" under
+   **Authentication → Sign In / Providers**, so sign-up attempts get a clean
+   refusal instead of a database error.
+
+   In Django, the Add user screen and the `/admin/` user add page both require
+   the ADMIN role (a staff flag alone is not enough).
 
 ## Existing accounts
 

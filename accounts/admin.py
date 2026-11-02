@@ -14,6 +14,11 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ("role", "approval_status", "is_active")
     search_fields = ("username", "email", "employee_id", "first_name", "last_name")
 
+    def has_add_permission(self, request):
+        # Only admins add accounts. A staff flag alone (e.g. a guard who was
+        # given is_staff) is not enough.
+        return request.user.is_admin_role and super().has_add_permission(request)
+
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):

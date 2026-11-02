@@ -307,3 +307,41 @@ class SupabaseAuthClientHttpTests(SimpleTestCase):
         req = m.call_args.args[0]
         self.assertEqual(req.get_header("Apikey"), "sb_publishable_x")
         self.assertIsNone(req.get_header("Authorization"))
+
+
+class OnlyAdminsCreateAccountsTests(TestCase):
+    """Only admins add accounts, through any screen."""
+
+    def setUp(self):
+        self.staff_guard = User.objects.create_user(
+            username="sguard", email="sguard@example.com", password=PW, role=User.Role.GUARD,
+            approval_status=User.Approval.APPROVED, is_staff=True)
+        self.superadmin = User.objects.create_superuser(
+            username="root", email="root@example.com", password=PW, role=User.Role.ADMIN,
+            approval_status=User.Approval.APPROVED)
+
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_staff_guard_cannot_add_users_in_django_admin(self):
+        self.client.force_login(self.staff_guard)
+        self.assertEqual(self.client.get("/admin/accounts/user/add/").status_code, 403)
+
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_admin_can_add_users_in_django_admin(self):
+        self.client.force_login(self.superadmin)
+        self.assertEqual(self.client.get("/admin/accounts/user/add/").status_code, 200)
+
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_guard_cannot_use_add_user_screen(self):
+        self.client.force_login(self.staff_guard)
+        self.assertEqual(self.client.get(reverse("accounts:user_create")).status_code, 403)
+
+    def test_supabase_create_marks_user_as_provisioned(self):
+        """The database trigger lets in only rows carrying this flag."""
+        resp = mock.MagicMock()
+        resp.__enter__.return_value.read.return_value = b'{"id": "u1"}'
+        client = SupabaseAuthClient(url="https://x.supabase.co", anon_key="a",
+                                    service_role_key="sb_secret_x", timeout=1)
+        with mock.patch("accounts.supabase_auth.urlopen", return_value=resp) as m:
+            client.create_user(email="a@b.c", password="x")
+        body = json.loads(m.call_args.args[0].data)
+        self.assertEqual(body["app_metadata"], {"keytrack_provisioned": True})

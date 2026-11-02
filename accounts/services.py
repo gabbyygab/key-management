@@ -96,7 +96,7 @@ def push_password(user, password):
     password) has authority over this identity, and resetting the password
     locks out whoever made that Supabase account.
     """
-    from .supabase_auth import SupabaseAuthError, get_client, is_enabled
+    from .supabase_auth import PROVISIONED_FLAG, SupabaseAuthError, get_client, is_enabled
     if not is_enabled():
         return
     client = get_client()
@@ -114,7 +114,8 @@ def push_password(user, password):
             if sb_user is None:
                 raise
             client.update_user(sb_user["id"], password=password,
-                               user_metadata=_auth_metadata(user))
+                               user_metadata=_auth_metadata(user),
+                               app_metadata={PROVISIONED_FLAG: True})
         user.supabase_uid = sb_user["id"]
         user.save(update_fields=["supabase_uid"])
     if not user.is_active:
