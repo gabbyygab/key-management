@@ -12,6 +12,8 @@ Business rules still live in each app's forms/services; this only translates
 HTTP and writes the audit row.
 """
 from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 
@@ -36,13 +38,21 @@ def form_view(request, *, form, full_template, modal_template, context=None,
 
     if request.method == "POST":
         if form.is_valid():
-            obj = save(form) if save else form.save()
-            log_form_save(request, form, obj, created=created)
-            msg = success_message(obj) if callable(success_message) else success_message
-            if modal:
-                return HttpResponse(msg, status=201 if created else 200)
-            messages.success(request, msg)
-            return redirect(redirect_to)
+            # ``save`` may raise ValidationError after writing (e.g. Supabase
+            # refused the account); the atomic block undoes the local write
+            # and the error is shown on the form like any other.
+            try:
+                with transaction.atomic():
+                    obj = save(form) if save else form.save()
+            except ValidationError as e:
+                form.add_error(None, e)
+            else:
+                log_form_save(request, form, obj, created=created)
+                msg = success_message(obj) if callable(success_message) else success_message
+                if modal:
+                    return HttpResponse(msg, status=201 if created else 200)
+                messages.success(request, msg)
+                return redirect(redirect_to)
         if modal:
             return render(request, modal_template, ctx, status=422)
 

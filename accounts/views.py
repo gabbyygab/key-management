@@ -2,6 +2,8 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q
 from django.http import HttpResponse
@@ -15,7 +17,8 @@ from .crud import form_view, is_modal, querystring_without_page
 from .forms import AdminPasswordResetForm, BorrowerForm, UserCreateForm, UserEditForm
 from .models import Borrower, Department, User
 from .permissions import admin_or_guard_required, admin_required
-from .services import ApprovalError, approve_user, reject_user
+from .services import ApprovalError, approve_user, push_active, push_password, push_profile, reject_user
+from .supabase_auth import SupabaseAuthError
 
 
 def home(request):
@@ -100,6 +103,10 @@ def login_view(request):
                     if nxt:
                         return redirect(nxt)
                     return redirect(get_post_login_redirect(user))
+            elif getattr(request, "supabase_auth_unavailable", False):
+                # Not the user's fault, so it does not count toward the lockout.
+                error = "The sign-in service cannot be reached right now. Try again shortly."
+                status = 503
             else:
                 _record_failure(key)
                 error = "Invalid credentials, or account not approved yet."
@@ -291,6 +298,15 @@ def user_list(request):
     })
 
 
+def _push_or_fail(push, user, *args):
+    """Run a Supabase Auth push; turn a refusal into a form error so the
+    surrounding atomic block rolls the Django change back."""
+    try:
+        push(user, *args)
+    except SupabaseAuthError as e:
+        raise ValidationError(f"Supabase Auth refused the change: {e}") from None
+
+
 @admin_required
 def user_create(request):
     def save(form):
@@ -300,6 +316,7 @@ def user_create(request):
         user.approved_by = request.user
         user.approved_at = timezone.now()
         user.save()
+        _push_or_fail(push_password, user, form.cleaned_data["password1"])
         return user
 
     return form_view(
@@ -323,6 +340,12 @@ def user_update(request, pk):
     if request.method == "POST" and obj.pk == request.user.pk and not request.user.is_superuser:
         if form.is_valid() and form.cleaned_data.get("role") != User.Role.ADMIN:
             form.add_error("role", "You cannot remove your own admin role.")
+
+    def save(form):
+        user = form.save()
+        _push_or_fail(push_profile, user)
+        return user
+
     return form_view(
         request,
         form=form,
@@ -332,6 +355,7 @@ def user_update(request, pk):
         redirect_to="accounts:user_list",
         success_message=lambda u: f"{u.full_name} updated.",
         created=False,
+        save=save,
     )
 
 
@@ -345,6 +369,11 @@ def user_toggle(request, pk):
     obj.is_active = not obj.is_active
     obj.save(update_fields=["is_active"])
     state = "activated" if obj.is_active else "deactivated"
+    try:
+        push_active(obj)
+    except SupabaseAuthError as e:
+        # Django's is_active is what the login checks, so the change stands.
+        messages.warning(request, f"Supabase was not updated ({e}). Toggle again to retry.")
     if not obj.is_active:
         # A deactivated guard is off duty immediately.
         from transactions.models import GuardShift
@@ -365,8 +394,16 @@ def user_reset_password(request, pk):
     ctx = {"form": form, "instance": obj, "is_modal": modal,
            "title": f"Reset password — {obj.full_name}"}
     if request.method == "POST":
+        saved = False
         if form.is_valid():
-            form.save()
+            try:
+                with transaction.atomic():
+                    form.save()
+                    _push_or_fail(push_password, obj, form.cleaned_data["new_password1"])
+                saved = True
+            except ValidationError as e:
+                form.add_error(None, e)
+        if saved:
             log_activity(request.user, Action.UPDATE, obj=obj, request=request,
                          description=f"Password reset for {obj.username}.")
             msg = f"Password reset for {obj.full_name}."

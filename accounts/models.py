@@ -44,6 +44,10 @@ class User(AbstractUser):
     # the GuardShift; null falls back to GuardShift's "Main Desk" default.
     assigned_post = models.ForeignKey("facilities.GuardPost", null=True, blank=True,
                                       on_delete=models.SET_NULL, related_name="guards")
+    # The auth.users id in Supabase once this account signs in through Supabase
+    # Auth (accounts/supabase_auth.py). Set by admin provisioning or on the
+    # first login after the switch; never from a bare email match.
+    supabase_uid = models.UUIDField(null=True, blank=True, unique=True, editable=False)
 
     @property
     def is_approved(self):

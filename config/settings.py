@@ -61,6 +61,7 @@ ROOT_URLCONF = 'config.urls'
 
 AUTH_USER_MODEL = 'accounts.User'
 
+# Swapped for the Supabase backend below when SUPABASE_AUTH_ENABLED is on.
 AUTHENTICATION_BACKENDS = ["accounts.backends.ApprovedUserBackend"]
 
 TEMPLATES = [
@@ -166,6 +167,17 @@ SUPABASE_SERVICE_ROLE_KEY = config("SUPABASE_SERVICE_ROLE_KEY", default="")
 SUPABASE_SCHEMA = config("SUPABASE_SCHEMA", default="public")
 SUPABASE_TIMEOUT = config("SUPABASE_TIMEOUT", default=10, cast=int)
 SUPABASE_SYNC_ENABLED = config("SUPABASE_SYNC_ENABLED", default=False, cast=bool)
+
+# Supabase Auth checks guard/admin passwords (accounts/supabase_auth.py).
+# Roles, approval and sessions stay in Django. Needs SUPABASE_URL, the anon or
+# publishable key (sign-in) and the service-role key (admin user management).
+SUPABASE_AUTH_ENABLED = config("SUPABASE_AUTH_ENABLED", default=False, cast=bool)
+# When Supabase cannot be reached, fall back to the password hash Django keeps
+# in step with Supabase, so a guard desk keeps working through an outage.
+# Wrong passwords are never retried locally; only network failures are.
+SUPABASE_AUTH_OFFLINE_FALLBACK = config("SUPABASE_AUTH_OFFLINE_FALLBACK", default=True, cast=bool)
+if SUPABASE_AUTH_ENABLED:
+    AUTHENTICATION_BACKENDS = ["accounts.backends.SupabaseAuthBackend"]
 
 # B7.4: production hardening. These switch on automatically when DEBUG=False.
 # Deployment checklist (see README "Deploying"):
