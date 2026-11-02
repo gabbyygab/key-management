@@ -1,14 +1,15 @@
+
 import datetime
 
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
+
 from accounts.permissions import admin_required
 from .models import ActivityLog
 
 
 # Lucide icon + Tailwind colour pill per action type.
-# Icons are rendered as <i data-lucide="..."> and initialised by init-icons.js.
 ACTION_ICONS = {
     ActivityLog.Action.LOGIN: "log-in",
     ActivityLog.Action.LOGOUT: "log-out",
@@ -47,6 +48,7 @@ def log_list(request):
     action = request.GET.get("action", "").strip()
     q = request.GET.get("q", "").strip()
     model_filter = request.GET.get("model", "").strip()
+
     start_date = (
         request.GET.get("start_date", "").strip()
         or request.GET.get("date_from", "").strip()
@@ -93,22 +95,24 @@ def log_list(request):
         except ValueError:
             pass
 
-    # B8.11: real pagination so the growing audit table stays pageable.
+    # Real pagination: 25 records per page.
     paginator = Paginator(logs, 25)
     page_number = request.GET.get("page")
     page_obj = paginator.get_page(page_number)
 
-    # Attach per-action icon + colour pill classes and a safe user label to
-    # each log row so the template can render them without custom tags or
-    # crashing on system (user=None) entries.
+    # Attach per-action icon + colour pill classes and safe user labels.
     for log in page_obj:
         log.action_icon = ACTION_ICONS.get(log.action)
+
         bg, text, border = ACTION_COLOURS.get(
-            log.action, ("bg-stone-100", "text-stone-700", "border-stone-200")
+            log.action,
+            ("bg-stone-100", "text-stone-700", "border-stone-200"),
         )
+
         log.action_bg = bg
         log.action_text = text
         log.action_border = border
+
         if log.user:
             log.user_label = log.user.get_full_name() or log.user.username
             log.user_username = log.user.username
@@ -116,26 +120,33 @@ def log_list(request):
             log.user_label = "System"
             log.user_username = None
 
-    # Preserve query string (without 'page') for pagination links.
+    # Preserve query string without the current page number.
     params = request.GET.copy()
     if "page" in params:
         del params["page"]
+
     querystring = params.urlencode()
 
-    # Filter dropdown options: users who have logged activity, and models
-    # that appear in the log, so empty choices never appear.
+    # Filter dropdown options.
     users = (
         logs.values_list("user", flat=True)
         .distinct()
         .exclude(user__isnull=True)
     )
+
     filter_users = (
         ActivityLog.objects.filter(user__in=users)
         .select_related("user")
         .order_by("user__first_name", "user__last_name", "user__username")
-        .values_list("user__pk", "user__username", "user__first_name", "user__last_name")
+        .values_list(
+            "user__pk",
+            "user__username",
+            "user__first_name",
+            "user__last_name",
+        )
         .distinct()
     )
+
     models = (
         logs.exclude(model_name="")
         .values_list("model_name", flat=True)
