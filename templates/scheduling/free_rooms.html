@@ -91,28 +91,11 @@
 
 <template id="free-room-card-template">{% include "scheduling/_free_room_card.html" with room=None %}</template>
 
-{# Fallback until the schedule editor (F5.2, #schedule-form-modal) exists. Native <dialog> gives Escape, a focus trap and an inert background. #}
-<dialog id="schedule-stub-dialog" role="dialog" aria-modal="true" aria-labelledby="schedule-stub-title" aria-describedby="schedule-stub-desc"
-        class="m-auto p-0 bg-transparent backdrop:bg-stone-900/60 w-[calc(100%-2rem)] max-w-sm">
-  <div class="bg-white rounded-2xl border border-stone-200 shadow-xl p-6">
-    <div class="flex items-start gap-3">
-      <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center shrink-0 text-[#1E6B4A]">
-        <i data-lucide="calendar-plus" aria-hidden="true" class="w-5 h-5"></i>
-      </div>
-      <div class="min-w-0">
-        <h2 id="schedule-stub-title" class="text-[15px] font-bold text-stone-900">Schedule this room</h2>
-        <p id="schedule-stub-desc" class="text-[13px] text-stone-500 mt-1">The schedule editor isn't available yet. When it ships, this button opens it pre-filled with:</p>
-      </div>
-    </div>
-    <dl class="mt-4 grid grid-cols-[5rem_1fr] gap-y-1.5 text-[13px]">
-      <dt class="text-stone-500">Room</dt><dd class="font-mono font-semibold" data-prefill="room">—</dd>
-      <dt class="text-stone-500">Day</dt><dd class="font-semibold" data-prefill="day">—</dd>
-      <dt class="text-stone-500">Time</dt><dd class="font-semibold" data-prefill="time">—</dd>
-    </dl>
-    <div class="flex justify-end mt-5">
-      <button type="button" data-dialog-close autofocus class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Close</button>
-    </div>
-  </div>
-</dialog>
+{# "Schedule this" opens the shared block editor pre-filled with the room and slot. #}
+{% include "scheduling/_schedule_form_modal.html" %}
 {% endblock %}
-{% block extra_js %}<script src="{% static 'js/free_rooms.js' %}"></script>{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/schedule-grid.js' %}"></script>
+<script src="{% static 'js/schedule-modal.js' %}"></script>
+<script src="{% static 'js/free_rooms.js' %}"></script>
+{% endblock %}

@@ -10,40 +10,23 @@ wrong role, 422 for a business-rule violation as {"error": "<message>"},
 CSRF on, no user emails in the payload.
 """
 import json
-from functools import wraps
 
-from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import role_required
+from accounts.api import api_role_required, read_body
+from accounts.models import Borrower
 from .models import BorrowTransaction
 from .services import (
-    BorrowError, RETURN_CONDITIONS, active_transactions, due_state,
-    return_key_with_condition,
+    BorrowError, RETURN_CONDITIONS, ScheduleWarning, active_transactions, due_state,
+    log_return, parse_due, pos_borrow, return_key_with_condition,
 )
 
-
-def guard_api(view):
-    """role_required("GUARD") for a JSON path.
-
-    Same role check as every other view, but a wrong role or an expired session
-    answers 403 JSON instead of login_required's redirect, so the POS panel can
-    tell "no permission" from "server said something weird".
-    """
-    gated = role_required("GUARD")(view)
-
-    @wraps(view)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return JsonResponse({"error": "Your session has expired. Sign in again."},
-                                status=403)
-        try:
-            return gated(request, *args, **kwargs)
-        except PermissionDenied:
-            return JsonResponse({"error": "You do not have permission."}, status=403)
-    return wrapper
+# role_required("GUARD") for a JSON path: a wrong role or an expired session
+# answers 403 JSON instead of login_required's redirect, so the POS panel can
+# tell "no permission" from "server said something weird".
+guard_api = api_role_required("GUARD")
 
 
 def _serialize(txn, *, now):
@@ -128,6 +111,7 @@ def transaction_return(request, pk):
     except BorrowError as e:
         return JsonResponse({"error": str(e)}, status=422)
 
+    log_return(txn, guard=request.user, condition=condition, request=request)
     return JsonResponse({
         "transaction_no": txn.transaction_no,
         "returned_at": txn.returned_at.isoformat(),
@@ -138,3 +122,64 @@ def transaction_return(request, pk):
         "borrower": txn.borrower.full_name,
         "counts": panel_counts(),
     })
+
+
+@guard_api
+@require_POST
+def transaction_borrow(request):
+    """POST /api/transactions/borrow/ — B4.1.
+
+    Body: borrower_id, key_id, purpose, expected_return_at (optional),
+    override_reason (required only when the room is scheduled to someone else).
+
+    201 on success; 422 {"error"} for a business rule (no shift, unauthorized,
+    already holding, key unavailable); 422 {"error", "schedule_warning": true,
+    "schedule": {...}} when the timetable needs a typed override (F3.6).
+    """
+    try:
+        body = read_body(request)
+        due = parse_due(body.get("expected_return_at"))
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+    borrower_id = str(body.get("borrower_id") or "")
+    key_id = str(body.get("key_id") or "")
+    if not borrower_id.isdigit() or not key_id.isdigit():
+        return JsonResponse({"error": "Choose a borrower and a key first."}, status=422)
+
+    borrower = (Borrower.objects.select_related("department")
+                .filter(pk=int(borrower_id)).first())
+    if borrower is None:
+        return JsonResponse({"error": "Borrower not found."}, status=422)
+
+    try:
+        txn = pos_borrow(
+            key_id=int(key_id), borrower=borrower, guard=request.user,
+            purpose=(body.get("purpose") or "").strip()[:255],
+            expected_return_at=due,
+            override_reason=(body.get("override_reason") or "").strip(),
+            request=request,
+        )
+    except ScheduleWarning as e:
+        return JsonResponse({"error": str(e), "schedule_warning": True,
+                             "schedule": e.schedule}, status=422)
+    except BorrowError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+    txn = (BorrowTransaction.objects
+           .select_related("key__room__building", "key__category", "borrower__department",
+                           "released_by")
+           .get(pk=txn.pk))
+    now = timezone.now()
+    return JsonResponse({
+        "transaction_no": txn.transaction_no,
+        "key_code": txn.key.key_code,
+        "borrower": borrower.full_name,
+        "borrowed_at": txn.borrowed_at.isoformat(),
+        "expected_return_at": (txn.expected_return_at.isoformat()
+                               if txn.expected_return_at else None),
+        "key_status": txn.key.status,
+        "overridden": txn.remarks.startswith("Override:"),
+        "row": _serialize(txn, now=now),
+        "counts": panel_counts(now=now),
+    }, status=201)

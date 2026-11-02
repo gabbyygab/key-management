@@ -13,6 +13,11 @@ Sections:
 <link rel="stylesheet" href="{% static 'css/navbar.css' %}">
 <header class="app-header">
   <div class="app-header-top">
+    {# F2.2 mobile drawer toggle — the sidebar becomes a slide-in panel below 768px. #}
+    <button type="button" id="navbar-menu-btn" class="app-header-menu-btn"
+            aria-label="Open menu" aria-controls="app-sidebar" aria-expanded="false">
+      <i data-lucide="menu" aria-hidden="true"></i>
+    </button>
     <div class="app-header-brand">
       <img src="{% static 'keytrack-favicon.png' %}" alt="" width="34" height="34">
       <span class="app-header-brand-name">KEYTRACK</span>
@@ -28,7 +33,7 @@ Sections:
     <div class="app-header-spacer"></div>
 
     {# 2. Admin quick-add dropdown #}
-    {% if user.is_superuser or user.role == "ADMIN" %}
+    {% if user.is_admin_role %}
     <div class="app-quickadd">
       <button
         id="navbar-quickadd-btn"
@@ -51,14 +56,18 @@ Sections:
         aria-labelledby="navbar-quickadd-btn"
         class="app-quickadd-menu hidden"
       >
-        <a role="menuitem" href="{% url 'keys:key_create' %}" class="app-quickadd-item">
+        {# Each item opens its form in a modal (no-JS: the href is the full-page form). #}
+        <a role="menuitem" href="{% url 'keys:key_create' %}" data-modal-form="quickadd-key-modal" class="app-quickadd-item">
           <i data-lucide="key-round" aria-hidden="true"></i>New Key
         </a>
-        <a role="menuitem" href="{% url 'facilities:room_create' %}" class="app-quickadd-item">
+        <a role="menuitem" href="{% url 'facilities:room_create' %}" data-modal-form="quickadd-modal" class="app-quickadd-item">
           <i data-lucide="door-open" aria-hidden="true"></i>New Room
         </a>
-        <a role="menuitem" href="{% url 'accounts:borrower_create' %}" class="app-quickadd-item">
+        <a role="menuitem" href="{% url 'accounts:borrower_create' %}" data-modal-form="quickadd-modal" class="app-quickadd-item">
           <i data-lucide="user-plus" aria-hidden="true"></i>New Borrower
+        </a>
+        <a role="menuitem" href="{% url 'accounts:user_create' %}" data-modal-form="quickadd-modal" class="app-quickadd-item">
+          <i data-lucide="user-cog" aria-hidden="true"></i>New User
         </a>
         <a role="menuitem" href="{% url 'scheduling:schedule_list' %}" class="app-quickadd-item">
           <i data-lucide="calendar-plus" aria-hidden="true"></i>New Schedule
@@ -108,10 +117,10 @@ Sections:
     </span>
 
     <div class="app-header-account">
-      <span class="app-header-avatar" aria-hidden="true">{{ user.username|slice:":2"|upper|default:"GU" }}</span>
+      <span class="app-header-avatar" aria-hidden="true">{{ user.initials }}</span>
       <span class="app-header-user">
         <span class="app-header-user-name">{{ user.get_full_name|default:user.username }}</span>
-        <span class="app-header-user-role">{{ user.get_role_display|default:"GUARD" }}</span>
+        <span class="app-header-user-role">{% if user.is_superuser and not user.role %}Superuser{% else %}{{ user.get_role_display }}{% endif %}</span>
       </span>
     </div>
 
@@ -120,17 +129,28 @@ Sections:
     </button>
   </div>
 
-  {# Mobile nav strip #}
-  <nav aria-label="Mobile navigation" class="app-header-mobile-nav">
-    <a href="{% url 'dashboard' %}" {% if current == 'dashboard' and not ns %}aria-current="page"{% endif %} class="app-mobile-link{% if current == 'dashboard' and not ns %} is-active{% endif %}">Dashboard</a>
-    <a href="{% url 'transactions:borrow_dashboard' %}" {% if ns == 'transactions' and current == 'borrow_dashboard' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'transactions' and current == 'borrow_dashboard' %} is-active{% endif %}">Transact</a>
-    <a href="{% url 'keys:key_list' %}" {% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'keys' and current == 'key_list' or current == 'key_create' or current == 'key_update' %} is-active{% endif %}">Keys</a>
-    <a href="{% url 'accounts:borrower_list' %}" {% if ns == 'accounts' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'accounts' %} is-active{% endif %}">Borrowers</a>
-    <a href="{% url 'transactions:history' %}" {% if ns == 'transactions' and current == 'history' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'transactions' and current == 'history' %} is-active{% endif %}">History</a>
-    {% if user.is_superuser or user.role == "ADMIN" %}
-    <a href="{% url 'reports:index' %}" {% if ns == 'reports' %}aria-current="page"{% endif %} class="app-mobile-link{% if ns == 'reports' %} is-active{% endif %}">Reports</a>
-    {% endif %}
-    <button type="button" data-modal-open="logout-modal" class="app-mobile-link app-mobile-logout">Log out</button>
-  </nav>
 </header>
+
+{% if user.is_admin_role %}
+{# Quick-add targets. The key form partial has no header of its own, so it gets one here. #}
+{% include "partials/ajax_modal_shell.html" with modal_id="quickadd-modal" modal_label="Quick add" %}
+<div id="quickadd-key-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="quickadd-key-modal-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+          <i data-lucide="key" aria-hidden="true" class="w-5 h-5"></i>
+        </div>
+        <h2 id="quickadd-key-modal-title" class="truncate text-[15px] font-bold text-stone-900">New key</h2>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" aria-hidden="true" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div data-modal-body class="min-h-0 flex-1 overflow-y-auto px-5 py-4"></div>
+  </div>
+</div>
+{% endif %}
 {% endwith %}

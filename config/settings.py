@@ -42,9 +42,9 @@ INSTALLED_APPS = [
     'keys',
     'audit',
     'transactions',
-    'notifications',
     'scheduling',
     'reports',
+    'supabase_sync',
 ]
 
 MIDDLEWARE = [
@@ -61,6 +61,7 @@ ROOT_URLCONF = 'config.urls'
 
 AUTH_USER_MODEL = 'accounts.User'
 
+# Swapped for the Supabase backend below when SUPABASE_AUTH_ENABLED is on.
 AUTHENTICATION_BACKENDS = ["accounts.backends.ApprovedUserBackend"]
 
 TEMPLATES = [
@@ -147,11 +148,49 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.1/howto/static-files/
+# B5.5: how the POS treats a borrow when the room is scheduled to someone else
+# right now. "off" ignores the timetable, "warn" (default) asks the guard for a
+# typed override reason that is written to the audit log, "block" refuses.
+SCHEDULE_ENFORCEMENT = config("SCHEDULE_ENFORCEMENT", default="warn")
 
-STATIC_URL = 'static/'
+# B7.4: login throttling. After LOGIN_RATE_LIMIT failed attempts for one
+# username+IP inside LOGIN_RATE_WINDOW seconds, further attempts are refused
+# until the window expires. Uses the default (local-memory) cache.
+LOGIN_RATE_LIMIT = config("LOGIN_RATE_LIMIT", default=5, cast=int)
+LOGIN_RATE_WINDOW = config("LOGIN_RATE_WINDOW", default=300, cast=int)
 
+# Supabase (optional). The integration is inert until SUPABASE_URL and a key
+# are set — see supabase_sync/README.md.
+SUPABASE_URL = config("SUPABASE_URL", default="")
+SUPABASE_ANON_KEY = config("SUPABASE_ANON_KEY", default="")
+SUPABASE_SERVICE_ROLE_KEY = config("SUPABASE_SERVICE_ROLE_KEY", default="")
+SUPABASE_SCHEMA = config("SUPABASE_SCHEMA", default="public")
+SUPABASE_TIMEOUT = config("SUPABASE_TIMEOUT", default=10, cast=int)
+SUPABASE_SYNC_ENABLED = config("SUPABASE_SYNC_ENABLED", default=False, cast=bool)
+
+# Supabase Auth checks guard/admin passwords (accounts/supabase_auth.py).
+# Roles, approval and sessions stay in Django. Needs SUPABASE_URL, the anon or
+# publishable key (sign-in) and the service-role key (admin user management).
+SUPABASE_AUTH_ENABLED = config("SUPABASE_AUTH_ENABLED", default=False, cast=bool)
+# When Supabase cannot be reached, fall back to the password hash Django keeps
+# in step with Supabase, so a guard desk keeps working through an outage.
+# Wrong passwords are never retried locally; only network failures are.
+SUPABASE_AUTH_OFFLINE_FALLBACK = config("SUPABASE_AUTH_OFFLINE_FALLBACK", default=True, cast=bool)
+if SUPABASE_AUTH_ENABLED:
+    AUTHENTICATION_BACKENDS = ["accounts.backends.SupabaseAuthBackend"]
+
+# B7.4: production hardening. These switch on automatically when DEBUG=False.
+# Deployment checklist (see README "Deploying"):
+#   - DEBUG=False, a fresh SECRET_KEY, ALLOWED_HOSTS without "testserver"
+#   - python manage.py check --deploy
+#   - python manage.py collectstatic, serve STATIC_ROOT from the web server
+if not DEBUG:
+    SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=True, cast=bool)
+    SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
+    SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=3600, cast=int)
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
 
 # Email (dev: print to console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

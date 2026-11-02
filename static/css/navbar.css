@@ -405,3 +405,25 @@
     color: #b91c1c;
     font-weight: 500;
 }
+/* ===== Mobile menu button (F2.2) ===== */
+.app-header-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem;
+    border: 1px solid var(--header-border);
+    border-radius: 0.6rem;
+    background: #fff;
+    color: var(--header-green);
+}
+
+.app-header-menu-btn:focus-visible {
+    outline: 2px solid var(--header-green);
+    outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+    .app-header-menu-btn {
+        display: none;
+    }
+}

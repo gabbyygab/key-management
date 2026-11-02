@@ -1,210 +1,179 @@
 {% extends "base.html" %}
-{% block title %}Schedule List — KEYTRACK{% endblock %}
+{% load static %}
+{% block title %}{% if only_conflicts %}Schedule Conflicts{% else %}Schedule List{% endif %} — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Schedule list</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Review active assignments and edit them without leaving the list.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if only_conflicts %}Schedule conflicts{% else %}Schedule list{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">
+      {% if only_conflicts %}Active blocks that overlap another active block in the same room, day and term. Edit or deactivate one side of each pair.
+      {% else %}Every recurring block across terms and rooms. Edit, add one-off exceptions, or deactivate in bulk.{% endif %}
+    </p>
   </div>
-  <div class="flex items-center gap-2">
-    <a href="{% url 'scheduling:room_timetable' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5">
-      <i data-lucide="calendar" class="w-4 h-4 text-stone-500"></i> Timetable
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{% url 'scheduling:room_timetable' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="calendar" aria-hidden="true" class="w-4 h-4 text-stone-500"></i>Timetable
     </a>
-    <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5">
-      <i data-lucide="search-check" class="w-4 h-4 text-stone-500"></i> Room Finder
+    <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="search-check" aria-hidden="true" class="w-4 h-4 text-stone-500"></i>Room finder
     </a>
-    <button type="button" data-modal-open="schedule-edit-modal" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">+ New schedule</button>
+    <button type="button" data-schedule-new data-day="0" data-start="09:00" data-end="10:30"
+            class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i>New block
+    </button>
   </div>
 </div>
 
-<form id="schedule-list-form" method="get" action="{% url 'scheduling:schedule_list' %}" class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-5">
-  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-end">
+{% if conflict_count and not only_conflicts %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800" role="status">
+  <span class="inline-flex items-center gap-2"><i data-lucide="alert-triangle" aria-hidden="true" class="w-4 h-4"></i>{{ conflict_count }} active block{{ conflict_count|pluralize }} overlap{{ conflict_count|pluralize:"s," }} another block.</span>
+  <a href="{% url 'scheduling:conflicts' %}" class="font-semibold underline">Review conflicts</a>
+</div>
+{% endif %}
+
+<form id="schedule-list-form" method="get" action="{% if only_conflicts %}{% url 'scheduling:conflicts' %}{% else %}{% url 'scheduling:schedule_list' %}{% endif %}"
+      class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4" role="search" aria-label="Filter schedule blocks">
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 items-end">
     <div>
-      <label for="term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Term</label>
-      <select id="term" name="term" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+      <label for="f-term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Term</label>
+      <select id="f-term" name="term" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
         <option value="">All terms</option>
-        {% for value in terms %}
-        <option value="{{ value }}" {% if value == term %}selected{% endif %}>{{ value }}</option>
-        {% endfor %}
+        {% for t in terms %}<option value="{{ t.pk }}" {% if term == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}{% if t.is_active %} (active){% endif %}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="building" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Building</label>
-      <select id="building" name="building" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+      <label for="f-building" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Building</label>
+      <select id="f-building" name="building" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
         <option value="">All buildings</option>
-        {% for b in buildings %}
-        <option value="{{ b.code }}" {% if b.code == building %}selected{% endif %}>{{ b.name }}</option>
-        {% endfor %}
+        {% for b in buildings %}<option value="{{ b.pk }}" {% if building == b.pk|stringformat:"s" %}selected{% endif %}>{{ b.code }} · {{ b.name }}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="room" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Room</label>
-      <select id="room" name="room" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+      <label for="f-room" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Room</label>
+      <select id="f-room" name="room" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
         <option value="">All rooms</option>
-        {% for r in rooms %}
-        <option value="{{ r.code }}" {% if r.code == room %}selected{% endif %}>{{ r.label }}</option>
-        {% endfor %}
+        {% for r in rooms %}<option value="{{ r.pk }}" {% if room == r.pk|stringformat:"s" %}selected{% endif %}>{{ r.building.code }}-{{ r.room_code }}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="day" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Day</label>
-      <select id="day" name="day" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-        {% for value, label in days %}
-        <option value="{{ value }}" {% if value == day %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
+      <label for="f-day" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Day</label>
+      <select id="f-day" name="day" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+        <option value="">Any day</option>
+        {% for value, label in days %}<option value="{{ value }}" {% if day == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </div>
     <div>
-      <label for="instructor" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Instructor</label>
-      <input id="instructor" name="instructor" value="{{ instructor }}" placeholder="Search instructor" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+      <label for="f-instructor" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Instructor</label>
+      <input id="f-instructor" name="instructor" value="{{ instructor }}" placeholder="Name or ID" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+    </div>
+    <div>
+      <label for="f-state" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">State</label>
+      <select id="f-state" name="state" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
+        <option value="">Active &amp; inactive</option>
+        <option value="active" {% if state == "active" %}selected{% endif %}>Active only</option>
+        <option value="inactive" {% if state == "inactive" %}selected{% endif %}>Inactive only</option>
+      </select>
     </div>
   </div>
-  <div class="mt-4 flex items-center justify-end gap-2">
-    <a href="{% url 'scheduling:schedule_list' %}" class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-medium text-stone-700 hover:bg-stone-50">Clear</a>
-    <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Apply filters</button>
+  <div class="mt-3 flex gap-2">
+    <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Apply filters</button>
+    {% if term or building or room or day or instructor or state %}<a href="{% if only_conflicts %}{% url 'scheduling:conflicts' %}{% else %}{% url 'scheduling:schedule_list' %}{% endif %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
   </div>
 </form>
 
-<form method="post" action="{% url 'scheduling:schedule_list' %}">
+<form id="schedule-bulk-form" method="post" action="{% url 'scheduling:schedule_list' %}">
   {% csrf_token %}
-  <div class="mb-3 flex items-center justify-between gap-3 flex-wrap">
-    <div class="flex items-center gap-2">
-      <label for="bulk_action" class="text-[12px] font-semibold uppercase tracking-wider text-stone-500">Bulk action</label>
-      <select id="bulk_action" name="bulk_action" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px]">
-        <option value="">Choose action</option>
+  <input type="hidden" name="return_qs" value="{{ request.GET.urlencode }}">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200">
+    <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-3">
+      <label for="bulk-action" class="text-[12px] font-semibold uppercase tracking-wider text-stone-500">With selected</label>
+      <select id="bulk-action" name="bulk_action" class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-[13px]">
+        <option value="">Choose…</option>
         <option value="activate">Activate</option>
         <option value="deactivate">Deactivate</option>
       </select>
-      <button type="submit" class="bg-white border border-stone-200 px-3 py-2 rounded-lg text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Apply</button>
+      <button type="submit" class="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Apply</button>
+      <span class="text-[12px] text-stone-500">Activations that would create a conflict are skipped.</span>
     </div>
-    <div class="text-[12px] text-stone-500">{{ rows|length }} schedule block{{ rows|length|pluralize }}</div>
-  </div>
-
-  <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
-    <table class="min-w-full text-[13px]">
-      <thead>
-        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-400">
-          <th class="p-3 w-10"><input type="checkbox" id="select-all-schedules" class="rounded border-stone-300"></th>
-          <th class="p-3 font-medium">Term</th>
-          <th class="p-3 font-medium">Room</th>
-          <th class="p-3 font-medium">Subject</th>
-          <th class="p-3 font-medium">Instructor</th>
-          <th class="p-3 font-medium">Day</th>
-          <th class="p-3 font-medium">Time</th>
-          <th class="p-3 font-medium">Active</th>
-          <th class="p-3 font-medium text-right">Action</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-stone-100">
-        {% for row in rows %}
-        <tr class="hover:bg-stone-50/60 align-middle">
-          <td class="p-3"><input type="checkbox" name="selected_schedule" value="{{ row.pk }}" class="schedule-checkbox rounded border-stone-300"></td>
-          <td class="p-3 font-medium text-stone-700">{{ row.term }}</td>
-          <td class="p-3 font-mono font-semibold text-stone-800">{{ row.room }}</td>
-          <td class="p-3">
-            <div class="font-semibold text-stone-800">{{ row.subject }}</div>
-            <div class="text-stone-500 text-[11px]">{{ row.title }}</div>
-          </td>
-          <td class="p-3">{{ row.instructor }}</td>
-          <td class="p-3">{{ row.day_label }}</td>
-          <td class="p-3 font-medium">{{ row.start_time }}–{{ row.end_time }}</td>
-          <td class="p-3">
-            {% if row.is_active %}
-            <span class="inline-flex items-center rounded-full bg-green-100 text-green-700 px-2.5 py-1 text-[11px] font-semibold">Active</span>
-            {% else %}
-            <span class="inline-flex items-center rounded-full bg-stone-200 text-stone-600 px-2.5 py-1 text-[11px] font-semibold">Inactive</span>
-            {% endif %}
-          </td>
-          <td class="p-3 text-right">
-            <button type="button" data-modal-open="schedule-edit-modal" class="inline-flex items-center gap-1 text-[#14342A] font-semibold hover:underline">Edit <i data-lucide="pencil-line" class="w-3.5 h-3.5"></i></button>
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="9" class="p-8 text-center text-stone-500">No schedule blocks match your current filters.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-[13px]">
+        <caption class="sr-only">Schedule blocks</caption>
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+            <th scope="col" class="p-3 w-8"><input type="checkbox" data-select-all aria-label="Select all blocks on this page" class="rounded border-stone-300"></th>
+            <th scope="col" class="p-3 font-semibold">Block</th>
+            <th scope="col" class="p-3 font-semibold">Room</th>
+            <th scope="col" class="p-3 font-semibold">When</th>
+            <th scope="col" class="p-3 font-semibold">Instructor</th>
+            <th scope="col" class="p-3 font-semibold">Term</th>
+            <th scope="col" class="p-3 font-semibold">Status</th>
+            <th scope="col" class="p-3 text-right font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {% for b in blocks %}
+          <tr class="hover:bg-stone-50/60{% if not b.is_active %} text-stone-400{% endif %}{% if b.has_conflict %} bg-red-50/40{% endif %}">
+            <td class="p-3"><input type="checkbox" name="selected_schedule" value="{{ b.pk }}" aria-label="Select {{ b.title }}" class="rounded border-stone-300"></td>
+            <td class="p-3">
+              <div class="font-semibold text-stone-900">{{ b.title }}</div>
+              {% if b.subject %}<div class="font-mono text-[11px] text-stone-500">{{ b.subject.code }}</div>{% endif %}
+            </td>
+            <td class="p-3"><a href="{% url 'scheduling:room_timetable' %}?room={{ b.room_id }}&amp;term={{ b.term_id }}" class="font-mono font-semibold hover:underline">{{ b.room.building.code }}-{{ b.room.room_code }}</a></td>
+            <td class="p-3 whitespace-nowrap">{{ b.get_day_of_week_display }}<div class="font-mono text-[12px] text-stone-500">{{ b.start_time|time:"H:i" }}–{{ b.end_time|time:"H:i" }}</div></td>
+            <td class="p-3">{% if b.instructor %}{{ b.instructor.full_name }}{% else %}<span class="text-stone-400">—</span>{% endif %}</td>
+            <td class="p-3 text-[12px]">{{ b.term }}</td>
+            <td class="p-3 whitespace-nowrap">
+              {% if b.has_conflict %}{% include "partials/status_pill.html" with status="OVERDUE" label="Conflict" %}
+              {% elif b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
+              {% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}
+            </td>
+            <td class="p-3 text-right whitespace-nowrap">
+              <div class="inline-flex items-center justify-end gap-3">
+                <button type="button" data-schedule-edit
+                        data-block='{"id": {{ b.pk }}, "title": "{{ b.title|escapejs }}", "room_id": {{ b.room_id }}, "term_id": {{ b.term_id }}, "subject_id": "{{ b.subject_id|default_if_none:'' }}", "instructor_id": "{{ b.instructor_id|default_if_none:'' }}", "day_of_week": {{ b.day_of_week }}, "start_time": "{{ b.start_time|time:'H:i' }}", "end_time": "{{ b.end_time|time:'H:i' }}", "is_active": {{ b.is_active|yesno:"true,false" }}}'
+                        class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ b.title }}</span></button>
+                {% if b.is_active %}
+                <a href="{% url 'scheduling:exception_create' b.pk %}" data-modal-form="exception-modal"
+                   class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="calendar-x" aria-hidden="true" class="w-3.5 h-3.5"></i>Exception<span class="sr-only"> for {{ b.title }}</span></a>
+                {% endif %}
+                <button type="submit" form="toggle-{{ b.pk }}" class="font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.title }}</span></button>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          {% if only_conflicts %}
+          {% include "partials/empty_state.html" with colspan=8 icon="check-circle" title="No conflicts" message="No two active blocks overlap in the same room, day and term." %}
+          {% else %}
+          {% include "partials/empty_state.html" with colspan=8 icon="calendar" title="No schedule blocks" message="Add blocks here, from the timetable, or import a term with the import_schedule command." %}
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "partials/pagination.html" with item_label="blocks" %}
   </div>
 </form>
 
-<div id="schedule-edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="schedule-edit-title">
-  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
-  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-2xl">
-    <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 flex items-center justify-center text-[#1E6B4A]">
-          <i data-lucide="calendar-days" class="w-5 h-5"></i>
-        </div>
-        <div>
-          <h2 id="schedule-edit-title" class="text-[15px] font-bold text-stone-900">Edit schedule</h2>
-          <p class="text-[12px] text-stone-500">Update room, timing, and instructor details.</p>
-        </div>
-      </div>
-      <button type="button" data-modal-close aria-label="Close" class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-stone-500 hover:bg-stone-50">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
-    </div>
+{# Per-row toggle forms live outside the bulk form (forms can't nest); buttons reach them via form="". #}
+{% for b in blocks %}
+<form id="toggle-{{ b.pk }}" method="post" action="{% url 'scheduling:schedule_toggle' b.pk %}" class="hidden"
+      {% if b.is_active %}data-confirm="It stops appearing on the timetable and no longer blocks the room. You can reactivate it later." data-confirm-title="Deactivate schedule block" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ b.title }} · {{ b.get_day_of_week_display }} {{ b.start_time|time:'H:i' }}–{{ b.end_time|time:'H:i' }}"{% endif %}>
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+</form>
+{% endfor %}
 
-    <div class="max-h-[70vh] overflow-y-auto p-5">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Term</span>
-          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-            <option>2026 Fall</option>
-            <option>2027 Spring</option>
-          </select>
-        </label>
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Room</span>
-          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-            <option>CCS-204</option>
-            <option>ENG-118</option>
-          </select>
-        </label>
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Subject</span>
-          <input type="text" value="CS 101" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-        </label>
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Instructor</span>
-          <input type="text" value="P. Nguyen" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-        </label>
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Day</span>
-          <select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-            <option>Monday</option>
-            <option selected>Wednesday</option>
-          </select>
-        </label>
-        <label class="text-[13px] text-stone-700">
-          <span class="mb-1 block font-medium">Time</span>
-          <input type="text" value="09:00–10:30" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]">
-        </label>
-        <label class="md:col-span-2 flex items-center gap-2 text-[13px] text-stone-700">
-          <input type="checkbox" checked class="h-4 w-4 rounded border-stone-300 text-[#1E6B4A] focus:ring-[#1E6B4A]">
-          Active schedule block
-        </label>
-      </div>
-    </div>
+{% include "scheduling/_schedule_form_modal.html" %}
+{% include "partials/ajax_modal_shell.html" with modal_id="exception-modal" modal_label="Schedule exception" %}
+{% endblock %}
 
-    <div class="sticky bottom-0 border-t border-stone-200 bg-white px-5 py-3 flex items-center justify-end gap-2">
-      <button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
-      <button type="button" class="px-4 py-2 rounded-lg bg-[#14342A] hover:bg-[#0F2E1F] text-white text-[13px] font-semibold">Save changes</button>
-    </div>
-  </div>
-</div>
-
+{% block extra_js %}
+<script src="{% static 'js/schedule-grid.js' %}"></script>
+<script src="{% static 'js/schedule-modal.js' %}"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var main = document.getElementById('select-all-schedules');
-    var checks = document.querySelectorAll('.schedule-checkbox');
-    if (main) {
-      main.addEventListener('change', function () {
-        checks.forEach(function (checkbox) { checkbox.checked = main.checked; });
-      });
-    }
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches("[data-select-all]")) return;
+    document.querySelectorAll('input[name="selected_schedule"]').forEach(function (c) { c.checked = e.target.checked; });
   });
 </script>
 {% endblock %}

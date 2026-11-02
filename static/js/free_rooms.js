@@ -15,7 +15,6 @@
   var searchIcon = form.querySelector("[data-search-icon]");
   var startInput = form.elements.start;
   var endInput = form.elements.end;
-  var dialog = document.getElementById("schedule-stub-dialog");
 
   var TYPE_ICONS = {
     CLASSROOM: "presentation", LABORATORY: "flask-conical", OFFICE: "briefcase",
@@ -26,7 +25,6 @@
   var debounceTimer = null;
   var inFlight = null;
   var lastQuery = null;   // the query the cards on screen belong to
-  var lastTrigger = null;
 
   // --- time helpers -------------------------------------------------------
   function toMinutes(hhmm) {
@@ -200,29 +198,20 @@
   }
 
   // --- "Schedule this" ----------------------------------------------------
+  // schedule-modal.js listens for this event and opens the block editor
+  // pre-filled with the room and the slot the cards were searched for.
   function openScheduler(btn) {
     var q = lastQuery || currentParams();
-    var prefill = {
-      room_id: parseInt(btn.dataset.roomId, 10),
-      room_label: btn.dataset.roomLabel,
-      day_of_week: parseInt(q.get("day"), 10),
-      start_time: q.get("start"),
-      end_time: q.get("end")
-    };
-
-    // Contract for F5.2: listen for this event on document, then fill the form.
-    if (window.KeyTrackModal && document.getElementById("schedule-form-modal")) {
-      document.dispatchEvent(new CustomEvent("keytrack:schedule-prefill", { detail: prefill }));
-      window.KeyTrackModal.open("schedule-form-modal");
-      return;
-    }
-
-    lastTrigger = btn;
-    dialog.querySelector('[data-prefill="room"]').textContent = prefill.room_label;
-    dialog.querySelector('[data-prefill="day"]').textContent = dayLabel(prefill.day_of_week);
-    dialog.querySelector('[data-prefill="time"]').textContent = prefill.start_time + "–" + prefill.end_time;
-    document.body.classList.add("overflow-hidden");
-    dialog.showModal();
+    document.dispatchEvent(new CustomEvent("keytrack:schedule-prefill", {
+      detail: {
+        room_id: parseInt(btn.dataset.roomId, 10),
+        room_label: btn.dataset.roomLabel,
+        day_of_week: parseInt(q.get("day"), 10),
+        start_time: q.get("start"),
+        end_time: q.get("end"),
+        term_id: q.get("term") || null
+      }
+    }));
   }
 
   // --- wiring -------------------------------------------------------------
@@ -261,15 +250,6 @@
   results.addEventListener("click", function (e) {
     var btn = e.target.closest("[data-schedule-room]");
     if (btn) openScheduler(btn);
-  });
-
-  dialog.addEventListener("click", function (e) {
-    // A click on the <dialog> itself (not its card) is a backdrop click.
-    if (e.target === dialog || e.target.closest("[data-dialog-close]")) dialog.close();
-  });
-  dialog.addEventListener("close", function () {
-    document.body.classList.remove("overflow-hidden");
-    if (lastTrigger && lastTrigger.isConnected) lastTrigger.focus();
   });
 
   syncDurationChips();

@@ -4,68 +4,104 @@
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Users &amp; Guards</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Manage user accounts, roles, and security personnel.</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">Staff accounts, roles and guard posts. Accounts created here skip the approval queue.</p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{% url 'accounts:pending_user_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="user-check" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Pending approvals</span>
+    </a>
+    <a href="{% url 'facilities:post_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="shield" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Guard posts</span>
+    </a>
+    <a href="{% url 'accounts:user_create' %}" data-modal-form="user-modal" data-modal-refresh="#user-list-region"
+       class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="user-plus" aria-hidden="true" class="w-4 h-4"></i><span>Add user</span>
+    </a>
   </div>
 </div>
 
-<form method="get" class="flex gap-2" role="search" aria-label="Search users">
-  <label for="user-q" class="sr-only">Search name, username, or employee ID</label>
-  <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
+<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter users">
+  <label for="user-q" class="sr-only">Search name, username, employee ID or email</label>
+  <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
-    <input id="user-q" name="q" value="{{ q }}" placeholder="Search name, username, employee ID..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
+    <input id="user-q" name="q" value="{{ q }}" placeholder="Search name, username, employee ID…" autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
   <label for="role-filter" class="sr-only">Filter by role</label>
-  <select id="role-filter" name="role" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2">
+  <select id="role-filter" name="role" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
     <option value="">All roles</option>
-    {% for val, label in roles %}
-    <option value="{{ val }}" {% if role_filter == val %}selected{% endif %}>{{ label }}</option>
-    {% endfor %}
+    {% for val, label in roles %}<option value="{{ val }}" {% if role_filter == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Filter</button>
+  <label for="approval-filter" class="sr-only">Filter by approval</label>
+  <select id="approval-filter" name="approval" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">Any approval</option>
+    {% for val, label in approvals %}<option value="{{ val }}" {% if approval_filter == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <label for="dept-filter" class="sr-only">Filter by department</label>
+  <select id="dept-filter" name="department" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
+    <option value="">All departments</option>
+    {% for d in departments %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or role_filter or approval_filter or dept_filter %}<a href="{% url 'accounts:user_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
-<div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-  <table class="min-w-full text-[13px]">
-    <caption class="sr-only">System Users and Guards</caption>
-    <thead>
-      <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
-        <th scope="col" class="p-3 font-medium">Name</th>
-        <th scope="col" class="p-3 font-medium">Username</th>
-        <th scope="col" class="p-3 font-medium">Role</th>
-        <th scope="col" class="p-3 font-medium">Department</th>
-        <th scope="col" class="p-3 font-medium">Status</th>
-        <th scope="col" class="p-3 font-medium">Active</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-stone-100">
-      {% for u in users %}
-      <tr class="hover:bg-stone-50/60">
-        <td class="p-3 font-semibold text-stone-900">{{ u.get_full_name|default:u.username }}</td>
-        <td class="p-3 font-mono text-[12px] text-stone-600">{{ u.username }}</td>
-        <td class="p-3">
-          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold
-            {% if u.role == 'ADMIN' %}bg-purple-50 text-purple-800 border border-purple-200
-            {% elif u.role == 'GUARD' %}bg-emerald-50 text-emerald-800 border border-emerald-200
-            {% elif u.role == 'FACILITIES' %}bg-blue-50 text-blue-800 border border-blue-200
-            {% elif u.role == 'CUSTODIAN' %}bg-amber-50 text-amber-800 border border-amber-200
-            {% else %}bg-stone-100 text-stone-700 border border-stone-200{% endif %}">
-            {{ u.get_role_display }}
-          </span>
-        </td>
-        <td class="p-3 text-stone-600">{{ u.department.name|default:"—" }}</td>
-        <td class="p-3">
-          {% include "partials/status_pill.html" with status=u.approval_status %}
-        </td>
-        <td class="p-3 text-stone-600">{{ u.is_active|yesno:"Active,Inactive" }}</td>
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="6" class="p-6 text-center text-stone-500">No users found matching your criteria.</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div id="user-list-region">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">System users and guards</caption>
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 font-semibold">Name</th>
+          <th scope="col" class="p-3.5 font-semibold">Username</th>
+          <th scope="col" class="p-3.5 font-semibold">Role</th>
+          <th scope="col" class="p-3.5 font-semibold">Department · Post</th>
+          <th scope="col" class="p-3.5 font-semibold">Approval</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for u in users %}
+        <tr class="hover:bg-stone-50/60{% if not u.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5">
+            <div class="flex items-center gap-2.5">
+              <span aria-hidden="true" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1E6B4A]/10 text-[11px] font-bold text-[#1E6B4A]">{{ u.initials }}</span>
+              <div class="min-w-0">
+                <div class="font-semibold text-stone-900">{{ u.get_full_name|default:u.username }}{% if u.pk == request.user.pk %} <span class="text-[11px] font-normal text-stone-500">(you)</span>{% endif %}</div>
+                {% if u.employee_id %}<div class="font-mono text-[11px] text-stone-500">{{ u.employee_id }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td class="p-3.5 font-mono text-[12px] text-stone-600">{{ u.username }}</td>
+          <td class="p-3.5">{% include "partials/status_pill.html" with status=u.role label=u.get_role_display %}{% if u.is_superuser %} <span class="text-[11px] text-stone-500">superuser</span>{% endif %}</td>
+          <td class="p-3.5 text-stone-600">{{ u.department.name|default:"—" }}{% if u.assigned_post %}<div class="text-[12px] text-stone-500 inline-flex items-center gap-1"><i data-lucide="shield" aria-hidden="true" class="w-3 h-3"></i>{{ u.assigned_post.name }}</div>{% endif %}</td>
+          <td class="p-3.5">{% include "partials/status_pill.html" with status=u.approval_status label=u.get_approval_status_display %}</td>
+          <td class="p-3.5">{% if u.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5 text-right whitespace-nowrap">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'accounts:user_update' u.pk %}" data-modal-form="user-modal" data-modal-refresh="#user-list-region"
+                 class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ u.username }}</span></a>
+              <a href="{% url 'accounts:user_reset_password' u.pk %}" data-modal-form="password-modal"
+                 class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="key-round" aria-hidden="true" class="w-3.5 h-3.5"></i>Password<span class="sr-only"> for {{ u.username }}</span></a>
+              {% if u.pk != request.user.pk %}
+              <form method="post" action="{% url 'accounts:user_toggle' u.pk %}" class="inline"
+                    {% if u.is_active %}data-confirm="They are signed out of new requests and any open guard shift is ended now." data-confirm-title="Deactivate account" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ u.username }} · {{ u.get_role_display }}"{% endif %}>
+                {% csrf_token %}
+                <button type="submit" class="font-medium {% if u.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if u.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ u.username }}</span></button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% include "partials/empty_state.html" with colspan=7 icon="users" title="No users found" message="No accounts match these filters." %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="users" %}
+  </div>
 </div>
 
-{% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
+{% include "partials/ajax_modal_shell.html" with modal_id="user-modal" modal_label="User form" %}
+{% include "partials/ajax_modal_shell.html" with modal_id="password-modal" modal_size="md" modal_label="Reset password" %}
 {% endblock %}

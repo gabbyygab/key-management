@@ -13,6 +13,8 @@ urlpatterns = [
     path('facilities/', include('facilities.urls')),
     path('keys/', include('keys.urls')),
     path('transactions/', include('transactions.urls')),
+    path('api/borrowers/', include('accounts.api_urls')),
+    path('api/keys/', include('keys.api_urls')),
     path('api/transactions/', include('transactions.api_urls')),
     path('audit/', include('audit.urls')),
     path('reports/', include('reports.urls')),

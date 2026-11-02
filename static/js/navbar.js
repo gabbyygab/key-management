@@ -123,4 +123,54 @@
       setInterval(tick, 1000);
     }
   }
+
+  /* ── 3. Mobile sidebar drawer (F2.2) ──────────────────────────────────── */
+
+  var menuBtn  = document.getElementById("navbar-menu-btn");
+  var sidebar  = document.getElementById("app-sidebar");
+  var backdrop = document.getElementById("sidebar-backdrop");
+
+  if (menuBtn && sidebar) {
+    function drawerOpen() { return sidebar.classList.contains("is-open"); }
+
+    function openDrawer() {
+      sidebar.classList.add("is-open");
+      if (backdrop) backdrop.classList.add("is-open");
+      menuBtn.setAttribute("aria-expanded", "true");
+      document.body.classList.add("overflow-hidden");
+      var first = sidebar.querySelector(".sidebar-link, .sidebar-close");
+      if (first) first.focus();
+    }
+
+    function closeDrawer(restoreFocus) {
+      if (!drawerOpen()) return;
+      sidebar.classList.remove("is-open");
+      if (backdrop) backdrop.classList.remove("is-open");
+      menuBtn.setAttribute("aria-expanded", "false");
+      if (!(window.KeyTrackModal && window.KeyTrackModal.anyOpen())) {
+        document.body.classList.remove("overflow-hidden");
+      }
+      if (restoreFocus) menuBtn.focus();
+    }
+
+    menuBtn.addEventListener("click", function () {
+      if (drawerOpen()) closeDrawer(true);
+      else openDrawer();
+    });
+
+    document.addEventListener("click", function (e) {
+      if (e.target.closest("[data-sidebar-close]")) closeDrawer(true);
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && drawerOpen()) closeDrawer(true);
+    });
+
+    /* Opening logout (or any modal) from the drawer should not leave it open
+     * underneath; growing past the breakpoint resets it too. */
+    document.addEventListener("modal:open", function () { closeDrawer(false); }, true);
+    window.addEventListener("resize", function () {
+      if (window.innerWidth >= 768) closeDrawer(false);
+    });
+  }
 })();

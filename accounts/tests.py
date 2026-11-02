@@ -593,7 +593,7 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Guard Shifts")
         self.assertContains(res, reverse("audit:log_list"))
         self.assertContains(res, "Audit Log")
-        self.assertContains(res, reverse("transactions:reports"))
+        self.assertContains(res, reverse("reports:index"))
         self.assertContains(res, "Reports")
 
         # Guard-specific menu items MUST NOT appear for Admin
@@ -643,7 +643,7 @@ class SidebarRoleSplitTests(TestCase):
         self.assertNotContains(res, "Pending Approvals")
         self.assertNotContains(res, reverse("audit:log_list"))
         self.assertNotContains(res, "Audit Log")
-        self.assertNotContains(res, reverse("transactions:reports"))
+        self.assertNotContains(res, reverse("reports:index"))
         self.assertNotContains(res, "Reports")
 
     def test_superuser_sees_admin_sidebar(self):
@@ -694,33 +694,17 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Guard")
 
     def test_active_link_styling_for_admin_and_guard(self):
-        """Active link receives bg-white text-[#0F2E1F] font-semibold styling."""
-        # Admin on Dashboard
+        """The current page's link gets .is-active + aria-current; others don't."""
         self.client.force_login(self.admin)
         res = self.client.get(reverse("dashboard"))
-        # Dashboard is active
-        self.assertContains(
-            res,
-            'href="/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 bg-white text-[#0F2E1F] font-semibold"',
-        )
-        # Key Inventory is inactive
-        self.assertContains(
-            res,
-            'href="/keys/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 text-white/80 hover:bg-white/10"',
-        )
+        self.assertContains(res, 'href="/" aria-current="page" class="sidebar-link is-active"')
+        self.assertContains(res, 'href="/keys/" class="sidebar-link"')
 
-        # Guard on POS
         self.client.force_login(self.guard)
         res = self.client.get(reverse("transactions:borrow_dashboard"))
         self.assertContains(
-            res,
-            'href="/transactions/borrow/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 bg-white text-[#0F2E1F] font-semibold"',
-        )
-        # Shift log is inactive
-        self.assertContains(
-            res,
-            'href="/transactions/shifts/" class="flex items-center gap-2 px-3 py-2 rounded-lg mb-0.5 text-white/80 hover:bg-white/10"',
-        )
+            res, 'href="/transactions/borrow/" aria-current="page" class="sidebar-link is-active"')
+        self.assertContains(res, 'href="/transactions/shifts/" class="sidebar-link"')
 
     def test_new_endpoints_permission_gating(self):
         """Verify role protection on newly wired endpoints."""
@@ -728,12 +712,12 @@ class SidebarRoleSplitTests(TestCase):
         self.client.force_login(self.guard)
         self.assertEqual(self.client.get(reverse("accounts:user_list")).status_code, 403)
         self.assertEqual(self.client.get(reverse("audit:log_list")).status_code, 403)
-        self.assertEqual(self.client.get(reverse("transactions:reports")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("reports:index")).status_code, 403)
 
         self.client.force_login(self.admin)
         self.assertEqual(self.client.get(reverse("accounts:user_list")).status_code, 200)
         self.assertEqual(self.client.get(reverse("audit:log_list")).status_code, 200)
-        self.assertEqual(self.client.get(reverse("transactions:reports")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("reports:index")).status_code, 200)
 
         # Guard read-only lookups: accessible by guard and admin
         self.client.force_login(self.guard)

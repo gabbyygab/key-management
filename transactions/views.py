@@ -2,31 +2,37 @@ import csv
 import datetime
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import HttpResponse
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.permissions import admin_or_guard_required, admin_required, guard_required
-from accounts.permissions import admin_or_guard_required, guard_required, admin_required
+from accounts.api import serialize_borrower
+from accounts.crud import is_modal
 from accounts.models import Borrower, User
+from accounts.permissions import admin_or_guard_required, admin_required, guard_required
 from audit.models import ActivityLog
+from audit.services import Action, log_activity
 from facilities.models import Building, Room
 from keys.models import Key
 from scheduling.models import ScheduleBlock, ScheduleException
 from scheduling.services import get_room_today_schedule
+from .forms import TransactionCorrectionForm
 from .models import BorrowTransaction, GuardShift
 from .services import (
     BorrowError,
+    ScheduleWarning,
     active_transactions,
-    borrow_key,
     get_active_shift,
-    return_key,
+    log_return,
+    parse_due,
+    pos_borrow,
+    return_key_with_condition,
 )
 
 
@@ -237,32 +243,50 @@ def borrow_dashboard(request):
     querystring = params.urlencode()
 
     shift = get_active_shift(request.user)
+    buildings = Building.objects.filter(is_active=True).order_by("code")
 
     return render(request, "transactions/borrow_dashboard.html", {
+        "buildings": buildings,
+        "schedule_enforcement": settings.SCHEDULE_ENFORCEMENT,
         "q_borrower": q_borrower, "q_key": q_key,
         "borrowers": borrowers, "selected": selected,
         "active_txn": active_txn, "available_keys": available_keys,
         "selected_key": selected_key, "selected_key_schedule": selected_key_schedule,
         "borrowed": borrowed_page, "page_obj": borrowed_page,
         "querystring": querystring, "shift": shift,
+        # pos.js picks up a borrower chosen through the no-JS links.
+        "selected_json": serialize_borrower(selected, active=active_txn) if selected else None,
     })
 
 
 @guard_required
 @require_POST
 def borrow_confirm(request):
-    borrower_id = request.POST.get("borrower_id")
-    key_id = request.POST.get("key_id")
+    """No-JS fallback for the POS release. Same wrapper as the JSON API."""
+    borrower_id = request.POST.get("borrower_id", "")
+    key_id = request.POST.get("key_id", "")
     purpose = request.POST.get("purpose", "").strip()
-    borrower = get_object_or_404(Borrower, pk=borrower_id)
+    borrower = get_object_or_404(Borrower, pk=borrower_id if borrower_id.isdigit() else 0)
+    due, due_error = None, None
     try:
-        txn = borrow_key(key_id=key_id, borrower=borrower,
-                          guard=request.user, purpose=purpose, request=request)
-        messages.success(request, f"Released {txn.key.key_code} to {borrower.full_name} ({txn.transaction_no}).")
-    except BorrowError as e:
-        messages.error(request, str(e))
-    except Key.DoesNotExist:
+        due = parse_due(request.POST.get("expected_return_at"))
+    except ValueError as e:
+        due_error = str(e)
+    if due_error:
+        messages.error(request, due_error)
+    elif not key_id.isdigit():
         messages.error(request, "Key not found.")
+    else:
+        try:
+            txn = pos_borrow(key_id=int(key_id), borrower=borrower, guard=request.user,
+                             purpose=purpose, expected_return_at=due,
+                             override_reason=request.POST.get("override_reason", ""),
+                             request=request)
+            messages.success(request, f"Released {txn.key.key_code} to {borrower.full_name} ({txn.transaction_no}).")
+        except ScheduleWarning as e:
+            messages.warning(request, str(e))
+        except BorrowError as e:
+            messages.error(request, str(e))
     url = reverse("transactions:borrow_dashboard")
     return redirect(f"{url}?{urlencode({'borrower_id': borrower_id})}")
 
@@ -271,9 +295,14 @@ def borrow_confirm(request):
 @require_POST
 def return_confirm(request, pk):
     remarks = request.POST.get("remarks", "").strip()
+    condition = request.POST.get("condition", "OK")
     try:
-        txn = return_key(transaction_id=pk, guard=request.user, remarks=remarks)
+        txn = return_key_with_condition(transaction_id=pk, guard=request.user,
+                                        remarks=remarks, condition=condition)
+        log_return(txn, guard=request.user, condition=condition, request=request)
         messages.success(request, f"Key {txn.key.key_code} returned.")
+    except BorrowTransaction.DoesNotExist:
+        messages.error(request, "Transaction not found.")
     except BorrowError as e:
         messages.error(request, str(e))
     return redirect("transactions:borrow_dashboard")
@@ -386,6 +415,9 @@ def get_filtered_transactions(request):
 
     if status_filter:
         txns = txns.filter(status=status_filter)
+
+    if request.GET.get("today"):
+        txns = txns.filter(borrowed_at__date=timezone.localdate())
 
     if building_filter:
         if building_filter.isdigit():
@@ -526,14 +558,34 @@ def export_transactions_csv(request):
         ])
 
     return response
-def reports_view(request):
-    total_txns = BorrowTransaction.objects.count()
-    active_txns = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.ACTIVE).count()
-    overdue_txns = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.OVERDUE).count()
-    returned_txns = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.RETURNED).count()
-    return render(request, "reports/index.html", {
-        "total_txns": total_txns,
-        "active_txns": active_txns,
-        "overdue_txns": overdue_txns,
-        "returned_txns": returned_txns,
-    })
+@admin_required
+def transaction_correct(request, pk):
+    """B4.6: only an ADMIN may amend a transaction record, and every correction
+    is written to the audit log with a before/after diff and a reason. Guards
+    have no edit path at all: they log records, they do not amend them."""
+    txn = get_object_or_404(
+        BorrowTransaction.objects.select_related("key__room__building", "borrower"), pk=pk)
+    form = TransactionCorrectionForm(request.POST or None, instance=txn)
+    modal = is_modal(request)
+    ctx = {"form": form, "txn": txn, "is_modal": modal,
+           "title": f"Correct {txn.transaction_no}"}
+    if request.method == "POST":
+        if form.is_valid():
+            changes = {
+                name: [str(form.initial.get(name) or ""), str(form.cleaned_data.get(name) or "")]
+                for name in form.changed_data if name != "reason"
+            }
+            form.save()
+            log_activity(request.user, Action.UPDATE, obj=txn, request=request,
+                         description=f"Correction: {form.cleaned_data['reason']}",
+                         changes=changes)
+            msg = f"{txn.transaction_no} corrected."
+            if modal:
+                return HttpResponse(msg, status=200)
+            messages.success(request, msg)
+            return redirect("transactions:history")
+        if modal:
+            return render(request, "transactions/_correction_modal.html", ctx, status=422)
+    if modal:
+        return render(request, "transactions/_correction_modal.html", ctx)
+    return render(request, "transactions/correction_form.html", ctx)

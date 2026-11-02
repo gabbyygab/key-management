@@ -241,3 +241,69 @@
     background: #0f2e1f;
     color: var(--sidebar-gold);
 }
+/* ===== Mobile drawer (F2.2) =====
+ * Below 768px the sidebar is hidden; the navbar hamburger adds .is-open,
+ * which slides it in over the page with a dimmed backdrop. */
+.sidebar-close {
+    display: none;
+    margin-left: auto;
+    padding: 0.35rem;
+    border-radius: 0.5rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.sidebar-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.sidebar-close svg {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+
+.sidebar-backdrop {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    .app-sidebar.is-open {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 45;
+        width: min(18rem, 85vw);
+        height: 100dvh;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+        animation: sidebar-slide-in 160ms ease-out;
+    }
+
+    .app-sidebar.is-open .sidebar-nav {
+        overflow-y: auto;
+    }
+
+    .app-sidebar.is-open .sidebar-close {
+        display: inline-flex;
+    }
+
+    .sidebar-backdrop.is-open {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 44;
+        background: rgba(28, 25, 23, 0.6);
+    }
+}
+
+@keyframes sidebar-slide-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-sidebar.is-open {
+        animation: none;
+    }
+}

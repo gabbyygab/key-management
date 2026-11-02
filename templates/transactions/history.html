@@ -216,6 +216,14 @@
             <i data-lucide="eye" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Details</span>
           </button>
+          {% if user.is_admin_role %}
+          <a href="{% url 'transactions:correct' t.pk %}" data-modal-form="correction-modal"
+             aria-label="Correct transaction {{ t.transaction_no }}"
+             class="ml-1 p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-stone-800 hover:bg-white transition-colors inline-flex items-center gap-1 text-[12px] font-medium">
+            <i data-lucide="file-pen" aria-hidden="true" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Correct</span>
+          </a>
+          {% endif %}
         </td>
       </tr>
       {% empty %}
@@ -235,6 +243,10 @@
   {# Pagination #}
   {% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
 </div>
+
+{% if user.is_admin_role %}
+{% include "partials/ajax_modal_shell.html" with modal_id="correction-modal" modal_size="md" modal_label="Correct transaction" %}
+{% endif %}
 
 {# Detail Timeline Modal #}
 <div id="transaction-detail-modal"

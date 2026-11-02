@@ -7,7 +7,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from accounts.forms import BulkKeyForm, CategoryForm, KeyForm
-from accounts.permissions import admin_required
+from accounts.permissions import admin_or_guard_required, admin_required
+from audit.services import Action, log_activity, log_form_save
 from facilities.models import Building
 from .models import Key, KeyCategory
 from .services import (
@@ -74,6 +75,7 @@ def key_create(request):
             obj = form.save(commit=False)
             obj.created_by = request.user
             obj.save()
+            log_form_save(request, form, obj, created=True)
             if is_modal:
                 return HttpResponse(f"Key {obj.key_code} added.", status=201)
             messages.success(request, f"Key {obj.key_code} added.")
@@ -104,6 +106,7 @@ def key_update(request, pk):
     if request.method == "POST":
         if form.is_valid():
             form.save()
+            log_form_save(request, form, obj, created=False)
             if is_modal:
                 return HttpResponse(f"Key {obj.key_code} updated.", status=200)
             messages.success(request, f"Key {obj.key_code} updated.")
@@ -159,6 +162,8 @@ def key_bulk_create(request):
                     user=request.user,
                 )
                 msg = f"Created {len(created)} copies of key for {room}."
+                log_activity(request.user, Action.CREATE, obj=room, request=request,
+                             description=msg + " Codes: " + ", ".join(k.key_code for k in created))
                 if is_modal:
                     return HttpResponse(msg, status=201)
                 messages.success(request, msg)
@@ -239,9 +244,10 @@ def category_create(request):
     if request.method == "POST":
         if form.is_valid():
             obj = form.save()
-            messages.success(request, f"Category '{obj.name}' added.")
+            log_form_save(request, form, obj, created=True)
             if is_modal:
-                return HttpResponse("OK", status=201)
+                return HttpResponse(f"Category '{obj.name}' added.", status=201)
+            messages.success(request, f"Category '{obj.name}' added.")
             return redirect("keys:category_list")
         elif is_modal:
             return render(
@@ -278,9 +284,10 @@ def category_update(request, pk):
     if request.method == "POST":
         if form.is_valid():
             obj = form.save()
-            messages.success(request, f"Category '{obj.name}' updated.")
+            log_form_save(request, form, obj, created=False)
             if is_modal:
-                return HttpResponse("OK", status=200)
+                return HttpResponse(f"Category '{obj.name}' updated.", status=200)
+            messages.success(request, f"Category '{obj.name}' updated.")
             return redirect("keys:category_list")
         elif is_modal:
             return render(
@@ -320,6 +327,9 @@ def category_toggle(request, pk):
     try:
         new_state = toggle_category_active(category=category, force=force)
         state_str = "activated" if new_state else "deactivated"
+        log_activity(request.user, Action.UPDATE, obj=category, request=request,
+                     description=f"Category '{category.name}' {state_str}.",
+                     changes={"is_active": [str(not new_state), str(new_state)]})
         messages.success(request, f"Category '{category.name}' {state_str}.")
         if is_ajax:
             return JsonResponse({"success": True, "is_active": new_state})
@@ -334,7 +344,6 @@ def category_toggle(request, pk):
             }, status=422)
 
     return redirect("keys:category_list")
-from accounts.permissions import admin_or_guard_required
 
 
 @admin_or_guard_required

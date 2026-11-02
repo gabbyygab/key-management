@@ -30,6 +30,7 @@
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
     {% include "partials/session_expired_modal.html" %}
+    {% include "partials/confirm_modal.html" %}
   {% endif %}
   {% include "partials/toast.html" %}
   {% comment %} Version pinned deliberately: an unpinned CDN tag can change the icon set
@@ -42,6 +43,7 @@
   <script src="{% static 'js/skeletons.js' %}"></script>
   <script src="{% static 'js/modal.js' %}"></script>
   <script src="{% static 'js/modal-form.js' %}"></script>
+  <script src="{% static 'js/confirm.js' %}"></script>
   <script src="{% static 'js/search.js' %}"></script>
   <script src="{% static 'js/navbar.js' %}"></script>
 

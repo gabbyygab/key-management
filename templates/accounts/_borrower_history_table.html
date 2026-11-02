@@ -1,0 +1,34 @@
+{# Shared body for the borrower history modal and page. Context: borrower, txns. #}
+<div class="overflow-x-auto">
+  <table class="w-full text-[13px]">
+    <caption class="sr-only">Key transactions for {{ borrower.full_name }}, newest first</caption>
+    <thead class="bg-stone-50 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+      <tr>
+        <th scope="col" class="px-3 py-2 text-left">Txn</th>
+        <th scope="col" class="px-3 py-2 text-left">Key · Room</th>
+        <th scope="col" class="px-3 py-2 text-left">Borrowed</th>
+        <th scope="col" class="px-3 py-2 text-left">Returned</th>
+        <th scope="col" class="px-3 py-2 text-left">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {% for t in txns %}
+      <tr>
+        <td class="px-3 py-2 font-mono text-[12px]">{{ t.transaction_no }}</td>
+        <td class="px-3 py-2"><span class="font-mono font-semibold">{{ t.key.key_code }}</span>
+          <span class="text-stone-500">· {{ t.key.room }}</span>
+          {% if t.purpose %}<div class="text-[12px] text-stone-500">{{ t.purpose }}</div>{% endif %}</td>
+        <td class="px-3 py-2 whitespace-nowrap">{{ t.borrowed_at|date:"M d, Y H:i" }}
+          {% if t.released_by %}<div class="text-[12px] text-stone-500">by {{ t.released_by.full_name|default:t.released_by.username }}</div>{% endif %}</td>
+        <td class="px-3 py-2 whitespace-nowrap">{% if t.returned_at %}{{ t.returned_at|date:"M d, Y H:i" }}
+          {% if t.received_by %}<div class="text-[12px] text-stone-500">by {{ t.received_by.full_name|default:t.received_by.username }}</div>{% endif %}
+          {% else %}<span class="text-stone-400">—</span>{% endif %}</td>
+        <td class="px-3 py-2">{% include "partials/status_pill.html" with status=t.status %}</td>
+      </tr>
+      {% empty %}
+      {% include "partials/empty_state.html" with colspan=5 compact=True icon="history" title="No transactions yet" message="This borrower has never taken a key." %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if txns|length == 50 %}<p class="px-3 py-2 text-[12px] text-stone-500">Showing the 50 most recent. The full record is in Transaction History.</p>{% endif %}

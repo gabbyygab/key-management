@@ -49,3 +49,21 @@ class Room(models.Model):
 
     def __str__(self):
         return f"{self.building.code}-{self.room_code}"
+
+
+class GuardPost(models.Model):
+    """A desk or gate a guard is stationed at (B2.5).
+
+    The admin assigns a post to each guard (User.assigned_post); the login
+    signal stamps it onto the GuardShift so shift reports can tell gates apart.
+    """
+    name = models.CharField(max_length=100, unique=True)
+    building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.PROTECT,
+                                 related_name="guard_posts")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name

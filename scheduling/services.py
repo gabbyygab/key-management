@@ -1,11 +1,9 @@
 import json
 from datetime import timedelta
 
-from django.db.models import Q
+from django.utils import timezone
 
 from facilities.models import Room
-
-from django.utils import timezone
 from .models import ScheduleBlock, ScheduleException, Term
 
 
@@ -435,3 +433,128 @@ def get_current_occupant(room, when=None):
         if raw and raw.instructor:
             return raw.instructor
     return None
+
+
+# ---------------------------------------------------------------------------
+# B5.4 query helpers
+# ---------------------------------------------------------------------------
+
+def _active_term_for(date):
+    return (Term.objects.filter(is_active=True, start_date__lte=date, end_date__gte=date)
+            .order_by("-start_date").first())
+
+
+def get_day_schedule(date):
+    """Every block that actually meets on `date`, exceptions applied.
+
+    Returns a list of dicts {block, room, exception} ordered by start time:
+    CANCELLED blocks are dropped, ROOM_CHANGE/MOVED blocks report the
+    replacement room. One query for blocks, one for that day's exceptions.
+    """
+    term = _active_term_for(date)
+    if term is None:
+        return []
+    blocks = list(ScheduleBlock.objects.filter(
+        term=term, is_active=True, day_of_week=date.weekday(),
+    ).select_related("room__building", "subject", "instructor").order_by("start_time"))
+    exceptions = {
+        e.schedule_block_id: e for e in ScheduleException.objects
+        .filter(date=date, schedule_block__in=blocks).select_related("replacement_room__building")
+    }
+    day = []
+    for block in blocks:
+        exc = exceptions.get(block.pk)
+        if exc and exc.exception_type == ScheduleException.ExceptionType.CANCELLED:
+            continue
+        room = block.room
+        if exc and exc.replacement_room_id:
+            room = exc.replacement_room
+        day.append({"block": block, "room": room, "exception": exc})
+    return day
+
+
+def suggest_slots(room, duration_minutes, term, day_of_week=None,
+                  day_start=None, day_end=None):
+    """Open gaps in a room's week that fit `duration_minutes`.
+
+    Returns [{day_of_week, start, end}] — each gap between active blocks
+    within the 07:00–21:00 window that is at least the requested length.
+    """
+    from datetime import time as dtime
+    day_start = day_start or dtime(7, 0)
+    day_end = day_end or dtime(21, 0)
+
+    def minutes(t):
+        return t.hour * 60 + t.minute
+
+    def as_time(m):
+        return dtime(m // 60, m % 60)
+
+    days = [day_of_week] if day_of_week is not None else range(0, 6)
+    blocks = ScheduleBlock.objects.filter(room=room, term=term, is_active=True,
+                                          day_of_week__in=list(days)).order_by("start_time")
+    by_day = {d: [] for d in days}
+    for b in blocks:
+        by_day[b.day_of_week].append((minutes(b.start_time), minutes(b.end_time)))
+
+    slots = []
+    for d in days:
+        cursor = minutes(day_start)
+        for start, end in by_day[d] + [(minutes(day_end), minutes(day_end))]:
+            if start - cursor >= duration_minutes:
+                slots.append({"day_of_week": d, "start": as_time(cursor), "end": as_time(start)})
+            cursor = max(cursor, end)
+    return slots
+
+
+# ---------------------------------------------------------------------------
+# B5.5 schedule <-> borrowing link
+# ---------------------------------------------------------------------------
+
+def schedule_check_for_room(room, *, borrower_id=None, when=None):
+    """What the timetable says about handing this room's key out right now.
+
+    state:
+      "free"   — nothing scheduled in the room at this moment
+      "holder" — the borrower IS the scheduled instructor
+      "other"  — the room is scheduled to someone else (or to an unassigned
+                 class) right now; the POS must warn / block per
+                 settings.SCHEDULE_ENFORCEMENT
+    """
+    when = when or timezone.localtime()
+    schedule = get_room_today_schedule(room, when=when)
+    current = schedule.get("current_block") if schedule else None
+    nxt = schedule.get("next_block") if schedule else None
+
+    def block_payload(b):
+        if not b:
+            return None
+        return {
+            "id": b["id"],
+            "title": b["display_title"],
+            "instructor": b["instructor_name"],
+            "instructor_id": b["instructor_id"],
+            "start_time": b["start_time_str"],
+            "end_time": b["end_time_str"],
+            "time_display": b["time_display"],
+        }
+
+    state = "free"
+    expected_return_at = None
+    if current:
+        if borrower_id and current["instructor_id"] == borrower_id:
+            state = "holder"
+            end = timezone.make_aware(
+                timezone.datetime.combine(when.date(), current["end_time"]),
+                timezone.get_current_timezone())
+            expected_return_at = end
+        else:
+            state = "other"
+
+    return {
+        "state": state,
+        "current": block_payload(current),
+        "next": block_payload(nxt),
+        "expected_return_at": expected_return_at.isoformat() if expected_return_at else None,
+        "_expected_return_dt": expected_return_at,
+    }

@@ -50,8 +50,9 @@
 
       <form method="post" class="login-form">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
         <div>
-          <label for="username" class="field-label">Username</label>
+          <label for="username" class="field-label">Username or email</label>
           <input id="username" name="username" required autocomplete="username" class="field-input">
         </div>
         <div>

@@ -40,6 +40,14 @@ class User(AbstractUser):
     approved_by = models.ForeignKey("self", null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name="approvals")
     approved_at = models.DateTimeField(null=True, blank=True)
+    # B2.5: the post this guard staffs. Read by the login signal when it opens
+    # the GuardShift; null falls back to GuardShift's "Main Desk" default.
+    assigned_post = models.ForeignKey("facilities.GuardPost", null=True, blank=True,
+                                      on_delete=models.SET_NULL, related_name="guards")
+    # The auth.users id in Supabase once this account signs in through Supabase
+    # Auth (accounts/supabase_auth.py). Set by admin provisioning or on the
+    # first login after the switch; never from a bare email match.
+    supabase_uid = models.UUIDField(null=True, blank=True, unique=True, editable=False)
 
     @property
     def is_approved(self):
@@ -48,6 +56,16 @@ class User(AbstractUser):
     @property
     def full_name(self):
         return self.get_full_name() or self.username
+
+    @property
+    def initials(self):
+        if self.first_name and self.last_name:
+            return (self.first_name[:1] + self.last_name[:1]).upper()
+        return (self.username or "?")[:2].upper()
+
+    @property
+    def is_admin_role(self):
+        return self.is_superuser or self.role == self.Role.ADMIN
 
     def has_role(self, *roles):
         return self.role in roles
