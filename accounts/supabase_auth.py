@@ -20,6 +20,8 @@ from django.conf import settings
 # Supabase has no "disable user" flag; a long ban is how its dashboard does it.
 BAN_FOREVER = "876000h"  # ~100 years
 UNBAN = "none"
+# app_metadata key marking a Supabase user as created by a KEYTRACK admin.
+PROVISIONED_FLAG = "keytrack_provisioned"
 
 
 class SupabaseAuthError(Exception):
@@ -83,6 +85,10 @@ class SupabaseAuthClient:
             "password": password,
             "email_confirm": True,  # admins vouch for guards; no confirmation mail
             "user_metadata": metadata or {},
+            # Only the service-role key can set app_metadata. The database
+            # refuses any auth.users row without this flag (supabase/
+            # only_keytrack_creates_users.sql), so public sign-ups cannot land.
+            "app_metadata": {PROVISIONED_FLAG: True},
         })
 
     def update_user(self, uid, **attrs):
