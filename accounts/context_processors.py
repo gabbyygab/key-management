@@ -1,14 +1,3 @@
-from .services import pending_count
-
-
-def pending_approvals(request):
-    """Expose pending_approvals_count to templates for admin users."""
-    user = getattr(request, "user", None)
-    if user and user.is_authenticated and (user.is_superuser or getattr(user, "role", None) == "ADMIN"):
-        return {"pending_approvals_count": pending_count()}
-    return {"pending_approvals_count": 0}
-
-
 def navbar_context(request):
     """Inject `navbar_shift` for authenticated guards on every page.
 
@@ -78,8 +67,6 @@ def active_nav_context(request):
             active = "borrower_lookup"
         elif current in {"user_list", "user_create", "user_update"}:
             active = "users_guards"
-        elif current in {"pending_user_list", "user_approve", "user_reject"}:
-            active = "pending_approvals"
     elif ns == "audit":
         if current in {"log_list"}:
             active = "audit_log"

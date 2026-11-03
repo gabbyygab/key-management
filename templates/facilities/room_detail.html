@@ -73,7 +73,18 @@
             </div>
           </div>
         {% empty %}
-          <p class="text-[13px] text-stone-400 py-3">No keys assigned to this room yet.</p>
+          <div class="py-4 text-center space-y-2">
+            <p class="text-[13px] text-stone-500">No keys assigned to this room yet.</p>
+            {% if room.is_active %}
+            <form method="post" action="{% url 'facilities:room_generate_key' room.pk %}" class="inline">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="bg-[#14342A] text-white px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-[#0F2E1F] inline-flex items-center gap-1.5 shadow-xs">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Generate key
+              </button>
+            </form>
+            {% endif %}
+          </div>
         {% endfor %}
       </div>
     </div>

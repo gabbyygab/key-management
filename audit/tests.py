@@ -19,7 +19,6 @@ class AuditLogListTests(TestCase):
         self.guard = User.objects.create_user(
             username="guard_audit", email="g@example.com", password="pass1234",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
 
         now = timezone.now()

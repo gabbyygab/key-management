@@ -1,18 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Borrowers — KEYTRACK{% endblock %}
+{% load static %}
+{% block title %}{% if archived %}Archived borrowers{% else %}Borrowers{% endif %} — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Borrowers</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">People allowed to borrow keys. Guards search this list at release.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived borrowers{% else %}Borrowers{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}Guards no longer find these people at release. Restore one to bring them back{% if retention_days %} — after {{ retention_days }} days an archived borrower is deleted for good, with their borrow history{% endif %}.{% else %}People allowed to borrow keys. Guards search this list at release.{% endif %}</p>
   </div>
-  <a href="{% url 'accounts:borrower_create' %}" data-modal-form="borrower-modal" data-modal-refresh="#borrower-list-region"
-     class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
-    <i data-lucide="user-plus" aria-hidden="true" class="w-4 h-4"></i><span>Add borrower</span>
-  </a>
+  <div class="flex flex-wrap items-center gap-2">
+    {% include "partials/archive_switch.html" %}
+    {% if not archived %}
+    <a href="{% url 'accounts:borrower_create' %}" data-modal-form="borrower-modal" data-modal-refresh="#borrower-list-region"
+       class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
+      <i data-lucide="user-plus" aria-hidden="true" class="w-4 h-4"></i><span>Add borrower</span>
+    </a>
+    {% endif %}
+  </div>
 </div>
 
-<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter borrowers">
+<form method="get" data-list-region-form="#borrower-list-region" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter borrowers">
   <label for="borrower-q" class="sr-only">Search borrower name or ID number</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -37,15 +43,22 @@
     <option value="holding" {% if auth_filter == "holding" %}selected{% endif %}>Holding a key now</option>
   </select>
   <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
-  {% if q or type_filter or dept_filter or auth_filter %}<a href="{% url 'accounts:borrower_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+  {% if q or type_filter or dept_filter or auth_filter %}<a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
-<div id="borrower-list-region">
+<div id="borrower-list-region" data-list-region
+     data-bulk-url="{% url 'accounts:borrower_bulk' %}"
+     data-bulk-noun="borrower" data-bulk-noun-plural="borrowers">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Borrowers</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every borrower on this page">
+          </th>
           <th scope="col" class="p-3.5 font-semibold">ID No</th>
           <th scope="col" class="p-3.5 font-semibold">Name</th>
           <th scope="col" class="p-3.5 font-semibold">Type · Department</th>
@@ -58,6 +71,12 @@
       <tbody class="divide-y divide-stone-100">
         {% for b in borrowers %}
         <tr class="hover:bg-stone-50/60{% if not b.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ b.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if b.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ b.id_number }} · {{ b.full_name }}"
+                   aria-label="Select {{ b.full_name }}">
+          </td>
           <td class="p-3.5 font-mono">{{ b.id_number }}</td>
           <td class="p-3.5">
             <span class="font-semibold">{{ b.last_name }}, {{ b.first_name }}</span>
@@ -76,23 +95,42 @@
               {% if b.authorized_until %}<div class="mt-0.5 text-[11px] text-stone-500">until {{ b.authorized_until|date:"M d, Y" }}</div>{% endif %}
             {% endif %}
           </td>
-          <td class="p-3.5">{% if b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5">{% if b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}</td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">
               <a href="{% url 'accounts:borrower_history' b.pk %}" data-modal-form="borrower-history-modal"
                  class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="history" aria-hidden="true" class="w-3.5 h-3.5"></i>History<span class="sr-only"> for {{ b.full_name }}</span></a>
               <a href="{% url 'accounts:borrower_update' b.pk %}" data-modal-form="borrower-modal" data-modal-refresh="#borrower-list-region"
                  class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ b.full_name }}</span></a>
+              {# Archive, not delete: transactions PROTECT the borrower row. Someone still holding a key is refused. #}
               <form method="post" action="{% url 'accounts:borrower_toggle' b.pk %}" class="inline"
-                    {% if b.is_active %}data-confirm="Guards will no longer find this borrower at release. Their transaction history is kept." data-confirm-title="Deactivate borrower" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ b.id_number }} · {{ b.full_name }}"{% endif %}>
+                    {% if b.is_active %}data-confirm="Guards will no longer find this borrower at release. Nothing is deleted — their transaction history is kept, and you can restore them at any time." data-confirm-title="Archive borrower" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ b.id_number }} · {{ b.full_name }}"{% endif %}>
                 {% csrf_token %}
-                <button type="submit" class="font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.full_name }}</span></button>
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if b.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if b.is_active %}archive{% else %}archive-restore{% endif %}" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if b.is_active %}Archive{% else %}Restore{% endif %}<span class="sr-only"> {{ b.full_name }}</span>
+                </button>
               </form>
+              {% if not b.is_active %}
+              {# The one hard delete in the UI (accounts/retention.py). #}
+              <form method="post" action="{% url 'accounts:borrower_delete' b.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ b.full_name }} is removed from the database along with their borrow history. Restore them instead if you only want them searchable again."
+                    data-confirm-title="Delete borrower forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ b.id_number }} · {{ b.full_name }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" aria-hidden="true" class="w-3.5 h-3.5"></i>Delete<span class="sr-only"> {{ b.full_name }} forever</span>
+                </button>
+              </form>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=7 icon="users" title="No borrowers found" message="Try a different filter, or add a borrower so guards can release keys to them." %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=8 icon="archive" title="Nothing archived" message="Archived borrowers show up here. Nothing matches right now." %}{% else %}{% include "partials/empty_state.html" with colspan=8 icon="users" title="No borrowers found" message="Try a different filter, or add a borrower so guards can release keys to them." %}{% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -103,3 +141,4 @@
 {% include "partials/ajax_modal_shell.html" with modal_id="borrower-modal" modal_label="Borrower form" %}
 {% include "partials/ajax_modal_shell.html" with modal_id="borrower-history-modal" modal_size="xl" modal_label="Borrower history" %}
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/borrower-form.js' %}"></script>{% endblock %}

@@ -137,7 +137,7 @@
       sidebar.classList.add("is-open");
       if (backdrop) backdrop.classList.add("is-open");
       menuBtn.setAttribute("aria-expanded", "true");
-      document.body.classList.add("overflow-hidden");
+      if (window.KeyTrackModal) window.KeyTrackModal.lockScroll();
       var first = sidebar.querySelector(".sidebar-link, .sidebar-close");
       if (first) first.focus();
     }
@@ -147,9 +147,9 @@
       sidebar.classList.remove("is-open");
       if (backdrop) backdrop.classList.remove("is-open");
       menuBtn.setAttribute("aria-expanded", "false");
-      if (!(window.KeyTrackModal && window.KeyTrackModal.anyOpen())) {
-        document.body.classList.remove("overflow-hidden");
-      }
+      /* Reference-counted in modal.js: a modal opened over the drawer holds
+       * its own lock, so this release cannot unlock the page under it. */
+      if (window.KeyTrackModal) window.KeyTrackModal.unlockScroll();
       if (restoreFocus) menuBtn.focus();
     }
 

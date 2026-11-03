@@ -28,8 +28,10 @@ Tailwind must watch).
 
 ### Domain model in one paragraph
 
-A **User** is a login (roles: ADMIN, FACILITIES, CUSTODIAN, GUARD, FACULTY_STAFF; plus
-`approval_status` PENDING/APPROVED/REJECTED). A **Borrower** is a *searchable person*
+A **User** is a login (roles: ADMIN, FACILITIES, CUSTODIAN, GUARD, FACULTY_STAFF).
+Admins create accounts outright — there is no registration or approval queue — and an
+account cannot be edited or deleted while its guard is on duty. A **Borrower** is a
+*searchable person*
 (faculty/staff/student) who may collect keys — **not a login**; the two are separate
 models and confusing them is the most common mistake in this codebase. A **Key**
 belongs to a **Room**, which belongs to a **Building**. A **GuardShift** opens on login
@@ -181,6 +183,15 @@ def __init__(self, *args, **kwargs):
             f.widget.attrs.setdefault("class", TAILWIND)
 ```
 
+Set a `placeholders = {"field": "09XX-XXX-XXXX"}` dict on the form for any field
+whose expected shape is not obvious from its label. `StyledFormMixin` renders it as
+the input's `placeholder` (skipping checkboxes and selects). A placeholder is a
+sample value, never an instruction and never a substitute for the label.
+
+Never ask an admin to type a value the system can derive. `User.employee_id` is
+assigned by `accounts.services.next_employee_id()` on create (`EMP-0001`,
+`EMP-0002`, …) and is not a form field.
+
 Surface DB constraint violations as a `ValidationError` in `clean()`, never as a 500.
 Two constraints exist today: `unique_room_per_building` (Room) and
 `unique_key_copy_per_room_category` (Key).
@@ -202,6 +213,20 @@ Keyword-only arguments (`*,`), `@db_transaction.atomic` on anything multi-write,
 `select_for_update()` on rows two guards could race for. New services
 (`scheduling/services.py` per `B5.3`) follow the same shape with their own
 `ScheduleConflictError`.
+
+### A new room mints its own key
+
+`facilities.room_create` passes a `save=` hook to `form_view` that calls
+`keys.services.ensure_room_key(room=..., user=...)`. An active new room gets
+**one** key — `copy_number=1`, code `<BLDG>-<room_code>-1`, status `AVAILABLE`
+— so it shows on the Keys page as soon as the room exists. Copies are never
+created implicitly: the admin adds those from the key bulk modal
+(`bulk_create_key_copies`). The category is "Office" for an office and "Room"
+otherwise; an archived preferred category is not silently restored (the first
+live category is used, and one is created only when there is none).
+`ensure_room_key` is a no-op when the room already has a key and never raises,
+so a key-code clash cannot block adding the room. Bulk room creation
+(`room_bulk_create`) deliberately does **not** mint keys.
 
 ### JSON endpoints (backend §3.4, §4.1, §4.2, §5.6)
 
@@ -255,6 +280,25 @@ existing.start_time < new.end_time  AND  existing.end_time > new.start_time
 09:00–10:00 and 10:00–11:00 are **both valid**. One DB query, not a Python loop.
 Honor `exclude_block_id` so editing a block doesn't conflict with itself.
 `B5.8` lists ten mandatory test cases — write all ten.
+
+### Shared group classes: file them on the whole block
+
+When `BSIT-4DG1` and `BSIT-4DG2` take a subject together (same room, same time, same
+professor), the offering belongs to the whole block `BSIT-4D`. Do not file two group
+offerings and try to line them up. The whole block already clashes with each of its
+groups, and a group's timetable already includes the whole-block classes, so the
+planner needs no special case.
+
+- The offering form's **All groups attend together** box (shown for a group that has
+  a sibling) files the offering on the whole block. `planner.file_offering` creates
+  that row if it is missing (`ensure_whole_block`; its `headcount` adds up the groups'
+  counts for room sizing). It also merges in any group's own live offering of the
+  subject: that offering is archived and unscheduled.
+- One subject, one schedule per student: a group cannot take a subject its block
+  already shares (`planner.family_duplicates`). A merged offering cannot be restored
+  (`planner.restore_blocker`).
+- Pickers and lists label a whole block with groups `BSIT-4D (G1 + G2 together)`.
+  Use `planner.group_labels` + `shared_label`, which cost one query, not one per row.
 
 ### Tests
 
@@ -322,7 +366,7 @@ Build `static/js/modal.js` **once**, with delegated listeners:
 - open: `[data-modal-open="<id>"]`
 - close: `[data-modal-close]`, overlay click, Escape
 - focus trap; focus first input on open; restore focus to the trigger on close
-- `document.body.classList.add("overflow-hidden")` while open
+- a **scroll lock that does not move the page** while open (see below)
 - stacked modals via a z-index counter
 - expose `window.KeyTrackModal = { open(id), close(id) }`
 
@@ -335,10 +379,337 @@ Use `templates/partials/form_field.html` for modal form controls. Pass a Django
 ID, name, type, required state, help text, and error details. This keeps required
 markers and inline validation styling consistent.
 
+In `BoundField` mode the partial labels every field itself: a required one gets the
+red `*`, every other gets a grey `(optional)`. Don't pass `field_optional` there and
+don't hand-write either marker — manual-mode controls still need `field_required` /
+`field_optional`, since they have no form field to ask.
+
+### Modal enter animation — required, and lightweight only
+
+**Every modal animates in.** A dialog that appears in one frame reads as a glitch,
+which is why opening *Add user* looked like the page "flashed". The animation lives
+in `assets/css/source.css` and is applied by attribute, so a new modal gets it for
+free — do not add a per-modal animation class, and do not reach for a JS animation
+library.
+
+The rule:
+
+- **Composited properties only** — `opacity` and `transform`. Never animate
+  `width`, `height`, `top`, `margin` or `box-shadow` on a modal: those run layout
+  or paint on every frame and stutter on the cheap lab machines this runs on.
+- **Short.** Overlay `120ms`, panel `160ms`. Anything past ~200ms is felt as lag by
+  someone who opens the same modal fifty times a shift.
+- **One step, no stagger, no bounce.** Overlay fades in; the panel fades up from
+  `translateY(8px) scale(0.98)` on `cubic-bezier(0.16, 1, 0.3, 1)`.
+- **CSS only, no JS hook.** `.hidden` is `display: none`, so removing it makes the
+  element rendered again and the keyframes restart on their own. `modal.js` stays a
+  pure show/hide controller.
+- **No exit animation.** Closing must feel instant, and animating out would mean
+  holding a dismissed dialog on screen behind a timer plus a "closing" state in the
+  controller.
+- **`prefers-reduced-motion: reduce` turns it off**, like the spinners.
+
+The same budget applies to any other motion added to this UI: composited properties,
+under ~200ms, and a reduced-motion opt-out.
+
+### Modal scroll lock — never let the page resize behind the modal
+
+`body { overflow: hidden }` on its own is a **bug**, and was the cause of the flash
+on *Add user*: hiding the page scrollbar hands its ~15px back to the viewport, so
+the sidebar, navbar and the whole list reflow wider for as long as the modal is
+open and snap back on close — and the right-hand page scrollbar disappears.
+
+`modal.js` therefore locks through `lockScroll()` / `unlockScroll()`, which:
+
+- measure the scrollbar once per lock
+  (`innerWidth - documentElement.clientWidth`, `0` on overlay-scrollbar platforms)
+  into `--kt-scrollbar-width`;
+- add `body.kt-scroll-locked`, which is `overflow: hidden` **plus**
+  `padding-right: var(--kt-scrollbar-width)` — so every in-flow box keeps its exact
+  position;
+- **reference-count** the lock, so a modal opened over the mobile sidebar drawer
+  cannot release the page under it. `navbar.js` calls the same two functions; no
+  other file may touch the body overflow.
+
+`scrollbar-gutter: stable` is not a substitute — Chrome does not honour a gutter on
+the propagated viewport scroller once its overflow is hidden.
+
+### Modal loading skeleton — the default for every AJAX form modal
+
+Reference implementation: **Users & Guards** (`templates/accounts/user_list.html`).
+
+While `modal-form.js` fetches `?modal=1`, the modal body shows
+`KeyTrack.skeletons.form()`. It is a copy of `partials/ajax_form_modal.html`
+drawn in grey: the same header (icon tile, title, subtitle, close), a field grid,
+and the sticky footer (Cancel + Save), with the same padding and control heights
+(18px label + 4px gap + 38px input). The modal opens at about its final size and
+does not jump when the form arrives.
+
+Size it from the shell, to match the form it loads:
+
+```django
+{% include "partials/ajax_modal_shell.html" with modal_id="user-modal" modal_label="User form" skeleton_fields=9 skeleton_cols="2" %}
+{% include "partials/ajax_modal_shell.html" with modal_id="password-modal" modal_size="md" modal_label="Reset password" skeleton_fields=2 %}
+```
+
+- `skeleton_fields` = the number of visible form fields (default 4).
+- `skeleton_cols="2"` whenever the partial uses `grid="2"`.
+- After the first successful load, the modal remembers the real body height and
+  holds later skeletons at that height (`data-loaded-height`), so every Edit after
+  the first opens with no movement at all. The skeleton cannot know about help text,
+  so only the first open may grow slightly.
+
+Do not hand-write a "Loading…" line or a spinner in a modal body. Use this skeleton.
+
+### List pages: pagination — the default design
+
+Reference implementation: **Users & Guards**. Every list page uses it.
+
+**10 records per page, maximum.** The page size lives in one place,
+`accounts.crud.LIST_PAGE_SIZE = 10`. Use the helper, not a bare `Paginator(qs, 25)`:
+
+```python
+from accounts.crud import paginate, querystring_without_page
+
+users = users.order_by("-date_joined", "-pk")   # always a total order: stable pages
+page_obj = paginate(request, users)              # bad/out-of-range ?page= clamps
+return render(request, "...", {"users": page_obj, "page_obj": page_obj,
+                               "querystring": querystring_without_page(request)})
+```
+
+Markup: the table and the shared footer sit inside one region marked
+`data-list-region`, and the filter form points at it:
+
+```django
+<form method="get" role="search" data-list-region-form="#user-list-region">…filters…</form>
+
+<div id="user-list-region" data-list-region>
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+    <table class="min-w-full text-[13px]"> <thead>…</thead> <tbody>…</tbody> </table>
+    {% include "partials/pagination.html" with item_label="users" %}
+  </div>
+</div>
+```
+
+`partials/pagination.html` is the one footer design. Do not restyle it per page:
+
+- left: "Showing **11** to **20** of **30** users"
+- right: Previous · page numbers (elided with "…") · Next. The current page is a
+  filled `#14342A` chip; disabled Previous/Next are greyed with `aria-disabled`.
+  Below `md` the numbers collapse to "Page 2 of 3".
+- links keep the active filters (`{% page_url %}` + `querystring`).
+- with one page, only the summary shows; with zero results, the empty state shows
+  and the footer is hidden.
+
+Behaviour (`static/js/list-region.js`): a page link or a filter submit swaps only the
+region. While it loads, the `<tbody>` shows 10 skeleton rows
+(`KeyTrack.skeletons.tableRows(cols, 10)`) under the real header, at the real row
+height, and the pager is dimmed. Then the address bar updates, so Back and Forward
+work. On any error it falls back to a normal page load, so the links work without
+JS. An add or edit saved in a modal refreshes the same region
+(`data-modal-refresh="#user-list-region"`) and stays on the current page.
+
+Pages still on the old size (20–30 per page) move to `paginate()` +
+`data-list-region` when they are next touched.
+
+### Archive, not delete — and the multi-select toolbar
+
+The UI never hard-deletes. `Building`, `Room`, `KeyCategory` and `Key` are all held by
+`PROTECT`ed foreign keys (rooms -> building, keys -> room/category, transactions -> key),
+so a `DELETE` from a view is either refused by the database or takes the borrow history
+with it. The UI verb is therefore **Archive**, undone by **Restore**:
+
+| Model | Archived state |
+|---|---|
+| `Building`, `Room`, `KeyCategory`, `Borrower` | `is_active = False` |
+| `Key` | `status = INACTIVE` (there is no `is_active` field) |
+
+Say "Archived", not "Inactive", on the pages whose verb is Archive (buildings, rooms,
+key categories, key inventory, borrowers). Users, guard posts and schedule blocks still
+say Deactivate/Inactive — their verb has not changed.
+
+Every list that offers Archive also offers it in bulk, through one delegated controller
+(`static/js/bulk-actions.js`) — no per-page JS:
+
+```html
+<div id="room-list-region" data-list-region
+     data-bulk-url="{% url 'facilities:room_bulk' %}"
+     data-bulk-noun="room" data-bulk-noun-plural="rooms">
+  {% include "partials/bulk_bar.html" %}
+  <table>
+    <thead>… <th><input type="checkbox" data-bulk-all></th> …</thead>
+    <tbody>
+      <tr><td><input type="checkbox" data-bulk-item value="{{ room.pk }}"
+                     data-bulk-state="{% if room.is_active %}active{% else %}archived{% endif %}"
+                     data-bulk-label="{{ room }}"></td> …
+```
+
+The controller gives you the header select-all (with its mixed state), shift-click range
+select, row highlighting, the count, and it hides whichever action the selection cannot
+use. The action is confirmed through `KeyTrack.confirm`, the pressed button goes busy,
+the result is toasted and the region refreshes in place
+(`KeyTrack.reloadListRegion`), so page, filters and scroll survive.
+
+Server side, the endpoint is `@admin_required @require_POST`, reads `action`
+(`archive`/`restore`) and repeated `ids`, and uses the `accounts/crud.py` helpers:
+`bulk_selection()`, `bulk_summary()`, `bulk_response()`. It **skips** rows a rule
+refuses (a key still out) instead of failing the whole batch, and reports them in
+`blocked`. AJAX gets JSON (200, or 422 when nothing could be done); a no-JS POST gets a
+message and a redirect.
+
+> Hiding `.hidden` vs `.inline-flex`: Tailwind's `.hidden` does not reliably outrank
+> `.inline-flex` in the generated sheet, so `bulk-actions.js` shows and hides with an
+> inline `style.display` instead of by class.
+
+### Archiving has a deadline — the 30-day purge
+
+Archive is a soft delete **with a retention window**, not a permanent holding pen
+(`accounts/retention.py`):
+
+1. Archiving stamps `archived_at`. Restoring clears it, so a restore-then-archive starts
+   the window again. `ArchiveClockMixin.save()` keeps the stamp right no matter what
+   flipped the flag — the archive button, the bulk toolbar, a `ModelForm` with an
+   `is_active` checkbox, the Django admin or the shell.
+2. `python manage.py purge_archived` deletes every row archived longer than
+   `settings.ARCHIVE_RETENTION_DAYS` (`.env: ARCHIVE_RETENTION_DAYS`, default 30; `0`
+   switches purging off). Run it **daily**, not monthly — the window is per row.
+   `--dry-run` lists what is due, `--days N` overrides the window, `--yes` skips the
+   typed confirmation for a scheduler.
+3. The purge **cascades past `PROTECT`** (`retention.cascade_delete`): a child with a
+   NOT NULL foreign key is deleted bottom-up, a child with a nullable one is detached
+   (`GuardPost.building`, `ScheduleBlock.instructor`). Purging a building therefore takes
+   its rooms, their keys, those keys' borrow transactions and the rooms' schedule blocks.
+   That is irreversible — the Archived pages say so.
+4. It refuses a row with a key still out or an open transaction underneath, and reports
+   it instead ("kept — 1 key(s) still out"). A purge writes an `ActivityLog` DELETE row
+   *before* deleting, and `ActivityLog.user` is `SET_NULL`, so the record outlives the
+   data.
+5. Supabase: the mirror's foreign keys carry the same rules (`on delete cascade` down the
+   purge chain, `set null` for nullable, `restrict` for `PROTECT` on a row retention never
+   purges). The purge sends one `DELETE` for the parent and Postgres clears the copies
+   below it. Generate the SQL with `supabase_sync --schema`; see `supabase_sync/README.md`.
+
+**Delete forever** is the manual counterpart, for an admin who will not wait 30 days.
+Every Archived page offers it per row and in the bulk toolbar, and both go through
+`retention.purge_one()` — the same guard, cascade, audit row and Supabase delete as the
+sweep:
+
+| | Route | View helper |
+|---|---|---|
+| one row | `…/<pk>/delete/` (`building_delete`, `room_delete`, `key_delete`, `category_delete`, `borrower_delete`) | `crud.delete_forever()` |
+| selection | the existing `…/bulk/` endpoint with `action=delete` | `crud.bulk_delete_forever()` |
+
+Rules, all server-side: `@admin_required @require_POST`, and **the row must already be
+archived** (`require_archived=True`) — a live row answers 422 "is not archived", so
+Archive → Restore is always in front of a misclick. The bulk toolbar hides the button
+unless every selected row is archived. 200/302 on success, 422 with the reason when a
+rule refuses, blocked rows skipped rather than failing the batch, like every other bulk
+action.
+
+Writing a new archivable model? Add an `archived_at` field, put `ArchiveClockMixin` in
+its bases, add an `ArchiveSpec` to `retention.SPECS`, extend `retention.purge_blocker`
+if a row of it can be in flight, and wire a `delete_forever` route for its Archived page.
+
+### Archived rows live on their own page
+
+Archived rows are never mixed into the live list. Each of the five archivable lists
+(keys, key categories, rooms, buildings, borrowers) comes in two halves:
+
+| Live list | Archived page |
+|---|---|
+| `keys:key_list` | `keys:key_archived` |
+| `keys:category_list` | `keys:category_archived` |
+| `facilities:room_list` | `facilities:room_archived` |
+| `facilities:building_list` | `facilities:building_archived` |
+| `accounts:borrower_list` | `accounts:borrower_archived` |
+
+The live list shows active rows and **every other status except the archived one**; the
+Archived page shows archived rows only. There is no "Archived only" option in a status
+filter any more — that page replaced it.
+
+Both halves are **one view and one template**, so the filters, pagination, bulk toolbar
+and row actions cannot drift apart:
+
+```python
+@admin_required
+def room_list(request):
+    return _room_list(request, archived=False)
+
+@admin_required
+def room_archived(request):
+    return _room_list(request, archived=True)
+
+def _room_list(request, *, archived):
+    rooms = Room.objects.filter(is_active=not archived)   # Key: status INACTIVE or not
+    ...
+    return render(request, "facilities/room_list.html", {
+        ...,
+        **archive_context(request, archived=archived,
+                          live_url=reverse("facilities:room_list"),
+                          archived_url=reverse("facilities:room_archived"),
+                          noun="rooms",
+                          archived_count=Room.objects.filter(is_active=False).count()),
+    })
+```
+
+In the template, `{% include "partials/archive_switch.html" %}` goes in the header
+actions — it renders "Archived (N)" on the live list and "Back to <noun>" on the
+Archived page — and `{% if archived %}` guards the create buttons, the empty state and
+any shortcut that makes no sense for an archived row (Add, "+ Room", "Copies").
+
+`bulk-actions.js` needs no flag: every row on the Archived page carries
+`data-bulk-state="archived"`, so the toolbar offers Restore only.
+
+**Row and bulk actions must come back to the page they were fired from.** Each
+archive/restore form posts its own path:
+
+```html
+<input type="hidden" name="next" value="{{ request.get_full_path }}">
+```
+
+and the view resolves it with `accounts.crud.post_redirect(request, "<default>")`, which
+accepts local paths only (`url_has_allowed_host_and_scheme`) and otherwise falls back to
+the live list. Without it, restoring from the Archived page would dump you on the live
+list.
+
+The sidebar keeps the parent item lit on an Archived page: `partials/sidebar.html` runs
+the view name through the `nav_key` filter, which maps `*_archived` onto `*_list`.
+
+### Button busy states — `KeyTrack.buttonLoading`
+
+Every button that starts work shows it. `static/js/button-loading.js` does two things:
+
+* `KeyTrack.buttonLoading(btn, "Archiving…")` returns a `restore()`. It disables the
+  button, holds its width, and puts a spinner in front of its label — the button's own
+  content is parked in a hidden `.kt-busy-original` wrapper rather than overwritten, so
+  restoring it cannot lose an icon or a bare text node.
+* Any plain (non-AJAX) `method="post"` form gets the busy state on its submitter
+  automatically, with `data-loading-label="…"` for the wording. Opt out with
+  `data-no-loading`.
+
+It loads **after** `modal-form.js`, `list-region.js` and `confirm.js`: those call
+`preventDefault()` on the submits they own, and the auto-handler skips anything already
+`defaultPrevented`.
+
+Tailwind v4's preflight sets `cursor: default` on `<button>`. `source.css` puts the hand
+back globally (`button:not(:disabled) { cursor: pointer }`) — without it every button in
+the app reads as decoration, the navbar hamburger worst of all.
+
 ### After **any** dynamic DOM injection, call `lucide.createIcons()`
 
 Icons render as blank space otherwise. This bites on every AJAX modal, every POS search
 result, every schedule grid repaint. It is the most common frontend bug in this stack.
+
+### Toasts — white card, draining timer line
+
+`static/js/toast.js` builds the node; Toastify only positions and stacks it. Every
+variant is the same **white** card (`.kt-toast` in `source.css`) — the meaning is carried
+by the icon and by the timer line that drains along the bottom edge, react-toastify
+style. The line is a transform-only CSS animation (`scaleX`, composited) whose duration
+is the toast's own, and it pauses on hover at the same moment Toastify's `stopOnFocus`
+pauses the real countdown, so what you see is what the timer is doing. A toast with no
+expiry (the session-expired one) gets no line. `prefers-reduced-motion` drops the
+animation.
 
 ### AJAX conventions
 

@@ -146,6 +146,12 @@
 
     <!-- Room Metadata Pills -->
     <div class="flex items-center gap-2 flex-wrap border-t md:border-t-0 pt-3 md:pt-0 border-stone-100 text-[12px]">
+      {% if selected_room and selected_term %}
+      <a href="{% url 'scheduling:room_export' %}?room={{ selected_room.pk }}&amp;term={{ selected_term.pk }}"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-700 font-medium hover:bg-stone-50">
+        <i data-lucide="download" class="w-3.5 h-3.5" aria-hidden="true"></i>Export CSV
+      </a>
+      {% endif %}
       {% if selected_room %}
       <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700">
         <i data-lucide="building-2" class="w-3.5 h-3.5 text-stone-500"></i>
@@ -170,7 +176,7 @@
 </div>
 
 <!-- Weekly Timetable Grid Card -->
-<div class="timetable-scroll overflow-x-auto overflow-y-auto max-h-[calc(100vh-230px)] rounded-xl border border-stone-200 bg-white shadow-sm">
+<div data-preserve-scroll="timetable:page" class="timetable-scroll overflow-x-auto overflow-y-auto max-h-[calc(100vh-230px)] rounded-xl border border-stone-200 bg-white shadow-sm">
   <div class="min-w-[850px]">
     
     <!-- Day Header Row (Sticky at Top) -->
@@ -228,6 +234,12 @@
               {{ block.title }}
             </div>
           </div>
+          {% if block.section_code %}
+          <div class="flex items-center gap-1 text-[11px] text-stone-600 truncate mt-1">
+            <i data-lucide="users" class="w-3 h-3 shrink-0 text-stone-400"></i>
+            <span class="truncate">{{ block.section_code }}</span>
+          </div>
+          {% endif %}
           {% if block.instructor_name %}
           <div class="flex items-center gap-1 text-[11px] text-stone-600 truncate mt-1">
             <i data-lucide="user" class="w-3 h-3 shrink-0 text-stone-400"></i>

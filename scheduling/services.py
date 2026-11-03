@@ -1,10 +1,11 @@
 import json
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 
 from facilities.models import Room
-from .models import ScheduleBlock, ScheduleException, Term
+from .models import ScheduleBlock, ScheduleException, ScheduleSettings, Term
 
 
 class ScheduleConflictError(ValueError):
@@ -12,6 +13,12 @@ class ScheduleConflictError(ValueError):
         self.conflicts = list(conflicts or [])
         names = ", ".join(str(block) for block in self.conflicts) or "schedule block"
         super().__init__(f"Conflicts with: {names}")
+
+
+def live_blocks(qs):
+    """Hide blocks whose term, subject, section or offering is archived."""
+    return qs.exclude(Q(term__is_active=False) | Q(subject__is_active=False)
+                      | Q(section__is_active=False) | Q(offering__is_active=False))
 
 
 def find_conflicts(room, day_of_week, start_time, end_time, term,
@@ -171,13 +178,14 @@ def get_room_timetable(room, term):
     term_id = term.pk if hasattr(term, "pk") else term
 
     blocks_qs = (
-        ScheduleBlock.objects.filter(
+        live_blocks(ScheduleBlock.objects).filter(
             room_id=room_id,
             term_id=term_id,
             day_of_week__lte=5,  # Mon-Sat
             is_active=True,
         )
-        .select_related("subject", "instructor", "room", "room__building", "term")
+        .select_related("subject", "instructor", "room", "room__building", "term",
+                        "section")
         .prefetch_related("exceptions")
         .order_by("day_of_week", "start_time")
     )
@@ -247,6 +255,7 @@ def get_room_timetable(room, term):
             "instructor_name": instructor_display,
             "instructor_id": block.instructor_id or "",
             "subject_id": block.subject_id or "",
+            "section_code": block.section.code if block.section_id else "",
             "room_id": block.room_id,
             "term_id": block.term_id,
             "day_of_week": block.day_of_week,
@@ -318,6 +327,44 @@ def _format_block_summary(block, when):
     }
 
 
+# ---------------------------------------------------------------------------
+# Admin-controlled schedule settings
+# ---------------------------------------------------------------------------
+
+class EffectiveSettings:
+    """The rules in force right now: the saved row, or the env default."""
+
+    def __init__(self, enforcement, no_schedule_policy, current_term):
+        self.enforcement = enforcement
+        self.no_schedule_policy = no_schedule_policy
+        self.current_term = current_term  # pinned term, or None = follow the dates
+
+
+def get_schedule_settings():
+    from django.conf import settings as dj_settings
+    row = ScheduleSettings.objects.select_related("current_term").first()
+    if row is None:
+        mode = getattr(dj_settings, "SCHEDULE_ENFORCEMENT", "warn")
+        return EffectiveSettings(mode, ScheduleSettings.NoSchedule.AUTO, None)
+    return EffectiveSettings(row.enforcement, row.no_schedule_policy,
+                             row.current_term if row.current_term_id else None)
+
+
+def effective_term(date, cfg=None):
+    """The term the guards are working from on `date`: the one the admin pinned
+    (if it is live), else the live term whose dates cover the day."""
+    cfg = cfg or get_schedule_settings()
+    if cfg.current_term is not None and cfg.current_term.is_active:
+        return cfg.current_term
+    return _active_term_for(date)
+
+
+def term_has_schedule(term):
+    if term is None:
+        return False
+    return live_blocks(ScheduleBlock.objects).filter(term=term, is_active=True).exists()
+
+
 def get_room_today_schedule(room, when=None):
     """
     Return today's schedule for a room, identifying current and next scheduled blocks.
@@ -344,19 +391,24 @@ def get_room_today_schedule(room, when=None):
     current_time = when.time()
 
     # Active blocks for today's weekday
-    blocks_qs = ScheduleBlock.objects.filter(
+    blocks_qs = live_blocks(ScheduleBlock.objects).filter(
         is_active=True,
         day_of_week=target_weekday,
         term__is_active=True,
     )
 
-    # If term bounds match target_date, prioritize that term
-    term_in_range = blocks_qs.filter(
-        term__start_date__lte=target_date,
-        term__end_date__gte=target_date,
-    )
-    if term_in_range.exists():
-        blocks_qs = term_in_range
+    # An admin-pinned semester wins; otherwise prefer the term whose dates
+    # cover the day.
+    pinned = get_schedule_settings().current_term
+    if pinned is not None and pinned.is_active:
+        blocks_qs = blocks_qs.filter(term=pinned)
+    else:
+        term_in_range = blocks_qs.filter(
+            term__start_date__lte=target_date,
+            term__end_date__gte=target_date,
+        )
+        if term_in_range.exists():
+            blocks_qs = term_in_range
 
     # Exceptions for today
     cancelled_ids = list(ScheduleException.objects.filter(
@@ -454,7 +506,7 @@ def get_day_schedule(date):
     term = _active_term_for(date)
     if term is None:
         return []
-    blocks = list(ScheduleBlock.objects.filter(
+    blocks = list(live_blocks(ScheduleBlock.objects).filter(
         term=term, is_active=True, day_of_week=date.weekday(),
     ).select_related("room__building", "subject", "instructor").order_by("start_time"))
     exceptions = {
@@ -522,6 +574,8 @@ def schedule_check_for_room(room, *, borrower_id=None, when=None):
                  settings.SCHEDULE_ENFORCEMENT
     """
     when = when or timezone.localtime()
+    term = effective_term(when.date())
+    no_timetable = not term_has_schedule(term)
     schedule = get_room_today_schedule(room, when=when)
     current = schedule.get("current_block") if schedule else None
     nxt = schedule.get("next_block") if schedule else None
@@ -553,8 +607,38 @@ def schedule_check_for_room(room, *, borrower_id=None, when=None):
 
     return {
         "state": state,
+        "no_timetable": no_timetable,
+        "term": term.name if term else "",
         "current": block_payload(current),
         "next": block_payload(nxt),
         "expected_return_at": expected_return_at.isoformat() if expected_return_at else None,
         "_expected_return_dt": expected_return_at,
     }
+
+
+def faculty_schedule(instructors, when=None):
+    """Blocks held by each instructor in the live terms, for the admin and the guard.
+
+    Returns ``{borrower_pk: [block, ...]}`` ordered by day then time. Each block
+    gets ``is_today`` (meets today and is not cancelled today) and ``is_now``
+    (that meeting is running at ``when``), so a guard can tell whether the time
+    is reserved for the faculty's subject.
+    """
+    when = when or timezone.localtime()
+    today, now = when.date(), when.time()
+    ids = [getattr(i, "pk", i) for i in instructors]
+    blocks = list(live_blocks(ScheduleBlock.objects).filter(
+        instructor_id__in=ids, is_active=True, term__is_active=True,
+    ).select_related("subject", "section", "term", "room", "room__building")
+        .order_by("day_of_week", "start_time"))
+    cancelled = set(ScheduleException.objects.filter(
+        date=today, exception_type=ScheduleException.ExceptionType.CANCELLED,
+        schedule_block_id__in=[b.pk for b in blocks],
+    ).values_list("schedule_block_id", flat=True))
+    out = {pk: [] for pk in ids}
+    for b in blocks:
+        b.is_today = (b.day_of_week == today.weekday() and b.pk not in cancelled
+                      and b.term.start_date <= today <= b.term.end_date)
+        b.is_now = b.is_today and b.start_time <= now < b.end_time
+        out[b.instructor_id].append(b)
+    return out

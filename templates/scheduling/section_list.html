@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}{% if archived %}Archived sections{% else %}Sections{% endif %} — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived sections{% else %}Sections{% endif %}</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      {% if archived %}An archived section is not offered for new subjects. Restore one to bring it back.
+      {% else %}A whole block such as <span class="font-mono font-semibold text-stone-700">BSIT-4D</span>, or one of its groups such as <span class="font-mono font-semibold text-stone-700">BSIT-4DG1</span>.{% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% if archived %}{% url 'scheduling:section_list' %}{% else %}{% url 'scheduling:section_archived' %}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
+      <span>{% if archived %}Live sections{% else %}Archived{% if archived_count %} ({{ archived_count }}){% endif %}{% endif %}</span>
+    </a>
+    {% if not archived %}
+    <a href="{% url 'scheduling:section_create' %}" data-modal-form="section-modal" data-modal-refresh="#section-list-region"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add section</span>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="mb-3 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+  <p class="text-[13px] font-semibold text-stone-800">How a block splits</p>
+  <p class="mt-1 text-[13px] text-stone-600">
+    <span class="font-mono font-semibold">BSIT-4D</span> is the whole block; <span class="font-mono font-semibold">BSIT-4DG1</span> and <span class="font-mono font-semibold">BSIT-4DG2</span> are its groups.
+    A block-wide class blocks both groups, because it is the same students. Two groups may still meet at the same time in different rooms, which is what the scheduler takes advantage of.
+  </p>
+</div>
+
+<form method="get" data-list-region-form="#section-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter sections">
+  <label for="sect-q" class="sr-only">Search program, block or group</label>
+  <div class="flex min-w-[200px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+    <input id="sect-q" name="q" value="{{ q }}" placeholder="Search BSIT, D, G1…" autocomplete="off"
+           class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+  </div>
+  <label for="sect-program" class="sr-only">Program</label>
+  <select id="sect-program" name="program" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Any program</option>
+    {% for p in programs %}<option value="{{ p }}" {% if program|upper == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+  </select>
+  <label for="sect-year" class="sr-only">Year level</label>
+  <select id="sect-year" name="year" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Any year</option>
+    {% for y in years %}<option value="{{ y }}" {% if year == y|stringformat:"s" %}selected{% endif %}>Year {{ y }}</option>{% endfor %}
+  </select>
+  <label for="sect-split" class="sr-only">Block or group</label>
+  <select id="sect-split" name="split" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Blocks and groups</option>
+    <option value="block" {% if split == "block" %}selected{% endif %}>Whole blocks only</option>
+    <option value="group" {% if split == "group" %}selected{% endif %}>Groups only</option>
+  </select>
+  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or program or year or split %}
+  <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
+  {% endif %}
+</form>
+
+<div id="section-list-region" data-list-region
+     data-bulk-url="{% url 'scheduling:section_bulk' %}"
+     data-bulk-noun="section" data-bulk-noun-plural="sections">
+  {% include "partials/bulk_bar.html" %}
+  <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Sections and their groups</caption>
+      <thead>
+        <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every section on this page">
+          </th>
+          <th scope="col" class="p-3.5 font-semibold">Section</th>
+          <th scope="col" class="p-3.5 font-semibold">Kind</th>
+          <th scope="col" class="p-3.5 font-semibold">Department</th>
+          <th scope="col" class="p-3.5 font-semibold">Students</th>
+          <th scope="col" class="p-3.5 font-semibold">Offerings</th>
+          <th scope="col" class="p-3.5 font-semibold">Placed</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for s in sections %}
+        <tr class="transition-colors hover:bg-stone-50/60">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ s.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if s.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ s.code }}"
+                   aria-label="Select {{ s.code }}">
+          </td>
+          <td class="p-3.5">
+            <span class="font-mono text-[13px] font-semibold text-stone-900">{{ s.code }}</span>
+            {% if s.group %}<span class="ml-1.5 text-[12px] text-stone-400">of {{ s.block_code }}</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.is_whole_block %}
+              <span class="inline-flex items-center gap-1 rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold text-stone-700">
+                <i data-lucide="square" class="h-3 w-3"></i>Whole block
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800">
+                <i data-lucide="split" class="h-3 w-3"></i>Group {{ s.group }}
+              </span>
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-stone-600">{{ s.department.code|default:"—" }}</td>
+          <td class="p-3.5 text-stone-600">{{ s.student_count|default:"—" }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.offering_count %}
+              <a href="{% url 'scheduling:offering_list' %}?section={{ s.pk }}" class="font-semibold text-[#1E6B4A] hover:underline">{{ s.offering_count }}</a>
+            {% else %}<span class="text-stone-400">0</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.block_count %}
+              <a href="{% url 'scheduling:section_timetable' %}?section={{ s.pk }}" class="inline-flex items-center gap-1 font-semibold text-[#1E6B4A] hover:underline">
+                <i data-lucide="calendar" class="h-3.5 w-3.5"></i>{{ s.block_count }} class{{ s.block_count|pluralize:"es" }}
+              </a>
+            {% else %}<span class="text-stone-400">not scheduled</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
+            {% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-right">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:section_timetable' %}?section={{ s.pk }}" class="inline-flex items-center gap-1 font-medium text-stone-600 hover:text-stone-900 hover:underline">
+                <i data-lucide="calendar-days" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Timetable</span><span class="sr-only">for {{ s.code }}</span>
+              </a>
+              <a href="{% url 'scheduling:section_update' s.pk %}" data-modal-form="section-modal" data-modal-refresh="#section-list-region"
+                 class="inline-flex items-center gap-1 font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">
+                <i data-lucide="edit-3" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Edit</span><span class="sr-only">{{ s.code }}</span>
+              </a>
+              <form method="post" action="{% url 'scheduling:section_toggle' s.pk %}" class="inline"
+                    {% if s.is_active %}data-confirm="Archiving {{ s.code }} stops it being offered new subjects. Its offerings and timetable blocks are kept."
+                    data-confirm-title="Archive section" data-confirm-label="Archive" data-confirm-subject="{{ s.code }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if s.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if s.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if s.is_active %}archive{% else %}archive-restore{% endif %}" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                  <span>{% if s.is_active %}Archive{% else %}Restore{% endif %}</span><span class="sr-only">{{ s.code }}</span>
+                </button>
+              </form>
+              {% if not s.is_active %}
+              {# The one hard delete in the UI — see accounts/retention.py. #}
+              <form method="post" action="{% url 'scheduling:section_delete' s.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ s.code }} is removed from the database along with its offerings and timetable blocks. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete section forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ s.code }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Delete</span><span class="sr-only">{{ s.code }} forever</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=9 icon="archive" title="Nothing archived" message="Archived sections show up here." %}
+        {% else %}{% include "partials/empty_state.html" with colspan=9 icon="users-round" title="No sections yet" message="Add a block such as BSIT-4D, then its groups G1 and G2 if it splits." action_url=create_url action_label="Add section" action_icon="plus" %}{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="sections" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="section-modal" modal_size="md" modal_label="Section form" skeleton_fields=6 skeleton_cols="2" %}
+{% endblock %}

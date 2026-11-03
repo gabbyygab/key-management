@@ -1,78 +1,73 @@
 """accounts/services.py — business rules for user account management.
 
-All approval / rejection logic lives here; views only translate HTTP
-to service calls and back (per guide.md §4).
+Views only translate HTTP to service calls and back (per guide.md §4).
 """
 
-from django.db import transaction as db_transaction
-from django.utils import timezone
+import re
+
+# ---------------------------------------------------------------------------
+# Employee IDs
+#
+# B2.1: an admin never types one. Every account gets the next free
+# EMP-0001 style number when it is created, so the column stays unique and
+# the admin form has one less field that can collide.
+# ---------------------------------------------------------------------------
+
+EMPLOYEE_ID_PREFIX = "EMP-"
+EMPLOYEE_ID_DIGITS = 4
+_EMPLOYEE_ID_RE = re.compile(r"^%s(\d+)$" % EMPLOYEE_ID_PREFIX)
 
 
-class ApprovalError(Exception):
-    """Raised when an approval/rejection cannot be completed."""
+def next_employee_id():
+    """The next free sequential employee ID, e.g. "EMP-0007".
 
-
-@db_transaction.atomic
-def approve_user(*, user_id, approved_by):
-    """Set user to APPROVED and record who approved them and when.
-
-    Raises ApprovalError if the user is not in PENDING status.
-    """
-    from .models import User  # local import avoids circular imports at module load
-
-    try:
-        user = User.objects.select_for_update().get(pk=user_id)
-    except User.DoesNotExist:
-        raise ApprovalError("User not found.")
-
-    if user.approval_status != User.Approval.PENDING:
-        raise ApprovalError(
-            f"{user.full_name} is already {user.get_approval_status_display().lower()}."
-        )
-
-    user.approval_status = User.Approval.APPROVED
-    user.approved_by = approved_by
-    user.approved_at = timezone.now()
-    user.save(update_fields=["approval_status", "approved_by", "approved_at"])
-    return user
-
-
-@db_transaction.atomic
-def reject_user(*, user_id, rejected_by, reason):
-    """Set user to REJECTED and record who rejected them.
-
-    Raises ApprovalError if:
-    - the user is not in PENDING status
-    - reason is blank
+    Counts only IDs this function could have produced, so the hand-written
+    ones from seed_demo ("EMP-GUARD1") never shift the sequence. The uniqueness
+    check at the end covers those and any race, since the column is unique.
     """
     from .models import User
 
-    reason = reason.strip()
-    if not reason:
-        raise ApprovalError("A rejection reason is required.")
-
-    try:
-        user = User.objects.select_for_update().get(pk=user_id)
-    except User.DoesNotExist:
-        raise ApprovalError("User not found.")
-
-    if user.approval_status != User.Approval.PENDING:
-        raise ApprovalError(
-            f"{user.full_name} is already {user.get_approval_status_display().lower()}."
-        )
-
-    user.approval_status = User.Approval.REJECTED
-    # Re-use approved_by / approved_at to record who actioned this and when.
-    user.approved_by = rejected_by
-    user.approved_at = timezone.now()
-    user.save(update_fields=["approval_status", "approved_by", "approved_at"])
-    return user
+    highest = 0
+    existing = set(
+        User.objects.filter(employee_id__startswith=EMPLOYEE_ID_PREFIX)
+        .values_list("employee_id", flat=True)
+    )
+    for value in existing:
+        match = _EMPLOYEE_ID_RE.match(value or "")
+        if match:
+            highest = max(highest, int(match.group(1)))
+    candidate = highest + 1
+    while "%s%0*d" % (EMPLOYEE_ID_PREFIX, EMPLOYEE_ID_DIGITS, candidate) in existing:
+        candidate += 1
+    return "%s%0*d" % (EMPLOYEE_ID_PREFIX, EMPLOYEE_ID_DIGITS, candidate)
 
 
-def pending_count():
-    """Return the number of PENDING users (for the sidebar badge)."""
-    from .models import User
-    return User.objects.filter(approval_status=User.Approval.PENDING).count()
+BORROWER_ID_PREFIX = "BRW-"
+BORROWER_ID_DIGITS = 5
+_BORROWER_ID_RE = re.compile(r"^%s(\d+)$" % BORROWER_ID_PREFIX)
+
+
+def next_borrower_id():
+    """The next free sequential borrower ID, e.g. "BRW-00042".
+
+    Same approach as next_employee_id(): hand-written IDs (seed data, imports)
+    never shift the sequence, and the loop skips any collision.
+    """
+    from .models import Borrower
+
+    highest = 0
+    existing = set(
+        Borrower.objects.filter(id_number__startswith=BORROWER_ID_PREFIX)
+        .values_list("id_number", flat=True)
+    )
+    for value in existing:
+        match = _BORROWER_ID_RE.match(value or "")
+        if match:
+            highest = max(highest, int(match.group(1)))
+    candidate = highest + 1
+    while "%s%0*d" % (BORROWER_ID_PREFIX, BORROWER_ID_DIGITS, candidate) in existing:
+        candidate += 1
+    return "%s%0*d" % (BORROWER_ID_PREFIX, BORROWER_ID_DIGITS, candidate)
 
 
 # ---------------------------------------------------------------------------
@@ -137,3 +132,15 @@ def push_active(user):
     if not is_enabled() or not user.supabase_uid:
         return
     get_client().set_banned(user.supabase_uid, not user.is_active)
+
+
+def push_delete(supabase_uid):
+    """Delete a Supabase Auth user by uid.
+
+    Takes the uid, not the user, because the caller has already deleted the
+    Django row by the time this runs.
+    """
+    from .supabase_auth import get_client, is_enabled
+    if not is_enabled() or not supabase_uid:
+        return
+    get_client().delete_user(supabase_uid)

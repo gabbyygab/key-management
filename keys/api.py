@@ -65,6 +65,7 @@ def key_detail(request, pk):
     check = schedule_check_for_room(
         key.room, borrower_id=int(borrower_id) if borrower_id.isdigit() else None)
     check.pop("_expected_return_dt", None)
-    check["enforcement"] = settings.SCHEDULE_ENFORCEMENT
+    from scheduling.services import get_schedule_settings
+    check["enforcement"] = get_schedule_settings().enforcement
     data["schedule"] = check
     return JsonResponse(data)

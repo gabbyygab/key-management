@@ -1,0 +1,27 @@
+{% comment %}
+partials/archive_switch.html — the link between a live list and its Archived page.
+
+Archived master data is never mixed into the live list: the list page shows
+active rows only, and this link leads to the matching Archived page, which
+shows archived rows only (and offers Restore). Archiving is still the only
+delete the UI offers — PROTECTed foreign keys hold every one of these rows —
+but it is no longer forever: `manage.py purge_archived` deletes a row
+retention_days after it was archived, with everything below it
+(accounts/retention.py). The Archived page has to say so, which is the note
+below; retention_days=0 means purging is off and the note is left out.
+
+Context comes from accounts.crud.archive_context():
+  archived, archive_live_url, archive_archived_url, archive_noun,
+  archived_count, retention_days
+{% endcomment %}
+{% if archived %}
+  <a href="{{ archive_live_url }}"
+     class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="arrow-left" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Back to {{ archive_noun }}</span>
+  </a>
+{% else %}
+  <a href="{{ archive_archived_url }}"
+     class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
+    <i data-lucide="archive" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Archived{% if archived_count %} ({{ archived_count }}){% endif %}</span>
+  </a>
+{% endif %}

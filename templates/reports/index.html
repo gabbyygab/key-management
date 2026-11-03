@@ -62,26 +62,8 @@
         <span>Date Range</span>
       </div>
 
-      <div class="flex-1 sm:max-w-[200px]">
-        <label for="start_date" class="block text-[11px] uppercase font-bold text-stone-500 mb-1">Start Date</label>
-        <input
-          type="date"
-          id="start_date"
-          name="start_date"
-          value="{{ start_date }}"
-          class="w-full rounded-lg border border-stone-300 bg-stone-50/50 px-3 py-2 text-[13px] text-stone-800 focus:bg-white focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none"
-        >
-      </div>
-
-      <div class="flex-1 sm:max-w-[200px]">
-        <label for="end_date" class="block text-[11px] uppercase font-bold text-stone-500 mb-1">End Date</label>
-        <input
-          type="date"
-          id="end_date"
-          name="end_date"
-          value="{{ end_date }}"
-          class="w-full rounded-lg border border-stone-300 bg-stone-50/50 px-3 py-2 text-[13px] text-stone-800 focus:bg-white focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none"
-        >
+      <div class="flex-1 sm:max-w-[280px]">
+        {% include "partials/date_range_picker.html" with start_date=start_date end_date=end_date %}
       </div>
 
       <div class="flex items-center gap-2 pt-1 sm:pt-4">
@@ -752,12 +734,14 @@
     if (!form) return;
 
     form.addEventListener('submit', function(e) {
-      const start = document.getElementById('start_date').value;
-      const end = document.getElementById('end_date').value;
+      const start = document.getElementById('start_date')?.value;
+      const end = document.getElementById('end_date')?.value;
 
       if (start && end && start > end) {
         e.preventDefault();
-        alert('Validation error: Start date cannot be later than end date.');
+        if (window.KeyTrack && window.KeyTrack.toast) {
+          window.KeyTrack.toast('Start date cannot be later than end date.', 'error');
+        }
       }
     });
 

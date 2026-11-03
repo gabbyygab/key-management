@@ -310,6 +310,10 @@
       scheduleBox("info", line + nextLine);
       return "ok";
     }
+    if (s.no_timetable) {
+      scheduleBox("info", "No timetable has been generated for " + esc(s.term || "this semester") + ", so there is nothing to check this room against.");
+      return "ok";
+    }
     scheduleBox("ok", "Room is free right now." + nextLine);
     return "ok";
   }

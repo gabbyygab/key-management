@@ -1,12 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Rooms — KEYTRACK{% endblock %}
+{% block title %}{% if archived %}Archived rooms{% else %}Rooms{% endif %} — KEYTRACK{% include "partials/ajax_modal_shell.html" with modal_id="key-modal" modal_label="Key form" %}
+{% endblock %}
 {% block content %}
-<div class="flex items-start justify-between flex-wrap gap-3 mb-4">
-  <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Rooms</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Room codes are unique within a building. Inactive rooms are hidden from borrowing and the room finder.</p>
+<div class="flex flex-col lg:flex-row items-start justify-between gap-3 mb-4">
+  <div class="flex-1 min-w-0">
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived rooms{% else %}Rooms{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}These rooms and their keys are hidden from borrowing and the room finder. Restore one to bring it back{% if retention_days %} — after {{ retention_days }} days an archived room is deleted for good, with its keys and their borrow history{% endif %}.{% else %}Room codes are unique within a building. Archiving a room hides it from borrowing and the room finder{% if retention_days %}; it is deleted for good {{ retention_days }} days later{% endif %}.{% endif %}</p>
   </div>
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
+    {% include "partials/archive_switch.html" %}
+    {% if not archived %}
     <a href="{% url 'facilities:building_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="building-2" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Buildings</span>
     </a>
@@ -18,6 +21,7 @@
        class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i><span>Add room</span>
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -30,7 +34,7 @@
   <label for="room-building" class="sr-only">Building</label>
   <select id="room-building" name="building" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
     <option value="">All buildings</option>
-    {% for b in buildings %}<option value="{{ b.pk }}" {% if building_id == b.pk|stringformat:"s" %}selected{% endif %}>{{ b.code }}{% if not b.is_active %} (inactive){% endif %}</option>{% endfor %}
+    {% for b in buildings %}<option value="{{ b.pk }}" {% if building_id == b.pk|stringformat:"s" %}selected{% endif %}>{{ b.code }}{% if not b.is_active %} (archived){% endif %}</option>{% endfor %}
   </select>
   <label for="room-type" class="sr-only">Room type</label>
   <select id="room-type" name="room_type" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
@@ -43,17 +47,25 @@
     {% for code, label in statuses %}<option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
   <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
-  {% if q or building_id or room_type or status %}<a href="{% url 'facilities:room_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+  {% if q or building_id or room_type or status %}<a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
-<div id="room-list-region">
+<div id="room-list-region" data-list-region
+     data-bulk-url="{% url 'facilities:room_bulk' %}"
+     data-bulk-noun="room" data-bulk-noun-plural="rooms">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Rooms</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every room on this page">
+          </th>
           <th scope="col" class="p-3.5 font-semibold">Room</th>
           <th scope="col" class="p-3.5 font-semibold">Type</th>
+          <th scope="col" class="p-3.5 font-semibold">Department</th>
           <th scope="col" class="p-3.5 font-semibold">Floor · Capacity</th>
           <th scope="col" class="p-3.5 font-semibold">Keys</th>
           <th scope="col" class="p-3.5 font-semibold">Status</th>
@@ -64,30 +76,95 @@
         {% for room in rooms %}
         <tr class="hover:bg-stone-50/60{% if not room.is_active %} text-stone-400{% endif %}">
           <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ room.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if room.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ room.building.code }}-{{ room.room_code }}"
+                   aria-label="Select {{ room }}">
+          </td>
+          <td class="p-3.5">
             <a href="{% url 'facilities:room_detail' room.pk %}" class="font-mono font-bold text-stone-900 hover:text-[#1E6B4A] hover:underline">{{ room.building.code }}-{{ room.room_code }}</a>
             {% if room.name %}<div class="text-[12px] text-stone-500">{{ room.name }}</div>{% endif %}
           </td>
           <td class="p-3.5">{{ room.get_room_type_display }}</td>
+          <td class="p-3.5 text-stone-600">{% if room.department %}{{ room.department.code }}{% else %}<span class="text-stone-400">Shared</span>{% endif %}</td>
           <td class="p-3.5 font-mono text-[12px]">{{ room.floor|default:"—" }} · {{ room.capacity|default:"—" }}</td>
-          <td class="p-3.5 font-mono">{{ room.key_count }}</td>
+          <td class="p-3.5">
+            {% if room.keys.all %}
+              <div class="flex items-center gap-1.5 flex-wrap">
+                {% for k in room.keys.all %}
+                  {% if forloop.counter <= 2 %}
+                    <a href="{% url 'keys:key_list' %}?q={{ k.key_code }}"
+                       class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[12px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80 hover:bg-emerald-100 transition-colors shadow-2xs"
+                       title="Key {{ k.key_code }} (Copy #{{ k.copy_number }}) · {{ k.category.name }}">
+                      <i data-lucide="key" class="w-3 h-3 text-emerald-600"></i>
+                      <span>{{ k.key_code }}</span>
+                    </a>
+                  {% endif %}
+                {% endfor %}
+                {% if room.keys.all|length > 2 %}
+                  <a href="{% url 'keys:key_list' %}?q={{ room.room_code }}"
+                     class="inline-flex items-center text-[11px] font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 border border-stone-200 px-1.5 py-0.5 rounded"
+                     title="View all {{ room.key_count }} keys in inventory">
+                    +{{ room.keys.all|length|add:"-2" }} more
+                  </a>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="inline-flex items-center gap-1.5">
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  <i data-lucide="key-round" class="w-3 h-3 text-amber-500"></i> No key
+                </span>
+                {% if not archived and room.is_active %}
+                <form method="post" action="{% url 'facilities:room_generate_key' room.pk %}" class="inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit"
+                          class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-[#1E6B4A] hover:text-[#14342A] hover:underline"
+                          title="Generate original key now">
+                    <i data-lucide="plus" class="w-3 h-3"></i> Mint
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
           <td class="p-3.5 whitespace-nowrap">
-            {% if room.is_active %}{% include "partials/status_pill.html" with status=room.status label=room.get_status_display %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}
+            {% if room.is_active %}{% include "partials/status_pill.html" with status=room.status label=room.get_status_display %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
           </td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">
               <a href="{% url 'scheduling:room_timetable' %}?room={{ room.pk }}" class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="calendar" aria-hidden="true" class="w-3.5 h-3.5"></i>Timetable<span class="sr-only"> for {{ room }}</span></a>
               <a href="{% url 'facilities:room_update' room.pk %}" data-modal-form="room-modal" data-modal-refresh="#room-list-region"
                  class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ room }}</span></a>
+              {# Archive, not delete: keys PROTECT the room, so the row stays. #}
               <form method="post" action="{% url 'facilities:room_toggle' room.pk %}" class="inline"
-                    {% if room.is_active %}data-confirm="The room and its keys will no longer be offered for borrowing or in the room finder." data-confirm-title="Deactivate room" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ room.building.code }}-{{ room.room_code }}{% if room.name %} · {{ room.name }}{% endif %}"{% endif %}>
+                    {% if room.is_active %}data-confirm="The room and its keys stop being offered for borrowing and in the room finder. Nothing is deleted — you can restore the room at any time." data-confirm-title="Archive room" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ room.building.code }}-{{ room.room_code }}{% if room.name %} · {{ room.name }}{% endif %}"{% endif %}>
                 {% csrf_token %}
-                <button type="submit" class="font-medium {% if room.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if room.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ room }}</span></button>
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if room.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if room.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if room.is_active %}archive{% else %}archive-restore{% endif %}" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if room.is_active %}Archive{% else %}Restore{% endif %}<span class="sr-only"> {{ room }}</span>
+                </button>
               </form>
+              {% if not room.is_active %}
+              {# The one hard delete in the UI (accounts/retention.py). #}
+              <form method="post" action="{% url 'facilities:room_delete' room.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ room }} is removed from the database along with its keys, the borrow history of those keys and its schedule blocks. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete room forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ room.building.code }}-{{ room.room_code }}{% if room.name %} · {{ room.name }}{% endif %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" aria-hidden="true" class="w-3.5 h-3.5"></i>Delete<span class="sr-only"> {{ room }} forever</span>
+                </button>
+              </form>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=6 icon="door-open" title="No rooms found" message="Try a different filter, or add rooms one at a time or in bulk." %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=8 icon="archive" title="Nothing archived" message="Archived rooms show up here. Nothing matches right now." %}{% else %}{% include "partials/empty_state.html" with colspan=8 icon="door-open" title="No rooms found" message="Try a different filter, or add rooms one at a time or in bulk." %}{% endif %}
         {% endfor %}
       </tbody>
     </table>

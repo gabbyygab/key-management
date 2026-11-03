@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import transaction as db_transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.api import serialize_borrower
-from accounts.crud import is_modal
+from accounts.crud import is_modal, paginate, querystring_without_page
 from accounts.models import Borrower, User
 from accounts.permissions import admin_or_guard_required, admin_required, guard_required
 from audit.models import ActivityLog
@@ -21,13 +22,16 @@ from audit.services import Action, log_activity
 from facilities.models import Building, Room
 from keys.models import Key
 from scheduling.models import ScheduleBlock, ScheduleException
-from scheduling.services import get_room_today_schedule
+from scheduling.services import effective_term, get_room_today_schedule, get_schedule_settings
 from .forms import TransactionCorrectionForm
 from .models import BorrowTransaction, GuardShift
 from .services import (
     BorrowError,
     ScheduleWarning,
+    OPEN_STATUSES,
     active_transactions,
+    admin_set_status,
+    due_state,
     get_active_shift,
     log_return,
     parse_due,
@@ -41,7 +45,7 @@ def dashboard(request):
     """KEYTRACK dashboard: Role-split view.
 
     - ADMIN: Live stat cards (total keys, available, borrowed, overdue,
-             rooms, scheduled blocks today, pending approvals),
+             rooms, scheduled blocks today),
              per-building availability bars, today's schedule overview,
              overdue keys table, recent audit activity, guards on duty.
     - GUARD: Shift status + elapsed time, keys released this shift,
@@ -57,7 +61,6 @@ def dashboard(request):
         borrowed = Key.objects.filter(status=Key.Status.BORROWED).count()
         overdue = BorrowTransaction.objects.filter(status=BorrowTransaction.Status.OVERDUE).count()
         total_rooms = Room.objects.filter(is_active=True).count()
-        pending_approvals = User.objects.filter(approval_status=User.Approval.PENDING).count()
 
         # Schedule blocks for today
         today_blocks_qs = (
@@ -130,7 +133,6 @@ def dashboard(request):
             "overdue": overdue,
             "total_rooms": total_rooms,
             "blocks_scheduled_today": blocks_scheduled_today,
-            "pending_approvals": pending_approvals,
             "today_schedule": today_schedule,
             "today_date": today,
             "today_name": today.strftime("%A"),
@@ -242,12 +244,14 @@ def borrow_dashboard(request):
         del params["page"]
     querystring = params.urlencode()
 
+    schedule_cfg = get_schedule_settings()
     shift = get_active_shift(request.user)
     buildings = Building.objects.filter(is_active=True).order_by("code")
 
     return render(request, "transactions/borrow_dashboard.html", {
         "buildings": buildings,
-        "schedule_enforcement": settings.SCHEDULE_ENFORCEMENT,
+        "schedule_enforcement": schedule_cfg.enforcement,
+        "schedule_term": effective_term(timezone.localdate(), schedule_cfg),
         "q_borrower": q_borrower, "q_key": q_key,
         "borrowers": borrowers, "selected": selected,
         "active_txn": active_txn, "available_keys": available_keys,
@@ -320,7 +324,7 @@ def shift_history(request):
     shifts = (
         GuardShift.objects.select_related("guard")
         .annotate(transaction_count=Count("transactions"))
-        .order_by("-shift_start")
+        .order_by("-shift_start", "-pk")
     )
 
     guard_filter = ""
@@ -348,13 +352,7 @@ def shift_history(request):
         # Guards see ONLY their own shifts
         shifts = shifts.filter(guard=request.user)
 
-    paginator = Paginator(shifts, 20)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
-    try:
-        elided_pages = list(paginator.get_elided_page_range(page_obj.number, on_each_side=1, on_ends=1))
-    except Exception:
-        elided_pages = list(paginator.page_range)
+    page_obj = paginate(request, shifts)
 
     return render(
         request,
@@ -365,7 +363,7 @@ def shift_history(request):
             "page_obj": page_obj,
             "guard_filter": guard_filter,
             "guard_users": guard_users,
-            "elided_pages": elided_pages,
+            "querystring": querystring_without_page(request),
         },
     )
 
@@ -419,6 +417,9 @@ def get_filtered_transactions(request):
     if request.GET.get("today"):
         txns = txns.filter(borrowed_at__date=timezone.localdate())
 
+    if request.GET.get("off_schedule"):
+        txns = txns.filter(off_schedule=True)
+
     if building_filter:
         if building_filter.isdigit():
             txns = txns.filter(
@@ -453,7 +454,7 @@ def get_filtered_transactions(request):
         except ValueError:
             pass
 
-    return txns.order_by("-borrowed_at")
+    return txns.order_by("-borrowed_at", "-pk")
 
 
 @admin_or_guard_required
@@ -461,16 +462,11 @@ def transaction_history(request):
     """Transaction history with search, filters, pagination, and detail views (TASK F6.2)."""
     txns = get_filtered_transactions(request)
 
-    # Real pagination: 20 per page
-    paginator = Paginator(txns, 20)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
+    # 10 per page (accounts.crud.LIST_PAGE_SIZE), shared list design.
+    page_obj = paginate(request, txns)
 
-    # Preserve query string (without 'page') for pagination and export links
-    params = request.GET.copy()
-    if "page" in params:
-        del params["page"]
-    querystring = params.urlencode()
+    # Preserve query string (without 'page') for pagination and export links.
+    querystring = querystring_without_page(request)
 
     buildings = Building.objects.filter(is_active=True).order_by("code")
     guards = (
@@ -492,6 +488,7 @@ def transaction_history(request):
         "buildings": buildings,
         "guards": guards,
         "statuses": BorrowTransaction.Status.choices,
+        "off_schedule": bool(request.GET.get("off_schedule")),
         "querystring": querystring,
     })
 
@@ -558,11 +555,52 @@ def export_transactions_csv(request):
         ])
 
     return response
+def _transaction_detail_context(txn):
+    """Everything the detail modal shows beyond the row itself."""
+    timeline = (
+        ActivityLog.objects.filter(
+            model_name="BorrowTransaction", object_id=str(txn.pk)
+        )
+        .select_related("user")
+        .order_by("created_at")
+    )
+    return {
+        "txn": txn,
+        "timeline": timeline,
+        # due_state() reads expected_return_at, which stays in the past on a
+        # closed record: only a key that is still out can be overdue.
+        "due_state": due_state(txn) if txn.status in OPEN_STATUSES else "ok",
+        "statuses": BorrowTransaction.Status.choices,
+    }
+
+
+@admin_or_guard_required
+def transaction_detail(request, pk):
+    """Full record for one transaction: parties, timing, custody and the audit
+    trail. Served as the modal partial for `?modal=1`/XHR and as a plain page
+    otherwise, so the row stays openable without JS."""
+    txn = get_object_or_404(
+        BorrowTransaction.objects.select_related(
+            "key__room__building", "key__category", "room__building",
+            "borrower__department", "released_by", "received_by", "guard_shift__guard",
+        ),
+        pk=pk,
+    )
+    ctx = _transaction_detail_context(txn)
+    if is_modal(request):
+        return render(request, "transactions/_detail_modal.html", ctx)
+    return render(request, "transactions/detail.html", ctx)
+
+
 @admin_required
 def transaction_correct(request, pk):
     """B4.6: only an ADMIN may amend a transaction record, and every correction
     is written to the audit log with a before/after diff and a reason. Guards
-    have no edit path at all: they log records, they do not amend them."""
+    have no edit path at all: they log records, they do not amend them.
+
+    The status moves through services.admin_set_status() so the key is re-filed
+    in the same database transaction; a move it refuses comes back as a 422 with
+    the reason on the field, and the other edits are rolled back with it."""
     txn = get_object_or_404(
         BorrowTransaction.objects.select_related("key__room__building", "borrower"), pk=pk)
     form = TransactionCorrectionForm(request.POST or None, instance=txn)
@@ -573,9 +611,25 @@ def transaction_correct(request, pk):
         if form.is_valid():
             changes = {
                 name: [str(form.initial.get(name) or ""), str(form.cleaned_data.get(name) or "")]
-                for name in form.changed_data if name != "reason"
+                for name in form.changed_data if name not in ("reason", "status")
             }
-            form.save()
+            new_status = form.cleaned_data.get("status") or ""
+            try:
+                with db_transaction.atomic():
+                    form.save()
+                    if new_status:
+                        _, status_changes = admin_set_status(
+                            transaction_id=txn.pk, new_status=new_status,
+                            admin=request.user)
+                        changes.update(status_changes)
+            except BorrowError as e:
+                form.add_error("status", str(e))
+                if modal:
+                    return render(request, "transactions/_correction_modal.html", ctx,
+                                  status=422)
+                messages.error(request, str(e))
+                return render(request, "transactions/correction_form.html", ctx)
+            txn.refresh_from_db()
             log_activity(request.user, Action.UPDATE, obj=txn, request=request,
                          description=f"Correction: {form.cleaned_data['reason']}",
                          changes=changes)

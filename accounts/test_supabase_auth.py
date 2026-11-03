@@ -92,7 +92,7 @@ class FakeSupabaseMixin:
     def make_user(self, username, role=User.Role.GUARD, **extra):
         return User.objects.create_user(
             username=username, email=f"{username}@example.com", password=PW,
-            role=role, approval_status=User.Approval.APPROVED, **extra)
+            role=role, **extra)
 
     def login(self, ident, password=PW):
         return self.client.post(reverse("accounts:login"), {"username": ident, "password": password})
@@ -124,8 +124,8 @@ class SupabaseLoginTests(FakeSupabaseMixin, TestCase):
         self.guard.refresh_from_db()
         self.assertTrue(self.guard.check_password("new-Pass-98765"))
 
-    def test_unapproved_or_inactive_never_reach_supabase(self):
-        self.guard.approval_status = User.Approval.PENDING
+    def test_inactive_never_reaches_supabase(self):
+        self.guard.is_active = False
         self.guard.save()
         self.assertEqual(self.login("guard").status_code, 200)
         self.assertEqual(self.sb.calls, [])
@@ -195,8 +195,7 @@ class SupabaseAdminSyncTests(FakeSupabaseMixin, TestCase):
 
     def create_payload(self, **over):
         data = {"username": "newguard", "first_name": "New", "last_name": "Guard",
-                "email": "newguard@example.com", "role": User.Role.GUARD,
-                "password1": PW, "password2": PW}
+                "email": "newguard@example.com", "role": User.Role.GUARD}
         data.update(over)
         return data
 
@@ -205,6 +204,42 @@ class SupabaseAdminSyncTests(FakeSupabaseMixin, TestCase):
         self.assertEqual(res.status_code, 201)
         user = User.objects.get(username="newguard")
         self.assertEqual(self.sb.users[str(user.supabase_uid)]["email"], "newguard@example.com")
+        self.assertEqual(self.sb.users[str(user.supabase_uid)]["password"], "Admin2026")
+        self.assertTrue(user.check_password("Admin2026"))
+
+    def own_change(self, current=PW, new="My-New-Pass-77"):
+        return self.client.post(reverse("accounts:password_change"),
+                                {"current_password": current, "new_password1": new,
+                                 "new_password2": new})
+
+    def test_own_password_change_updates_supabase(self):
+        guard = self.make_user("guard")
+        guard.supabase_uid = self.sb.add("guard@example.com", PW)
+        guard.save()
+        self.client.force_login(guard)
+        self.assertEqual(self.own_change().status_code, 302)
+        self.assertEqual(self.sb.users[str(guard.supabase_uid)]["password"], "My-New-Pass-77")
+        guard.refresh_from_db()
+        self.assertTrue(guard.check_password("My-New-Pass-77"))
+
+    def test_own_password_change_checks_current_password_with_supabase(self):
+        guard = self.make_user("guard")
+        # Changed in the Supabase dashboard: the stale local hash must not pass.
+        guard.supabase_uid = self.sb.add("guard@example.com", "dashboard-Pass-9")
+        guard.save()
+        self.client.force_login(guard)
+        self.assertEqual(self.own_change(current=PW).status_code, 422)
+        self.assertEqual(self.sb.users[str(guard.supabase_uid)]["password"], "dashboard-Pass-9")
+
+    def test_own_password_change_rolls_back_when_supabase_is_down(self):
+        guard = self.make_user("guard")
+        guard.supabase_uid = self.sb.add("guard@example.com", PW)
+        guard.save()
+        self.client.force_login(guard)
+        self.sb.down = True
+        self.assertEqual(self.own_change().status_code, 422)
+        guard.refresh_from_db()
+        self.assertTrue(guard.check_password(PW))
 
     def test_create_rolls_back_when_supabase_is_down(self):
         self.sb.down = True
@@ -265,7 +300,7 @@ class SupabaseDisabledTests(FakeSupabaseMixin, TestCase):
         self.client.force_login(admin)
         self.client.post(reverse("accounts:user_create"), {
             "username": "g2", "first_name": "G", "last_name": "Two", "email": "g2@example.com",
-            "role": User.Role.GUARD, "password1": PW, "password2": PW}, **MODAL)
+            "role": User.Role.GUARD}, **MODAL)
         self.assertTrue(User.objects.filter(username="g2").exists())
         self.assertEqual(self.sb.calls, [])
 
@@ -315,10 +350,9 @@ class OnlyAdminsCreateAccountsTests(TestCase):
     def setUp(self):
         self.staff_guard = User.objects.create_user(
             username="sguard", email="sguard@example.com", password=PW, role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED, is_staff=True)
+            is_staff=True)
         self.superadmin = User.objects.create_superuser(
-            username="root", email="root@example.com", password=PW, role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED)
+            username="root", email="root@example.com", password=PW, role=User.Role.ADMIN)
 
     @override_settings(ALLOWED_HOSTS=["testserver"])
     def test_staff_guard_cannot_add_users_in_django_admin(self):

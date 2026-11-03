@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}KEYTRACK{% endblock %}</title>
   <link rel="icon" type="image/png" href="{% static 'keytrack-favicon.png' %}">
+  {% comment %} Pinned deliberately, same rule as the Lucide tag below (F7.5 / B8.13).
+     Loaded before tailwind_css so source.css's .toastify overrides win the
+     cascade at equal specificity. {% endcomment %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
   {% tailwind_css %}
   {% block extra_head %}{% endblock %}
 </head>
@@ -16,6 +20,9 @@
   <a href="#main-content" class="skip-link">Skip to main content</a>
   <div class="flex min-h-screen">
     {% include "partials/sidebar.html" %}
+    {% comment %} Right after the sidebar so its scroll is back before first paint;
+       also keeps the page offset across a POST that redirects back (scroll-restore.js). {% endcomment %}
+    <script src="{% static 'js/scroll-restore.js' %}"></script>
     <div class="flex-1 min-w-0 flex flex-col">
       {% include "partials/navbar.html" %}
       <main id="main-content" tabindex="-1" class="flex-1 px-6 lg:px-8 py-6 max-w-[1400px] w-full mx-auto">
@@ -25,17 +32,21 @@
     </div>
   </div>
   {% else %}
+    {% comment %} Anonymous pages (login) need the flash list too: the sign-out
+    message is only readable after the session has been replaced. {% endcomment %}
+    {% include "partials/messages.html" %}
     {% block content_anon %}{% endblock %}
   {% endif %}
   {% if user.is_authenticated %}
     {% include "partials/logout_modal.html" %}
     {% include "partials/session_expired_modal.html" %}
     {% include "partials/confirm_modal.html" %}
+    {% include "partials/date_range_modal.html" %}
   {% endif %}
-  {% include "partials/toast.html" %}
   {% comment %} Version pinned deliberately: an unpinned CDN tag can change the icon set
      or the API without warning and break the UI (F7.5 / B8.13). {% endcomment %}
   <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
 
   {# Shared, every page. csrf.js must come first — it defines window.KeyTrack. #}
   <script src="{% static 'js/csrf.js' %}"></script>
@@ -43,8 +54,16 @@
   <script src="{% static 'js/skeletons.js' %}"></script>
   <script src="{% static 'js/modal.js' %}"></script>
   <script src="{% static 'js/modal-form.js' %}"></script>
+  <script src="{% static 'js/list-region.js' %}"></script>
   <script src="{% static 'js/confirm.js' %}"></script>
   <script src="{% static 'js/search.js' %}"></script>
+  <script src="{% static 'js/searchable-select.js' %}"></script>
+  <script src="{% static 'js/date-range-picker.js' %}"></script>
+  <script src="{% static 'js/password-strength.js' %}"></script>
+  {% comment %} Must come after modal-form / list-region / confirm: it only takes
+  over a submit none of them already claimed (defaultPrevented). {% endcomment %}
+  <script src="{% static 'js/button-loading.js' %}"></script>
+  <script src="{% static 'js/bulk-actions.js' %}"></script>
   <script src="{% static 'js/navbar.js' %}"></script>
 
   {# First icon pass. Anything injected later must call KeyTrack.refreshIcons(). #}

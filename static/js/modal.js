@@ -45,6 +45,38 @@
     );
   }
 
+  /* ---- scroll lock ---------------------------------------------------
+   *
+   * Reference-counted so the mobile drawer (navbar.js) and a modal opened on
+   * top of it cannot unlock each other, and so a stack of modals locks once.
+   *
+   * `overflow-hidden` alone was the defect: hiding the page scrollbar hands
+   * its ~15px back to the viewport, so the sidebar, navbar and list reflow
+   * wider while the modal is open and snap back on close — visible as a flash
+   * and as the right-hand page scrollbar disappearing. Re-reserving the
+   * measured scrollbar width keeps every in-flow box exactly where it was.
+   * See .kt-scroll-locked in assets/css/source.css.
+   */
+  var lockCount = 0;
+
+  function lockScroll() {
+    if (lockCount++ > 0) return;
+    /* 0 on overlay-scrollbar platforms (macOS, mobile) — nothing to reserve. */
+    var width = window.innerWidth - document.documentElement.clientWidth;
+    document.documentElement.style.setProperty(
+      "--kt-scrollbar-width",
+      (width > 0 ? width : 0) + "px"
+    );
+    document.body.classList.add("kt-scroll-locked");
+  }
+
+  function unlockScroll() {
+    if (lockCount === 0) return;
+    if (--lockCount > 0) return;
+    document.body.classList.remove("kt-scroll-locked");
+    document.documentElement.style.removeProperty("--kt-scrollbar-width");
+  }
+
   function entryFor(id) {
     for (var i = 0; i < stack.length; i++) {
       if (stack[i].id === id) return stack[i];
@@ -101,7 +133,7 @@
     updateStackZIndexes();
     el.classList.remove("hidden");
     el.removeAttribute("aria-hidden");
-    document.body.classList.add("overflow-hidden");
+    lockScroll();
 
     focusInitial(el);
     KeyTrack.refreshIcons(el);
@@ -120,8 +152,9 @@
     entry.el.style.zIndex = "";
     updateStackZIndexes();
 
-    /* Only release the scroll lock once the last modal has closed. */
-    if (!stack.length) document.body.classList.remove("overflow-hidden");
+    /* One unlock per open — the reference count releases the page only once
+     * the last modal (and the drawer) has closed. */
+    unlockScroll();
 
     /* Restore focus to whatever opened it, per the a11y behavior the logout
      * modal already got right. */
@@ -213,6 +246,10 @@
     anyOpen: function () {
       return stack.length > 0;
     },
+    /* Shared with navbar.js so the mobile drawer locks the page the same way
+     * (reference-counted, no layout shift). */
+    lockScroll: lockScroll,
+    unlockScroll: unlockScroll,
     topId: function () {
       var t = top();
       return t ? t.id : null;

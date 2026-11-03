@@ -1,6 +1,9 @@
 {% load keytrack %}
 {% comment %}
-  Shared pagination footer.
+  Shared pagination footer: the default list design (guide.md §5 "List pages:
+  pagination"). Pages are 10 records (accounts.crud.LIST_PAGE_SIZE); wrap the
+  table and this footer in a [data-list-region] for in-place paging with
+  skeleton rows.
   Params: page_obj (Django Page), item_label ("keys", "rooms"…; default
   "results"), querystring (optional, current filters without page; falls back
   to request.GET). Without page_obj, total_count alone renders the summary.

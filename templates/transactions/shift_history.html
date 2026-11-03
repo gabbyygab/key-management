@@ -15,7 +15,7 @@
 
   {% if is_admin %}
   {# Guard filter for admins #}
-  <form method="get" class="flex flex-wrap items-center gap-2" role="search" aria-label="Filter guard shifts">
+  <form method="get" class="flex flex-wrap items-center gap-2" role="search" aria-label="Filter guard shifts" data-list-region-form="#shift-history-region">
     <label for="guard-filter" class="text-[13px] font-medium text-stone-700">Guard:</label>
     <div class="relative min-w-[200px]">
       <select id="guard-filter" name="guard" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] text-stone-800 focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] outline-none">
@@ -41,6 +41,7 @@
   {% endif %}
 </div>
 
+<div id="shift-history-region" data-list-region>
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
   <div class="overflow-x-auto">
     <table class="min-w-full text-[13px]">
@@ -111,6 +112,7 @@
       </tbody>
     </table>
   </div>
-  {% include "partials/pagination.html" with page_obj=page_obj %}
+  {% include "partials/pagination.html" with page_obj=page_obj querystring=querystring item_label="shifts" %}
+</div>
 </div>
 {% endblock %}

@@ -33,7 +33,7 @@ class OutKeyFixture(TestCase):
         self.dept = Department.objects.create(code="CCS", name="Computer Studies")
         self.guard = User.objects.create_user(
             username="guard1", email="guard1@example.edu", password="pw",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+            role=User.Role.GUARD)
         self.shift = GuardShift.objects.create(guard=self.guard, post="Main Desk")
         self.borrower = Borrower.objects.create(
             id_number="F-1001", first_name="Maria", last_name="Dela Cruz",
@@ -237,7 +237,7 @@ class ActiveListEndpointTests(OutKeyFixture):
     def test_wrong_role_gets_403_json_not_a_redirect(self):
         staff = User.objects.create_user(
             username="prof", email="prof@example.edu", password="pw",
-            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED)
+            role=User.Role.FACULTY_STAFF)
         self.client.force_login(staff)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 403)
@@ -323,7 +323,7 @@ class ReturnEndpointTests(OutKeyFixture):
     def test_wrong_role_is_403_and_does_not_return_the_key(self):
         staff = User.objects.create_user(
             username="prof", email="prof@example.edu", password="pw",
-            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED)
+            role=User.Role.FACULTY_STAFF)
         self.client.force_login(staff)
         res = self.post({"condition": "OK"})
         self.assertEqual(res.status_code, 403)
@@ -341,15 +341,15 @@ class RoleSplitDashboardTests(TestCase):
         self.dept = Department.objects.create(code="CCS", name="Computer Studies")
         self.admin = User.objects.create_user(
             username="admin_user", email="admin@example.edu", password="pw",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+            role=User.Role.ADMIN,
         )
         self.guard = User.objects.create_user(
             username="guard_user", email="guard@example.edu", password="pw",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+            role=User.Role.GUARD,
         )
         self.staff = User.objects.create_user(
             username="staff_user", email="staff@example.edu", password="pw",
-            role=User.Role.FACULTY_STAFF, approval_status=User.Approval.APPROVED,
+            role=User.Role.FACULTY_STAFF,
         )
         self.building = Building.objects.create(code="CCS", name="Computing")
         self.room = Room.objects.create(building=self.building, room_code="101", capacity=30)
@@ -368,10 +368,6 @@ class RoleSplitDashboardTests(TestCase):
         self.assertEqual(res.status_code, 403)
 
     def test_admin_dashboard_renders_admin_view_and_stat_cards(self):
-        pending_user = User.objects.create_user(
-            username="pending_user", email="pending@example.edu", password="pw",
-            role=User.Role.GUARD, approval_status=User.Approval.PENDING,
-        )
         today = timezone.localdate()
         term = Term.objects.create(
             name="2026 Term", start_date=today - timedelta(days=10),
@@ -410,7 +406,6 @@ class RoleSplitDashboardTests(TestCase):
         self.assertEqual(res.context["overdue"], 1)
         self.assertEqual(res.context["total_rooms"], 1)
         self.assertEqual(res.context["blocks_scheduled_today"], 1)
-        self.assertEqual(res.context["pending_approvals"], 1)
         self.assertEqual(len(res.context["guards_on_duty"]), 1)
         self.assertEqual(len(res.context["today_schedule"]), 1)
         self.assertEqual(len(res.context["overdue_keys"]), 1)
@@ -487,7 +482,7 @@ class PosTodayInRoomWidgetTests(TestCase):
     def setUpTestData(cls):
         cls.guard = User.objects.create_user(
             "guard_pos", "guard_pos@example.com", "x",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+            role=User.Role.GUARD,
         )
         cls.shift = GuardShift.objects.create(
             guard=cls.guard,
@@ -560,15 +555,15 @@ class TransactionHistoryUpgradeTests(TestCase):
         self.dept = Department.objects.create(code="CCS", name="Computer Studies")
         self.admin = User.objects.create_user(
             username="admin_history", email="admin_history@example.edu", password="pw",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED)
+            role=User.Role.ADMIN)
         self.guard1 = User.objects.create_user(
             username="guard_alpha", email="guard_alpha@example.edu", password="pw",
             first_name="Alpha", last_name="Guard",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+            role=User.Role.GUARD)
         self.guard2 = User.objects.create_user(
             username="guard_beta", email="guard_beta@example.edu", password="pw",
             first_name="Beta", last_name="Guard",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+            role=User.Role.GUARD)
 
         self.shift1 = GuardShift.objects.create(guard=self.guard1, post="Main Gate", is_on_duty=True)
         self.shift2 = GuardShift.objects.create(guard=self.guard2, post="North Gate", is_on_duty=True)
@@ -731,6 +726,16 @@ class TransactionHistoryUpgradeTests(TestCase):
         self.assertEqual(len(res_old.context["txns"]), 1)
         self.assertEqual(res_old.context["txns"][0].transaction_no, "TXN-20261023-0003")
 
+    def test_date_range_picker_renders_and_preserves_filtering(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(self.url, {"start_date": "2026-10-01", "end_date": "2026-10-15"})
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "data-date-range-picker")
+        self.assertContains(res, 'value="2026-10-01"')
+        self.assertContains(res, 'value="2026-10-15"')
+        self.assertContains(res, "2026-10-01 – 2026-10-15")
+        self.assertContains(res, 'id="kt-date-range-modal"')
+
     def test_pagination(self):
         self.client.force_login(self.guard1)
         # Create 22 more transactions so we have 25 total
@@ -747,34 +752,52 @@ class TransactionHistoryUpgradeTests(TestCase):
                 borrowed_at=now - timedelta(minutes=i),
             )
 
-        # Page 1 should contain 20 items and pager should indicate 25 total
+        # 10 per page (accounts.crud.LIST_PAGE_SIZE); 25 total = 3 pages.
         res_page1 = self.client.get(self.url)
         self.assertEqual(res_page1.status_code, 200)
-        self.assertEqual(len(res_page1.context["txns"]), 20)
+        self.assertEqual(len(res_page1.context["txns"]), 10)
         self.assertEqual(res_page1.context["page_obj"].paginator.count, 25)
         self.assertTrue(res_page1.context["page_obj"].has_next())
-        self.assertContains(res_page1, "Showing <span class=\"font-semibold text-stone-800\">1</span> to <span class=\"font-semibold text-stone-800\">20</span> of <span class=\"font-semibold text-stone-800\">25</span> results")
+        self.assertContains(res_page1, "Showing <span class=\"font-semibold text-stone-800\">1</span> to <span class=\"font-semibold text-stone-800\">10</span> of <span class=\"font-semibold text-stone-800\">25</span> transactions")
 
-        # Page 2 should contain 5 items
+        # Page 2 has the next 10; page 3 has the last 5.
         res_page2 = self.client.get(self.url, {"page": "2"})
         self.assertEqual(res_page2.status_code, 200)
-        self.assertEqual(len(res_page2.context["txns"]), 5)
-        self.assertFalse(res_page2.context["page_obj"].has_next())
+        self.assertEqual(len(res_page2.context["txns"]), 10)
+        self.assertTrue(res_page2.context["page_obj"].has_next())
         self.assertTrue(res_page2.context["page_obj"].has_previous())
+
+        res_page3 = self.client.get(self.url, {"page": "3"})
+        self.assertEqual(res_page3.status_code, 200)
+        self.assertEqual(len(res_page3.context["txns"]), 5)
+        self.assertFalse(res_page3.context["page_obj"].has_next())
+        self.assertTrue(res_page3.context["page_obj"].has_previous())
 
     def test_overdue_highlighting(self):
         self.client.force_login(self.guard1)
         res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
-        self.assertContains(res, 'data-is-overdue="true"')
         self.assertContains(res, "border-l-red-500")
 
-    def test_row_metadata_and_override_reason_in_html(self):
+    def test_row_links_to_the_detail_record(self):
+        """The row no longer carries the record in data-* attributes: it points
+        at transactions:detail, which renders it server-side."""
         self.client.force_login(self.guard1)
         res = self.client.get(self.url, {"q": "TXN-20261023-0003"})
-        self.assertContains(res, 'data-released-by="Beta Guard"')
-        self.assertContains(res, 'data-shift-post="North Gate"')
-        self.assertContains(res, 'data-override-reason="Dean approved emergency weekend room access"')
-        self.assertEqual(self.txn_overdue.override_reason, "Dean approved emergency weekend room access")
+        detail_url = reverse("transactions:detail", args=[self.txn_overdue.pk])
+        self.assertContains(res, f'href="{detail_url}"')
+        self.assertContains(res, 'data-modal-form="txn-detail-modal"')
+
+    def test_detail_modal_shows_custody_and_override_reason(self):
+        self.client.force_login(self.guard1)
+        res = self.client.get(
+            reverse("transactions:detail", args=[self.txn_overdue.pk]) + "?modal=1")
+        self.assertEqual(res.status_code, 200)
+        self.assertTemplateUsed(res, "transactions/_detail_modal.html")
+        self.assertContains(res, "Beta Guard")
+        self.assertContains(res, "North Gate")
+        self.assertContains(res, "Dean approved emergency weekend room access")
+        self.assertEqual(self.txn_overdue.override_reason,
+                         "Dean approved emergency weekend room access")
 
     def test_csv_export_guard_forbidden(self):
         self.client.force_login(self.guard1)

@@ -1,23 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Guard Posts — KEYTRACK{% endblock %}
+{% block title %}{% if archived %}Archived guard posts{% else %}Guard Posts{% endif %} — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Guard Posts</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Where guards are stationed. A guard's assigned post is stamped on every shift they open.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived guard posts{% else %}Guard Posts{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}Archived posts are no longer offered when assigning guards. Restore one to bring it back{% if retention_days %} — after {{ retention_days }} days an archived post is deleted for good (assigned guards and past shifts are kept, without a post){% endif %}.{% else %}Where guards are stationed. A guard's assigned post is stamped on every shift they open.{% endif %}</p>
   </div>
-  <a href="{% url 'facilities:post_create' %}" data-modal-form="post-modal" data-modal-refresh="#post-list-region"
+  <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
+  {% include "partials/archive_switch.html" %}
+  {% if not archived %}<a href="{% url 'facilities:post_create' %}" data-modal-form="post-modal" data-modal-refresh="#post-list-region"
      class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
     <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i><span>Add post</span>
-  </a>
+  </a>{% endif %}
+  </div>
 </div>
 
-<div id="post-list-region">
+<div id="post-list-region" data-list-region
+     data-bulk-url="{% url 'facilities:post_bulk' %}"
+     data-bulk-noun="guard post" data-bulk-noun-plural="guard posts">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Guard posts</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every guard post on this page">
+          </th>
           <th scope="col" class="p-3.5 font-semibold">Post</th>
           <th scope="col" class="p-3.5 font-semibold">Building</th>
           <th scope="col" class="p-3.5 font-semibold">Assigned guards</th>
@@ -28,24 +38,47 @@
       <tbody class="divide-y divide-stone-100">
         {% for p in posts %}
         <tr class="hover:bg-stone-50/60{% if not p.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ p.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if p.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ p.name }}"
+                   aria-label="Select {{ p.name }}">
+          </td>
           <td class="p-3.5 font-semibold text-stone-900">{{ p.name }}</td>
           <td class="p-3.5">{% if p.building %}<span class="font-mono">{{ p.building.code }}</span> <span class="text-stone-500">· {{ p.building.name }}</span>{% else %}<span class="text-stone-400">—</span>{% endif %}</td>
           <td class="p-3.5"><a href="{% url 'accounts:user_list' %}?role=GUARD" class="font-mono hover:underline">{{ p.guard_count }}</a></td>
-          <td class="p-3.5">{% if p.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5">{% if p.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}</td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">
               <a href="{% url 'facilities:post_update' p.pk %}" data-modal-form="post-modal" data-modal-refresh="#post-list-region"
                  class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ p.name }}</span></a>
               <form method="post" action="{% url 'facilities:post_toggle' p.pk %}" class="inline"
-                    {% if p.is_active %}data-confirm="Guards assigned here keep the assignment, but new shifts will be recorded at Main Desk." data-confirm-title="Deactivate guard post" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ p.name }}"{% endif %}>
+                    {% if p.is_active %}data-confirm="Guards assigned here keep the assignment, but new shifts will be recorded at Main Desk. Nothing is deleted — you can restore the post at any time." data-confirm-title="Archive guard post" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ p.name }}"{% endif %}>
                 {% csrf_token %}
-                <button type="submit" class="font-medium {% if p.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if p.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ p.name }}</span></button>
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if p.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if p.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if p.is_active %}archive{% else %}archive-restore{% endif %}" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if p.is_active %}Archive{% else %}Restore{% endif %}<span class="sr-only"> {{ p.name }}</span>
+                </button>
               </form>
+              {% if not p.is_active %}
+              <form method="post" action="{% url 'facilities:post_delete' p.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ p.name }} is removed from the database. Guards assigned to it and their past shifts are kept, but lose the post. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete guard post forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ p.name }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" aria-hidden="true" class="w-3.5 h-3.5"></i>Delete<span class="sr-only"> {{ p.name }} forever</span>
+                </button>
+              </form>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=5 icon="shield" title="No guard posts yet" message="Add posts such as Main Gate or Lobby, then assign guards to them from Users & Guards." %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=6 icon="archive" title="Nothing archived" message="Archived guard posts show up here." %}{% else %}{% include "partials/empty_state.html" with colspan=6 icon="shield" title="No guard posts yet" message="Add posts such as Main Gate or Lobby, then assign guards to them from Users & Guards." %}{% endif %}
         {% endfor %}
       </tbody>
     </table>

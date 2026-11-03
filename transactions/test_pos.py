@@ -30,7 +30,7 @@ class PosFixture(TestCase):
         dept = Department.objects.create(code="CCS", name="Computer Studies")
         cls.guard = User.objects.create_user(
             username="guard", email="g@example.com", password="pw-12345-long",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED)
+            role=User.Role.GUARD)
         cls.instructor = Borrower.objects.create(
             id_number="F-1", first_name="Maria", last_name="Cruz",
             borrower_type="FACULTY", department=dept)
@@ -185,8 +185,7 @@ class BorrowApiTests(PosFixture):
         res = self.post(borrower_id=self.other.pk, key_id=self.key.pk)
         self.assertEqual(res.status_code, 403)
         admin = User.objects.create_user(username="adm", email="a@example.com",
-                                         password="pw-12345-long", role=User.Role.ADMIN,
-                                         approval_status=User.Approval.APPROVED)
+                                         password="pw-12345-long", role=User.Role.ADMIN)
         self.client.force_login(admin)
         self.assertEqual(self.post(borrower_id=self.other.pk, key_id=self.key.pk).status_code, 403)
 
@@ -228,8 +227,7 @@ class SearchApiTests(PosFixture):
 
     def test_admin_gets_403_on_guard_apis(self):
         admin = User.objects.create_user(username="adm", email="a@example.com",
-                                         password="pw-12345-long", role=User.Role.ADMIN,
-                                         approval_status=User.Approval.APPROVED)
+                                         password="pw-12345-long", role=User.Role.ADMIN)
         self.client.force_login(admin)
         self.assertEqual(self.client.get(reverse("accounts_api:borrower_search")).status_code, 403)
         self.assertEqual(self.client.get(reverse("keys_api:search")).status_code, 403)
@@ -241,12 +239,75 @@ class GuardPostShiftTests(TestCase):
         post = GuardPost.objects.create(name="Main Gate")
         guard = User.objects.create_user(username="g", email="g@example.com",
                                          password="pw-12345-long", role=User.Role.GUARD,
-                                         approval_status=User.Approval.APPROVED,
                                          assigned_post=post)
         admin = User.objects.create_user(username="a", email="a@example.com",
-                                         password="pw-12345-long", role=User.Role.ADMIN,
-                                         approval_status=User.Approval.APPROVED)
+                                         password="pw-12345-long", role=User.Role.ADMIN)
         self.client.force_login(guard)
         self.client.force_login(admin)
         self.assertEqual(GuardShift.objects.get(guard=guard, is_on_duty=True).post, "Main Gate")
         self.assertFalse(GuardShift.objects.filter(guard=admin).exists())
+
+
+class ScheduleSettingsTests(PosFixture):
+    """Admin-controlled settings (ScheduleSettings) beat the env default."""
+
+    def _settings(self, **kw):
+        from scheduling.models import ScheduleSettings
+        return ScheduleSettings.objects.create(**kw)
+
+    def test_outside_schedule_loan_is_flagged(self):
+        txn = pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                         override_reason="Opened for a make-up class", now=MONDAY_10AM)
+        self.assertTrue(txn.off_schedule)
+
+    def test_own_class_is_not_flagged(self):
+        txn = pos_borrow(key_id=self.key.pk, borrower=self.instructor, guard=self.guard,
+                         now=MONDAY_10AM)
+        self.assertFalse(txn.off_schedule)
+
+    def test_saved_block_setting_overrides_env_default(self):
+        self._settings(enforcement="block")
+        with override_settings(SCHEDULE_ENFORCEMENT="off"):
+            with self.assertRaises(ScheduleWarning):
+                pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                           override_reason="Please", now=MONDAY_10AM)
+
+    def test_off_setting_skips_check_and_flag(self):
+        self._settings(enforcement="off")
+        txn = pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                         now=MONDAY_10AM)
+        self.assertFalse(txn.off_schedule)
+
+    def test_pinned_semester_without_timetable_lends_freely_by_default(self):
+        empty = Term.objects.create(name="2027 Spring", start_date="2027-01-10",
+                                    end_date="2027-05-30", is_active=True)
+        self._settings(current_term=empty)
+        txn = pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                         now=MONDAY_10AM)
+        self.assertFalse(txn.off_schedule)
+
+    def test_no_timetable_can_require_a_reason(self):
+        empty = Term.objects.create(name="2027 Spring", start_date="2027-01-10",
+                                    end_date="2027-05-30", is_active=True)
+        self._settings(current_term=empty, no_schedule_policy="reason")
+        with self.assertRaises(ScheduleWarning):
+            pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                       now=MONDAY_10AM)
+        txn = pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard,
+                         override_reason="Timetable not encoded yet", now=MONDAY_10AM)
+        self.assertEqual(txn.remarks, "Override: Timetable not encoded yet")
+        self.assertFalse(txn.off_schedule)
+
+    def test_settings_page_is_admin_only_and_saves(self):
+        admin = User.objects.create_user(username="adm", email="a@example.com",
+                                         password="pw-12345-long", role=User.Role.ADMIN)
+        self.client.force_login(self.guard)
+        self.assertEqual(self.client.get(reverse("scheduling:settings"),
+                                         HTTP_HOST="testserver").status_code, 403)
+        self.client.force_login(admin)
+        r = self.client.post(reverse("scheduling:settings"), {
+            "current_term": self.term.pk, "enforcement": "block",
+            "no_schedule_policy": "auto"})
+        self.assertEqual(r.status_code, 302)
+        from scheduling.services import get_schedule_settings
+        self.assertEqual(get_schedule_settings().enforcement, "block")

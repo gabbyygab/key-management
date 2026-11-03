@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}{% if archived %}Archived terms{% else %}Terms{% endif %} — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived terms{% else %}Terms{% endif %}</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      {% if archived %}An archived term drops out of the pickers. Restore one to bring it back.
+      {% else %}Each term is an academic year and a semester, like 2025-2026 1st Semester. Offerings and timetables belong to one term.{% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% if archived %}{% url 'scheduling:term_list' %}{% else %}{% url 'scheduling:term_archived' %}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
+      <span>{% if archived %}Live terms{% else %}Archived{% if archived_count %} ({{ archived_count }}){% endif %}{% endif %}</span>
+    </a>
+    {% if not archived %}
+    <a href="{% url 'scheduling:term_create' %}" data-modal-form="term-modal" data-modal-refresh="#term-list-region"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add term</span>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<form method="get" data-list-region-form="#term-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search terms">
+  <label for="term-q" class="sr-only">Search academic year or term</label>
+  <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+    <input id="term-q" name="q" value="{{ q }}" placeholder="Search 2025-2026…" autocomplete="off"
+           class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+  </div>
+  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Search</button>
+  {% if q %}
+  <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
+  {% endif %}
+</form>
+
+<div id="term-list-region" data-list-region
+     data-bulk-url="{% url 'scheduling:term_bulk' %}"
+     data-bulk-noun="term" data-bulk-noun-plural="terms">
+  {% include "partials/bulk_bar.html" %}
+  <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Academic terms</caption>
+      <thead>
+        <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every term on this page">
+          </th>
+          <th scope="col" class="p-3.5 font-semibold">Term</th>
+          <th scope="col" class="p-3.5 font-semibold">Dates</th>
+          <th scope="col" class="p-3.5 font-semibold">Offerings</th>
+          <th scope="col" class="p-3.5 font-semibold">Scheduled classes</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for t in terms %}
+        <tr class="transition-colors hover:bg-stone-50/60">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ t.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if t.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ t.name }}"
+                   aria-label="Select {{ t.name }}">
+          </td>
+          <td class="p-3.5 font-semibold text-stone-900">{{ t.name }}</td>
+          <td class="whitespace-nowrap p-3.5 text-stone-600">{{ t.start_date|date:"M j, Y" }} – {{ t.end_date|date:"M j, Y" }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if t.offering_count %}
+              <a href="{% url 'scheduling:offering_list' %}?term={{ t.pk }}" class="font-semibold text-[#1E6B4A] hover:underline">{{ t.offering_count }} offering{{ t.offering_count|pluralize }}</a>
+            {% else %}<span class="text-stone-400">none</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-stone-600">{{ t.block_count }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if t.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
+            {% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-right">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:term_update' t.pk %}" data-modal-form="term-modal" data-modal-refresh="#term-list-region"
+                 class="inline-flex items-center gap-1 font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">
+                <i data-lucide="edit-3" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Edit</span><span class="sr-only">{{ t.name }}</span>
+              </a>
+              <form method="post" action="{% url 'scheduling:term_toggle' t.pk %}" class="inline"
+                    {% if t.is_active %}data-confirm="Archiving {{ t.name }} hides it from the pickers. Its offerings and timetable blocks are kept."
+                    data-confirm-title="Archive term" data-confirm-label="Archive" data-confirm-subject="{{ t.name }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if t.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if t.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if t.is_active %}archive{% else %}archive-restore{% endif %}" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                  <span>{% if t.is_active %}Archive{% else %}Restore{% endif %}</span><span class="sr-only">{{ t.name }}</span>
+                </button>
+              </form>
+              {% if not t.is_active %}
+              {# The one hard delete in the UI — see accounts/retention.py. #}
+              <form method="post" action="{% url 'scheduling:term_delete' t.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ t.name }} is removed from the database along with its offerings and timetable blocks. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete term forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ t.name }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Delete</span><span class="sr-only">{{ t.name }} forever</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=7 icon="archive" title="Nothing archived" message="Archived terms show up here." %}
+        {% else %}{% include "partials/empty_state.html" with colspan=7 icon="calendar-range" title="No terms yet" message="Add a term such as 2025-2026 1st Semester before offering subjects." action_url=create_url action_label="Add term" action_icon="plus" %}{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="terms" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="term-modal" modal_size="md" modal_label="Term form" skeleton_fields=4 %}
+{% endblock %}

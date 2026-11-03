@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Auto-schedule — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Auto-schedule</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      Walks the offering queue first come, first served and gives each one the earliest slot and room that clashes with nothing.
+    </p>
+  </div>
+  <a href="{% url 'scheduling:offering_list' %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}"
+     class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+    <i data-lucide="list-ordered" class="h-4 w-4 text-stone-500"></i><span>Offering queue</span>
+  </a>
+</div>
+
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+
+  {# ---------------- Options ---------------- #}
+  <form method="post" class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+    {% csrf_token %}
+    <h2 class="text-[15px] font-bold text-stone-900">Run options</h2>
+    <p class="mt-0.5 text-[12px] text-stone-500">Preview first — it runs the real algorithm and throws the result away.</p>
+
+    {% if form.non_field_errors %}
+    <div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="mt-4 space-y-4">
+      {% include "partials/form_field.html" with field=form.term field_label="Term" %}
+      <div class="grid grid-cols-2 gap-3">
+        {% include "partials/form_field.html" with field=form.day_start field_label="Earliest start" %}
+        {% include "partials/form_field.html" with field=form.day_end field_label="Latest end" %}
+      </div>
+      <div class="space-y-2 rounded-lg border border-stone-200 p-3">
+        {% include "partials/form_field.html" with field=form.include_saturday %}
+        {% include "partials/form_field.html" with field=form.one_meeting_per_day %}
+        {% include "partials/form_field.html" with field=form.rebuild %}
+      </div>
+    </div>
+
+    <div class="mt-5 flex flex-col gap-2 border-t border-stone-100 pt-4">
+      <button type="submit" name="preview" value="1" data-loading-label="Previewing…"
+              class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-800 shadow-sm hover:bg-stone-50">
+        <i data-lucide="eye" class="h-4 w-4"></i><span>Preview the run</span>
+      </button>
+      <button type="submit" name="apply" value="1" data-loading-label="Scheduling…"
+              data-confirm="The queue is placed on the timetable in first-come-first-served order. Nothing already placed is moved unless you ticked rebuild."
+              data-confirm-title="Run the scheduler" data-confirm-label="Run it"
+              class="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+        <i data-lucide="wand-2" class="h-4 w-4"></i><span>Run and save</span>
+      </button>
+    </div>
+
+    <div class="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3 text-[12px] text-stone-600">
+      <p class="font-semibold text-stone-800">What the run will not do</p>
+      <ul class="mt-1 list-disc space-y-0.5 pl-4">
+        <li>Move a class that is already placed — an earlier offering keeps what it took.</li>
+        <li>Double-book a room, a professor, or a section (a block-wide class blocks both of its groups).</li>
+        <li>Touch a hand-made booking, even on a rebuild.</li>
+      </ul>
+      <p class="mt-1.5">An offering that will not fit comes back below with the reason. Fix it with <strong>Swap</strong> on the timetable, or by unscheduling whatever is in the way.</p>
+    </div>
+  </form>
+
+  {# ---------------- Result / queue ---------------- #}
+  <div class="space-y-4">
+    {% if run %}
+    <div class="rounded-xl border {% if applied %}border-emerald-200 bg-emerald-50/60{% else %}border-sky-200 bg-sky-50/60{% endif %} p-4">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {% if applied %}bg-emerald-100 text-emerald-700{% else %}bg-sky-100 text-sky-700{% endif %}">
+          <i data-lucide="{% if applied %}check-check{% else %}eye{% endif %}" class="h-5 w-5"></i>
+        </div>
+        <div class="min-w-0">
+          <p class="text-[14px] font-bold {% if applied %}text-emerald-900{% else %}text-sky-900{% endif %}">
+            {% if applied %}Saved to the timetable{% else %}Preview only — nothing was saved{% endif %}
+          </p>
+          <p class="mt-0.5 text-[13px] {% if applied %}text-emerald-800{% else %}text-sky-800{% endif %}">{{ run.summary }}</p>
+          {% if applied %}
+          <a href="{% url 'scheduling:section_timetable' %}" class="mt-1.5 inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-900 hover:underline">
+            <i data-lucide="calendar-days" class="h-3.5 w-3.5"></i><span>Open the section timetable</span>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if run.placements %}
+    <div class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+      <div class="border-b border-stone-200 bg-stone-50/60 px-4 py-3">
+        <h2 class="text-[15px] font-bold text-stone-900">{% if applied %}Placed{% else %}Would be placed{% endif %} <span class="font-mono text-stone-500">({{ run.placed_count }})</span></h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-[13px]">
+          <caption class="sr-only">Placements from this run</caption>
+          <thead>
+            <tr class="border-b border-stone-200 text-left text-[11px] uppercase tracking-wide text-stone-500">
+              <th scope="col" class="p-3 font-semibold">Subject</th>
+              <th scope="col" class="p-3 font-semibold">Section</th>
+              <th scope="col" class="p-3 font-semibold">Professor</th>
+              <th scope="col" class="p-3 font-semibold">Day</th>
+              <th scope="col" class="p-3 font-semibold">Time</th>
+              <th scope="col" class="p-3 font-semibold">Room</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            {% for p in run.placements %}
+            <tr>
+              <td class="p-3 font-mono font-semibold text-stone-900">{{ p.offering.subject.code }}</td>
+              <td class="p-3 font-mono text-stone-800">{{ p.offering.section.code }}</td>
+              <td class="p-3 text-stone-700">{{ p.offering.instructor.full_name|default:"Unassigned" }}</td>
+              <td class="whitespace-nowrap p-3 text-stone-700">{{ p.day_label }}</td>
+              <td class="whitespace-nowrap p-3 font-mono text-stone-700">{{ p.time_display }}</td>
+              <td class="whitespace-nowrap p-3 text-stone-700">{{ p.room }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if run.unplaced %}
+    <div class="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
+      <div class="border-b border-amber-200 bg-amber-50 px-4 py-3">
+        <h2 class="text-[15px] font-bold text-amber-900">Could not be fitted <span class="font-mono text-amber-700">({{ run.unplaced_count }})</span></h2>
+        <p class="mt-0.5 text-[12px] text-amber-800">These keep their place in the queue. Nothing was taken away from an earlier offering to make room.</p>
+      </div>
+      <ul class="divide-y divide-stone-100">
+        {% for u in run.unplaced %}
+        <li class="p-4">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <span class="font-mono text-[13px] font-semibold text-stone-900">{{ u.offering.subject.code }}</span>
+            <span class="font-mono text-[13px] text-stone-700">{{ u.offering.section.code }}</span>
+            <span class="text-[12px] text-stone-500">{{ u.offering.instructor.full_name|default:"Unassigned" }}</span>
+            <span class="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">{{ u.meetings_missing }} meeting{{ u.meetings_missing|pluralize }} missing</span>
+          </div>
+          <p class="mt-1 text-[13px] text-stone-600">{{ u.reason }}</p>
+          <a href="{% url 'scheduling:offering_update' u.offering.pk %}" class="mt-1 inline-flex items-center gap-1 text-[13px] font-semibold text-[#1E6B4A] hover:underline">
+            <i data-lucide="edit-3" class="h-3.5 w-3.5"></i><span>Adjust this offering</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {# The queue, so the admin can see the order before running anything. #}
+    <div class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+      <div class="border-b border-stone-200 bg-stone-50/60 px-4 py-3">
+        <h2 class="text-[15px] font-bold text-stone-900">The queue for {{ selected_term|default:"this term" }}</h2>
+        <p class="mt-0.5 text-[12px] text-stone-500">Served top to bottom: highest priority (5) first, then the request time.</p>
+      </div>
+      <ol class="divide-y divide-stone-100">
+        {% for o in queue %}
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
+          <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700">{{ forloop.counter }}</span>
+          <span class="font-mono font-semibold text-stone-900">{{ o.subject.code }}</span>
+          <span class="font-mono text-stone-700">{{ o.section.code }}</span>
+          <span class="text-stone-500">{{ o.instructor.full_name|default:"Unassigned" }}</span>
+          <span class="text-stone-500">{% if o.is_lecture_lab %}1 lecture · {{ o.minutes_per_meeting }} min + 1 lab · {{ o.lab_minutes }} min{% else %}{{ o.meetings_per_week }} × {{ o.minutes_per_meeting }} min{% endif %}</span>
+          <span class="ml-auto shrink-0">
+            {% if o.is_fully_scheduled %}
+              <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">placed</span>
+            {% else %}
+              <span class="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">{{ o.remaining_meetings }} to place</span>
+            {% endif %}
+          </span>
+        </li>
+        {% empty %}
+        {% include "partials/empty_state.html" with icon="list-ordered" title="Nothing queued" message="Add offerings first — the scheduler has nothing to place." action_url=offering_create_url action_label="Add offering" action_icon="plus" compact=True %}
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+</div>
+{% endblock %}

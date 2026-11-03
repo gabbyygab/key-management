@@ -1,0 +1,53 @@
+{% comment %}
+  The curriculum add form's fields, shared by the modal and the no-JS page.
+  The subject checklist is drawn by hand so each row can carry the slots the
+  subject is already in (data-slots, "BSIT|4|1ST ..."): curriculum.js reads it
+  to grey out what is already in the slot as the slot fields change.
+{% endcomment %}
+{% if form.non_field_errors %}
+<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">{{ form.non_field_errors }}</div>
+{% endif %}
+
+<datalist id="curriculum-programs">{% for p in programs %}<option value="{{ p }}">{% endfor %}</datalist>
+
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  {% include "partials/form_field.html" with field=form.program field_label="Program" %}
+  {% include "partials/form_field.html" with field=form.year_level field_label="Year level" %}
+  {% include "partials/form_field.html" with field=form.semester field_label="Semester" %}
+</div>
+
+<fieldset data-form-field data-field-name="subjects" class="rounded-lg border border-stone-200">
+  <legend class="ml-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-stone-500">
+    Subjects <span class="text-red-600" aria-hidden="true">*</span>
+  </legend>
+  <div class="flex items-center gap-2 border-b border-stone-200 px-3 pb-2">
+    <div class="flex min-w-0 flex-1 items-center rounded-lg border border-stone-300 bg-white px-2.5 focus-within:border-[#1E6B4A]">
+      <i data-lucide="search" aria-hidden="true" class="mr-1.5 h-4 w-4 shrink-0 text-stone-400"></i>
+      <input type="search" data-curriculum-filter placeholder="Filter by code or title…" autocomplete="off"
+             aria-label="Filter subjects" class="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] outline-none">
+    </div>
+    <span data-curriculum-count aria-live="polite" class="shrink-0 text-[12px] font-semibold text-stone-500">{{ form.selected_ids|length }} selected</span>
+  </div>
+  <div class="max-h-64 overflow-y-auto p-1.5" role="group" aria-label="Subjects to add">
+    {% for row in subject_rows %}
+    <label data-curriculum-row data-slots="{{ row.slots }}" data-text="{{ row.subject.code|lower }} {{ row.subject.title|lower }}"
+           class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-stone-50 has-[:disabled]:cursor-default has-[:disabled]:opacity-60">
+      <input type="checkbox" name="subjects" value="{{ row.subject.pk }}"
+             {% if row.checked and not row.in_slot %}checked{% endif %}{% if row.in_slot %} disabled{% endif %}
+             class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A]">
+      <span class="shrink-0 font-mono text-[13px] font-semibold text-stone-900">{{ row.subject.code }}</span>
+      <span class="min-w-0 flex-1 truncate text-[13px] text-stone-600">{{ row.subject.title }}</span>
+      {% if row.subject.department %}<span class="shrink-0 text-[11px] text-stone-400">{{ row.subject.department.code }}</span>{% endif %}
+      <span data-curriculum-added class="shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[11px] font-semibold text-emerald-800{% if not row.in_slot %} hidden{% endif %}">Already added</span>
+    </label>
+    {% empty %}
+    <p class="px-2 py-4 text-center text-[13px] text-stone-500">No subjects in the catalogue yet. <a href="{% url 'scheduling:subject_list' %}" class="font-semibold text-[#1E6B4A] hover:underline">Add subjects</a> first.</p>
+    {% endfor %}
+    <p data-curriculum-empty class="hidden px-2 py-4 text-center text-[13px] text-stone-500">No subject matches that filter.</p>
+  </div>
+  {% if form.subjects.errors %}
+  <ul data-form-field-error class="space-y-0.5 border-t border-stone-200 px-3 py-2 text-[12px] text-red-700" role="alert">
+    {% for error in form.subjects.errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</fieldset>

@@ -1,6 +1,6 @@
-<form method="post" action="{% url 'keys:key_bulk_create' %}" data-success-message="Key copies generated successfully." class="space-y-4" id="key-bulk-form">
+<form method="post" action="{% url 'keys:key_bulk_create' %}" data-success-message="Key copies generated successfully." class="flex min-h-0 flex-1 flex-col" id="key-bulk-form">
   {% csrf_token %}
-  
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
   {% if form.non_field_errors %}
   <div class="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-800 space-y-1" role="alert">
     {% for error in form.non_field_errors %}
@@ -65,8 +65,10 @@
   <!-- Remarks -->
   {% include "partials/form_field.html" with field=form.remarks field_label="Remarks" field_optional=True %}
 
-  <!-- Footer buttons -->
-  <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-200">
+  </div>
+
+  <!-- Footer buttons stay fixed while the fields above scroll. -->
+  <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
     <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
       Cancel
     </button>

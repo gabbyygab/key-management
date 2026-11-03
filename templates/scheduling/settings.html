@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Schedule Settings — KEYTRACK{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h1 class="text-[22px] font-extrabold tracking-tight">Schedule Settings</h1>
+  <p class="text-[13px] text-stone-500 mt-0.5">Control how the guard post treats the timetable when a key is released.</p>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+
+  <section class="flex flex-col bg-white rounded-xl border border-stone-200 shadow-sm p-5">
+    <h2 class="text-[15px] font-bold">Current semester</h2>
+    <p class="text-[13px] text-stone-500 mt-0.5">The guards see this semester's timetable. Change it when a new semester starts.</p>
+    <div class="mt-3">
+      <label for="{{ form.current_term.id_for_label }}" class="sr-only">Current semester</label>
+      {{ form.current_term }}
+      {{ form.current_term.errors }}
+    </div>
+    <p class="mt-2 text-[12px] text-stone-500">
+      In use now: <b>{% if effective_term %}{{ effective_term.name }}{% else %}none (no term covers today){% endif %}</b>
+      {% if effective_term and not term_has_schedule %}
+        <span class="ml-1 inline-flex rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900">NO TIMETABLE YET</span>
+      {% endif %}
+    </p>
+  </section>
+
+  <section class="flex flex-col bg-white rounded-xl border border-stone-200 shadow-sm p-5">
+    <h2 class="text-[15px] font-bold">Borrowing a room that is not theirs right now</h2>
+    <p class="text-[13px] text-stone-500 mt-0.5">When the room is scheduled to a different instructor at that time. Allowed loans are marked <b>Outside schedule</b> in the transaction history.</p>
+    <div class="mt-3 space-y-2">
+      {% for radio in form.enforcement %}
+      <label class="flex items-start gap-2.5 text-[13px]">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="flex flex-col bg-white rounded-xl border border-stone-200 shadow-sm p-5">
+    <h2 class="text-[15px] font-bold">When the semester has no timetable</h2>
+    <p class="text-[13px] text-stone-500 mt-0.5">No schedule has been generated or imported for the current semester.</p>
+    <div class="mt-3 space-y-2">
+      {% for radio in form.no_schedule_policy %}
+      <label class="flex items-start gap-2.5 text-[13px]">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>
+      {% endfor %}
+    </div>
+  </section>
+
+  </div>
+
+  <div class="mt-4 flex justify-end">
+  <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shadow-sm transition-colors">Save settings</button>
+  </div>
+</form>
+{% endblock %}

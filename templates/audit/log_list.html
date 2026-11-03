@@ -41,13 +41,9 @@
     {% endfor %}
   </select>
 
-  <label for="audit-start" class="sr-only">From date</label>
-  <input type="date" id="audit-start" name="start_date" value="{{ start_date }}"
-         class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[130px]">
-
-  <label for="audit-end" class="sr-only">To date</label>
-  <input type="date" id="audit-end" name="end_date" value="{{ end_date }}"
-         class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 min-w-[130px]">
+  <div class="min-w-[210px]">
+    {% include "partials/date_range_picker.html" with start_date=start_date end_date=end_date input_bg="bg-white" %}
+  </div>
 
   <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">Filter</button>
 

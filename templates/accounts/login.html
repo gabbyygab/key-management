@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login | KEYTRACK</title>
   <link rel="icon" type="image/png" href="{% static 'keytrack-favicon.png' %}">
+  {% comment %} Before tailwind_css so source.css's .toastify overrides win at equal
+     specificity, same as base.html. The login page needs toasts for the
+     "You have been signed out." message redirected here by logout_view. {% endcomment %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
   {% tailwind_css %}
   <link rel="stylesheet" href="{% static 'css/login.css' %}">
 </head>
@@ -57,7 +61,22 @@
         </div>
         <div>
           <label for="password" class="field-label">Password</label>
-          <input id="password" name="password" type="password" required autocomplete="current-password" class="field-input">
+          <div class="field-wrap">
+            <input id="password" name="password" type="password" required autocomplete="current-password" class="field-input">
+            {% comment %} Hidden until login.js wires it up, so a no-JS page shows no dead button. {% endcomment %}
+            <button type="button" class="password-toggle" data-password-toggle hidden
+                    aria-controls="password" aria-pressed="false" aria-label="Show password">
+              <svg data-icon-show width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12S18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+              <svg data-icon-hide width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                <path d="M10.6 6.7A8.8 8.8 0 0 1 12 6.6c5.3 0 8.4 5.4 8.4 5.4a16 16 0 0 1-2.4 3.2M6.5 8.2A15.6 15.6 0 0 0 3.6 12s3.1 5.4 8.4 5.4c1.3 0 2.4-.3 3.4-.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <button type="submit" class="submit-button">
           <span>Sign in</span>
@@ -68,8 +87,16 @@
       </form>
 
       <hr class="form-divider">
-      <p class="account-note">Need an account? Ask an administrator to create and approve your guard account.</p>
+      <p class="account-note">Need an account? Ask an administrator to create your guard account.</p>
     </section>
   </main>
+
+  {# Sign-out / session flash messages, shown as toasts by toast.js. #}
+  {% include "partials/messages.html" %}
+  <script src="https://unpkg.com/lucide@1.59.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
+  <script src="{% static 'js/csrf.js' %}"></script>
+  <script src="{% static 'js/toast.js' %}"></script>
+  <script src="{% static 'js/login.js' %}"></script>
 </body>
 </html>

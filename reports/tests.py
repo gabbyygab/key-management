@@ -28,7 +28,6 @@ class ReportsAccessTests(TestCase):
             email="admin@school.edu",
             password="adminpassword123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
 
         # Superuser
@@ -37,7 +36,6 @@ class ReportsAccessTests(TestCase):
             email="super@school.edu",
             password="superpassword123",
             role=User.Role.FACULTY_STAFF,
-            approval_status=User.Approval.APPROVED,
         )
 
         # Guard user
@@ -46,7 +44,6 @@ class ReportsAccessTests(TestCase):
             email="guard@school.edu",
             password="guardpassword123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
 
         # Regular user (Faculty/Staff)
@@ -55,7 +52,6 @@ class ReportsAccessTests(TestCase):
             email="staff@school.edu",
             password="staffpassword123",
             role=User.Role.FACULTY_STAFF,
-            approval_status=User.Approval.APPROVED,
         )
 
     def test_anonymous_redirected_to_login(self):
@@ -109,7 +105,6 @@ class ReportsDataAndCalculationsTests(TestCase):
             username="admin1",
             email="admin1@school.edu",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.client.force_login(self.admin)
 
@@ -120,7 +115,6 @@ class ReportsDataAndCalculationsTests(TestCase):
             first_name="John",
             last_name="Guard",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.guard2 = User.objects.create_user(
             username="guard2",
@@ -128,7 +122,6 @@ class ReportsDataAndCalculationsTests(TestCase):
             first_name="Jane",
             last_name="Officer",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
 
         # Shift
@@ -340,7 +333,6 @@ class ReportsCSVExportTests(TestCase):
             username="admin_csv",
             email="admin_csv@school.edu",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.client.force_login(self.admin)
 
@@ -350,7 +342,6 @@ class ReportsCSVExportTests(TestCase):
             first_name="Sam",
             last_name="Security",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
 
         self.bldg = Building.objects.create(code="SCI", name="Science")

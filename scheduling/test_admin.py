@@ -22,7 +22,7 @@ class SchedulingFixture(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(
             username="admin", email="a@example.com", password="pw-Strong-12345",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED)
+            role=User.Role.ADMIN)
         cls.term = Term.objects.create(name="2026 Fall", start_date="2026-08-01",
                                        end_date="2026-12-20", is_active=True)
         cls.building = Building.objects.create(code="CCS", name="Computing")
@@ -185,8 +185,184 @@ class ScheduleAdminViewTests(SchedulingFixture):
 
     def test_guard_is_refused(self):
         guard = User.objects.create_user(username="g", email="g@example.com",
-                                         password="pw-Strong-12345", role=User.Role.GUARD,
-                                         approval_status=User.Approval.APPROVED)
+                                         password="pw-Strong-12345", role=User.Role.GUARD)
         self.client.force_login(guard)
         self.assertEqual(self.client.get(reverse("scheduling:schedule_list")).status_code, 403)
         self.assertEqual(self.save().status_code, 403)
+
+
+class CatalogueBulkTests(SchedulingFixture):
+    """Terms, subjects and sections: bulk archive / restore / delete forever."""
+
+    def setUp(self):
+        from .models import Section, Subject
+        self.client.force_login(self.admin)
+        self.subject = Subject.objects.create(code="IT101", title="Intro")
+        self.section = Section.objects.create(program="BSIT", year_level=1, block="A")
+        self.rows = {
+            "term": (Term, self.term), "subject": (Subject, self.subject),
+            "section": (Section, self.section),
+        }
+
+    def post(self, name, action, obj):
+        return self.client.post(reverse(f"scheduling:{name}_bulk"),
+                                {"action": action, "ids": [obj.pk]},
+                                headers={"x-requested-with": "XMLHttpRequest"})
+
+    def test_archive_restore_and_delete_forever(self):
+        for name, (model, obj) in self.rows.items():
+            with self.subTest(name):
+                # delete is refused while the row is live
+                self.assertEqual(self.post(name, "delete", obj).status_code, 422)
+                self.assertTrue(model.objects.filter(pk=obj.pk).exists())
+
+                self.assertEqual(self.post(name, "archive", obj).status_code, 200)
+                obj.refresh_from_db()
+                self.assertFalse(obj.is_active)
+                self.assertIsNotNone(obj.archived_at)
+
+                self.assertEqual(self.post(name, "restore", obj).status_code, 200)
+                obj.refresh_from_db()
+                self.assertTrue(obj.is_active)
+                self.assertIsNone(obj.archived_at)
+
+                self.post(name, "archive", obj)
+                self.assertEqual(self.post(name, "delete", obj).status_code, 200)
+                self.assertFalse(model.objects.filter(pk=obj.pk).exists())
+
+    def test_row_delete_removes_term_with_its_blocks(self):
+        self.block()
+        self.term.is_active = False
+        self.term.save()
+        res = self.client.post(reverse("scheduling:term_delete", args=[self.term.pk]))
+        self.assertEqual(res.status_code, 302)
+        self.assertFalse(Term.objects.filter(pk=self.term.pk).exists())
+        self.assertFalse(ScheduleBlock.objects.exists())
+
+    def test_guard_gets_403(self):
+        guard = User.objects.create_user(username="g2", email="g2@example.com",
+                                         password="pw-Strong-12345", role=User.Role.GUARD)
+        self.client.force_login(guard)
+        for name in self.rows:
+            self.assertEqual(self.client.post(reverse(f"scheduling:{name}_bulk"),
+                                              {"action": "archive"}).status_code, 403)
+
+    def test_lists_render_bulk_controls(self):
+        for name in self.rows:
+            res = self.client.get(reverse(f"scheduling:{name}_list"))
+            self.assertContains(res, "data-bulk-item")
+            self.assertContains(res, reverse(f"scheduling:{name}_bulk"))
+
+
+class OfferingBulkTests(SchedulingFixture):
+    def setUp(self):
+        from .models import Section, Subject, SubjectOffering
+        self.client.force_login(self.admin)
+        subject = Subject.objects.create(code="IT102", title="Programming")
+        section = Section.objects.create(program="BSIT", year_level=1, block="B")
+        self.offering = SubjectOffering.objects.create(
+            term=self.term, subject=subject, section=section)
+        self.Offering = SubjectOffering
+
+    def post(self, action):
+        return self.client.post(reverse("scheduling:offering_bulk"),
+                                {"action": action, "ids": [self.offering.pk]},
+                                headers={"x-requested-with": "XMLHttpRequest"})
+
+    def test_archive_unschedules_restore_and_delete(self):
+        blk = self.block()
+        blk.offering = self.offering
+        blk.save()
+        self.assertEqual(self.post("delete").status_code, 422)
+        self.assertEqual(self.post("archive").status_code, 200)
+        self.offering.refresh_from_db()
+        blk.refresh_from_db()
+        self.assertFalse(self.offering.is_active)
+        self.assertIsNotNone(self.offering.archived_at)
+        self.assertFalse(blk.is_active)
+        self.assertContains(self.client.get(reverse("scheduling:offering_archived")),
+                            "IT102")
+        self.assertEqual(self.post("restore").status_code, 200)
+        self.post("archive")
+        self.assertEqual(self.post("delete").status_code, 200)
+        self.assertFalse(self.Offering.objects.exists())
+        blk.refresh_from_db()
+        self.assertIsNone(blk.offering)
+
+    def test_list_renders_bulk_controls(self):
+        res = self.client.get(reverse("scheduling:offering_list"))
+        self.assertContains(res, "data-bulk-item")
+
+
+class ArchivedHiddenTests(SchedulingFixture):
+    """Archived terms and subjects vanish from pickers and the block list."""
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_archived_term_not_offered_in_pickers(self):
+        old = Term.objects.create(name="2025 Fall", start_date="2025-08-01",
+                                  end_date="2025-12-20", is_active=False)
+        for name in ("scheduling:schedule_list", "scheduling:offering_list",
+                     "scheduling:room_timetable"):
+            resp = self.client.get(reverse(name))
+            self.assertNotIn(old, list(resp.context["terms"]), name)
+
+    def test_block_of_archived_subject_hidden_from_list(self):
+        from .models import Subject
+        sub = Subject.objects.create(code="IT101", title="Intro", is_active=False)
+        shown = self.block(title="Visible")
+        hidden = self.block(day=1, title="Hidden")
+        hidden.subject = sub
+        hidden.save()
+        resp = self.client.get(reverse("scheduling:schedule_list"))
+        pks = [b.pk for b in resp.context["blocks"]]
+        self.assertIn(shown.pk, pks)
+        self.assertNotIn(hidden.pk, pks)
+
+
+class DepartmentPageTests(SchedulingFixture):
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_add_edit_archive(self):
+        from accounts.models import Department
+        url = reverse("scheduling:department_create") + "?modal=1"
+        r = self.client.post(url, {"code": "ccs", "name": "Computer Studies", "is_active": "on"})
+        self.assertEqual(r.status_code, 201)
+        d = Department.objects.get(code="CCS")
+        self.assertContains(self.client.get(reverse("scheduling:department_list")), "Computer Studies")
+        self.client.post(reverse("scheduling:department_toggle", args=[d.pk]))
+        d.refresh_from_db()
+        self.assertFalse(d.is_active)
+        self.assertContains(self.client.get(reverse("scheduling:department_archived")), "CCS")
+        dup = self.client.post(url, {"code": "CCS", "name": "x"})
+        self.assertEqual(dup.status_code, 422)
+
+
+class DepartmentBulkTests(SchedulingFixture):
+    def setUp(self):
+        from accounts.models import Department
+        self.client.force_login(self.admin)
+        self.a = Department.objects.create(code="AAA", name="A")
+        self.b = Department.objects.create(code="BBB", name="B")
+        self.url = reverse("scheduling:department_bulk")
+
+    def post(self, action, *depts):
+        return self.client.post(self.url, {"action": action, "ids": [d.pk for d in depts]},
+                                headers={"X-Requested-With": "XMLHttpRequest"})
+
+    def test_bulk_archive_restore_delete(self):
+        from accounts.models import Department
+        self.post("archive", self.a, self.b)
+        self.a.refresh_from_db()
+        self.assertFalse(self.a.is_active)
+        self.assertIsNotNone(self.a.archived_at)
+        self.post("restore", self.b)
+        self.b.refresh_from_db()
+        self.assertTrue(self.b.is_active)
+        # a live row cannot be deleted, an archived one can
+        self.post("delete", self.b)
+        self.assertTrue(Department.objects.filter(pk=self.b.pk).exists())
+        self.post("delete", self.a)
+        self.assertFalse(Department.objects.filter(pk=self.a.pk).exists())

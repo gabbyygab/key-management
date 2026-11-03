@@ -1,4 +1,4 @@
-<div class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+<div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
   <div class="flex min-w-0 items-center gap-3">
     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
       <i data-lucide="tags" aria-hidden="true" class="h-5 w-5"></i>
@@ -13,18 +13,20 @@
   </button>
 </div>
 
-<form method="post" action="{{ action_url }}" data-success-message="Category saved." class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+<form method="post" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Category saved." class="flex min-h-0 flex-1 flex-col">
   {% csrf_token %}
-  {% if form.non_field_errors %}
-  <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
-    {{ form.non_field_errors }}
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    {% include "partials/form_field.html" with field=form.name field_label="Category Name" %}
+    {% include "partials/form_field.html" with field=form.description field_label="Description" field_optional=True %}
   </div>
-  {% endif %}
 
-  {% include "partials/form_field.html" with field=form.name field_label="Category Name" %}
-  {% include "partials/form_field.html" with field=form.description field_label="Description" field_optional=True %}
-
-  <div class="sticky bottom-0 -mx-5 -mb-4 mt-6 flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+  <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
     <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
       Cancel
     </button>

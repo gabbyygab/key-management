@@ -191,10 +191,8 @@ def _open_statuses():
 @db_transaction.atomic
 def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
                override_reason="", request=None, now=None):
-    from django.conf import settings
-
     from audit.services import Action, log_activity
-    from scheduling.services import schedule_check_for_room
+    from scheduling.services import get_schedule_settings, schedule_check_for_room
 
     now = now or timezone.now()
     override_reason = (override_reason or "").strip()
@@ -218,23 +216,32 @@ def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
     txn = borrow_key(key_id=key_id, borrower=borrower, guard=guard,
                      purpose=purpose, request=request)
 
-    mode = getattr(settings, "SCHEDULE_ENFORCEMENT", "warn")
+    cfg = get_schedule_settings()
+    mode = cfg.enforcement
     check = {"state": "free", "current": None}
     if mode != "off":
         check = schedule_check_for_room(txn.room, borrower_id=borrower.pk,
                                         when=timezone.localtime(now))
     overridden = False
+    off_schedule = False
+    public = {k: v for k, v in check.items() if not k.startswith("_")}
     if check["state"] == "other":
         cur = check["current"] or {}
         who = cur.get("instructor") or "another class"
         msg = (f"Room {txn.room} is scheduled to {who} ({cur.get('title', '')}, "
                f"{cur.get('time_display', '')}) right now.")
-        public = {k: v for k, v in check.items() if not k.startswith("_")}
         if mode == "block":
             raise ScheduleWarning(msg + " Borrowing is blocked by schedule enforcement.",
                                   schedule=public)
         if not override_reason:
             raise ScheduleWarning(msg + " Enter a reason to override.", schedule=public)
+        overridden = off_schedule = True
+    elif mode != "off" and check.get("no_timetable") and cfg.no_schedule_policy == "reason":
+        if not override_reason:
+            term = check.get("term") or "this semester"
+            raise ScheduleWarning(
+                f"No timetable has been generated for {term}. Enter a reason to continue.",
+                schedule=public)
         overridden = True
 
     fields = []
@@ -245,6 +252,9 @@ def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
     if overridden:
         txn.remarks = f"Override: {override_reason}"
         fields.append("remarks")
+    if off_schedule:
+        txn.off_schedule = True
+        fields.append("off_schedule")
     if fields:
         txn.save(update_fields=fields + ["updated_at"])
 
@@ -259,6 +269,100 @@ def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
                               "scheduled_to": cur.get("instructor"),
                               "block_time": cur.get("time_display")})
     return txn
+
+
+# ---------------------------------------------------------------------------
+# Admin status correction (B4.6)
+#
+# borrow_key / return_key / pos_borrow are the guard-facing rule engine and are
+# not touched. This is the admin repair path for a record that no longer matches
+# reality (a key received off-system, a row closed by mistake, a key found after
+# being written off). Every status carries a key status with it, so the two can
+# never drift apart; the caller writes the audit row.
+# ---------------------------------------------------------------------------
+
+#: The Key.status that each BorrowTransaction.status implies.
+_STATUS_KEY_STATUS = {
+    BorrowTransaction.Status.ACTIVE: Key.Status.BORROWED,
+    BorrowTransaction.Status.OVERDUE: Key.Status.OVERDUE,
+    BorrowTransaction.Status.RETURNED: Key.Status.AVAILABLE,
+    BorrowTransaction.Status.LOST: Key.Status.LOST,
+    BorrowTransaction.Status.DAMAGED: Key.Status.DAMAGED,
+}
+
+#: Statuses where the key is still physically out.
+OPEN_STATUSES = frozenset(_open_statuses())
+
+
+@db_transaction.atomic
+def admin_set_status(*, transaction_id, new_status, admin, now=None):
+    """Move one transaction to `new_status` and re-file its key to match.
+
+    Returns (txn, changes) where `changes` is the {field: [old, new]} diff for
+    the audit log, empty when nothing moved. Raises BorrowError when the move
+    would leave two open rows on the same key or the same borrower.
+    """
+    now = now or timezone.now()
+    new_status = (new_status or "").strip().upper()
+    if not new_status:
+        return (BorrowTransaction.objects.get(pk=transaction_id), {})
+    if new_status not in _STATUS_KEY_STATUS:
+        raise BorrowError(f"Unknown transaction status: {new_status}.")
+
+    txn = (BorrowTransaction.objects.select_for_update()
+           .select_related("borrower").get(pk=transaction_id))
+    old_status = txn.status
+    if new_status == old_status:
+        return txn, {}
+
+    key = Key.objects.select_for_update().get(pk=txn.key_id)
+    old_key_status = key.status
+    was_open = old_status in OPEN_STATUSES
+    now_open = new_status in OPEN_STATUSES
+
+    if now_open and not was_open:
+        # Re-opening a closed record puts the key back out, so the one-open-row
+        # rules that borrow_key enforces have to hold here too.
+        clash = (BorrowTransaction.objects.filter(key_id=key.pk, status__in=OPEN_STATUSES)
+                 .exclude(pk=txn.pk).select_related("borrower").first())
+        if clash:
+            raise BorrowError(
+                f"Key {key.key_code} is already out on {clash.transaction_no} "
+                f"({clash.borrower.full_name}). Close that record first.")
+        clash = (BorrowTransaction.objects.filter(borrower_id=txn.borrower_id,
+                                                  status__in=OPEN_STATUSES)
+                 .exclude(pk=txn.pk).select_related("key").first())
+        if clash:
+            raise BorrowError(
+                f"{txn.borrower.full_name} already has an open key "
+                f"({clash.key.key_code}). Close that record first.")
+        if key.status == Key.Status.INACTIVE:
+            raise BorrowError(f"Key {key.key_code} is archived and cannot be re-issued.")
+        txn.returned_at = None
+        txn.received_by = None
+        txn.return_confirmed = False
+    else:
+        # Closing, or moving between two closed states. RETURNED and DAMAGED
+        # mean the key came back, so they get a receipt; LOST never does.
+        if new_status in (BorrowTransaction.Status.RETURNED,
+                          BorrowTransaction.Status.DAMAGED):
+            if not txn.returned_at:
+                txn.returned_at = now
+            if not txn.received_by_id:
+                txn.received_by = admin
+        txn.return_confirmed = new_status == BorrowTransaction.Status.RETURNED
+
+    txn.status = new_status
+    txn.save()
+
+    changes = {"status": [old_status, new_status]}
+    wanted = _STATUS_KEY_STATUS[new_status]
+    # An archived key stays archived: un-archiving is the key screen's job.
+    if key.status != wanted and key.status != Key.Status.INACTIVE:
+        key.status = wanted
+        key.save(update_fields=["status", "updated_at"])
+        changes["key_status"] = [old_key_status, wanted]
+    return txn, changes
 
 
 def log_return(txn, *, guard, condition="OK", request=None):

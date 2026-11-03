@@ -124,6 +124,10 @@ Sections:
       </span>
     </div>
 
+    <a href="{% url 'accounts:password_change' %}" title="Change password" aria-label="Change password" class="app-header-logout">
+      <i data-lucide="key-round" aria-hidden="true"></i>
+    </a>
+
     <button type="button" data-modal-open="logout-modal" title="Logout" aria-label="Log out" class="app-header-logout">
       <i data-lucide="log-out" aria-hidden="true"></i>
     </button>
@@ -149,7 +153,7 @@ Sections:
         <i data-lucide="x" aria-hidden="true" class="w-4 h-4"></i>
       </button>
     </div>
-    <div data-modal-body class="min-h-0 flex-1 overflow-y-auto px-5 py-4"></div>
+    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden"></div>
   </div>
 </div>
 {% endif %}

@@ -8,7 +8,8 @@ through window.KeyTrackModal; the summary fields are filled from the row.
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
 
   <form data-return-form
-        class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">
+        class="relative flex max-h-[90vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto p-6">
     <div class="flex items-start gap-3">
       <div class="w-10 h-10 rounded-xl bg-green-50 border border-green-200 flex items-center justify-center shrink-0">
         <i data-lucide="key-round" class="w-5 h-5 text-green-700"></i>
@@ -79,8 +80,9 @@ through window.KeyTrackModal; the summary fields are filled from the row.
     <p data-return-error
        class="hidden mt-3 text-[13px] bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2"
        role="alert"></p>
+    </div>
 
-    <div class="flex items-center justify-end gap-2 mt-5">
+    <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
       <button type="button" data-modal-close
               class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
         Cancel

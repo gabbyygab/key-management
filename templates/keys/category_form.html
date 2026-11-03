@@ -13,7 +13,7 @@
     </div>
   </div>
 
-  <form method="post" class="mt-5 space-y-4">
+  <form method="post" {% include "partials/edit_confirm_attrs.html" %} class="mt-5 space-y-4">
     {% csrf_token %}
     {% if form.non_field_errors %}
     <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">

@@ -279,11 +279,21 @@
       );
     }
 
-    function save() {
+    function save(confirmed) {
       clearErrors();
       if (!titleInput.value.trim()) {
         setFieldError("title", "Title / class name is required.");
         titleInput.focus();
+        return;
+      }
+      /* Editing an existing block asks first, like every other edit form. */
+      if (blockIdInput.value && confirmed !== true && KeyTrack.confirm) {
+        KeyTrack.confirm({
+          title: "Save changes?",
+          message: "The timetable and room availability update right away.",
+          subject: titleInput.value.trim(),
+          label: "Save changes",
+        }).then(function () { save(true); }, function () { /* cancelled */ });
         return;
       }
       var payload = {
@@ -326,10 +336,9 @@
           if (result.ok) {
             var n = result.data.created || 1;
             window.KeyTrackModal.close(MODAL_ID);
-            KeyTrack.toast(payload.block_id ? "Schedule block updated."
+            KeyTrack.reloadWithToast(payload.block_id ? "Schedule block updated."
                            : n > 1 ? n + " schedule blocks created." : "Schedule block created.",
                            "success");
-            window.location.reload();
             return;
           }
           var errs = result.data || {};
@@ -351,7 +360,7 @@
         .catch(function (err) {
           if (err.message === "forbidden" || err.message === "session_expired") return;
           if (KeyTrack.networkErrorToast) {
-            KeyTrack.networkErrorToast(save, "Could not save the schedule block.");
+            KeyTrack.networkErrorToast(function () { save(true); }, "Could not save the schedule block.");
           } else {
             showAlert("Could not save the schedule block. Check your connection and try again.");
           }
@@ -388,8 +397,7 @@
         }).then(function (res) {
           if (res.ok) {
             window.KeyTrackModal.close(MODAL_ID);
-            KeyTrack.toast("Schedule block deactivated.", "success");
-            window.location.reload();
+            KeyTrack.reloadWithToast("Schedule block deactivated.", "success");
           } else if (res.status === 403) {
             KeyTrack.toast("You do not have permission.", "error");
           } else {

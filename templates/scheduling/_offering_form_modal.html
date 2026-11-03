@@ -1,0 +1,101 @@
+{% comment %}
+  AJAX form partial for one subject offering — the scheduler's input row.
+  "Requested at" is the first-come-first-served stamp, so it is editable: an
+  admin entering a backlog keeps the real request order.
+{% endcomment %}
+<div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+  <div class="flex min-w-0 items-center gap-3">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+      <i data-lucide="list-ordered" aria-hidden="true" class="h-5 w-5"></i>
+    </div>
+    <div class="min-w-0">
+      <h2 id="offering-modal-title" class="truncate text-[15px] font-bold text-stone-900">{{ title|default:"Add subject offering" }}</h2>
+      <p class="text-[12px] text-stone-500">One subject, one section, one professor.</p>
+    </div>
+  </div>
+  <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+    <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+  </button>
+</div>
+
+<form method="post" data-offering-form data-offerable-url="{% url 'scheduling:offerable_subjects_api' %}" data-offering-id="{{ form.instance.pk|default:'' }}" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Offering saved." class="flex min-h-0 flex-1 flex-col">
+  {% csrf_token %}
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {% include "partials/form_field.html" with field=form.term field_label="Term" %}
+      {% include "partials/form_field.html" with field=form.section field_label="Section" %}
+      <div class="sm:col-span-2">
+        {% include "partials/form_field.html" with field=form.subject field_label="Subject" %}
+        {# Filled in by offering-form.js whenever the term or section changes. #}
+        <p data-curriculum-hint aria-live="polite"
+           class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12px] {% if form.curriculum.slot and not form.curriculum.restricted %}text-amber-700{% else %}text-stone-500{% endif %}">
+          <i data-lucide="graduation-cap" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></i>
+          <span data-curriculum-hint-text>{{ form.curriculum.message }}</span>
+          <a data-curriculum-hint-link href="{% url 'scheduling:curriculum' %}{% if form.curriculum.program %}?program={{ form.curriculum.program|urlencode }}{% endif %}"
+             class="font-semibold text-[#1E6B4A] hover:underline">Open curriculum</a>
+        </p>
+      </div>
+      {# Shared group classes. offering-form.js shows the right half when the section changes. #}
+      <div class="sm:col-span-2" data-sharing>
+        <div data-sharing-toggle class="{% if not form.sharing.available %}hidden {% endif %}rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+          {% include "partials/form_field.html" with field=form.shared %}
+          <p class="mt-1 flex items-center gap-1.5 text-[12px] font-medium text-sky-900">
+            <i data-lucide="users-round" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></i>
+            <span data-sharing-groups>{% if form.sharing.available %}{{ form.sharing.block_code }}: {{ form.sharing.groups }} in one room, at one time.{% endif %}</span>
+          </p>
+        </div>
+        <p data-sharing-note class="{% if not form.sharing.is_shared %}hidden {% endif %}flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-[12px] font-medium text-sky-900">
+          <i data-lucide="users-round" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></i>
+          <span data-sharing-note-text>{% if form.sharing.is_shared %}Shared class: {{ form.sharing.groups }} of {{ form.sharing.block_code }} attend every meeting together.{% endif %}</span>
+        </p>
+      </div>
+      {% include "partials/form_field.html" with field=form.instructor field_label="Professor" %}
+    </div>
+
+    <fieldset class="rounded-lg border border-stone-200 p-3">
+      <legend class="px-1 text-[12px] font-semibold uppercase tracking-wider text-stone-500">Weekly load</legend>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {% include "partials/form_field.html" with field=form.meetings_per_week field_label="Meetings per week" %}
+        {% include "partials/form_field.html" with field=form.minutes_per_meeting field_label="Minutes per meeting (lecture)" %}
+        {% include "partials/form_field.html" with field=form.meeting_format field_label="Meeting format" %}
+        <div data-show-for-format="LECTURE_LAB">{% include "partials/form_field.html" with field=form.lab_minutes_per_meeting field_label="Lab minutes per meeting" %}</div>
+      </div>
+      <p class="mt-1.5 text-[12px] text-stone-500">The scheduler places this many separate meetings, one per day, in the first free slots it finds. Lecture + lab is always 2 meetings: the lecture goes in a classroom and the lab in a laboratory, on different days.</p>
+    </fieldset>
+
+    <fieldset class="rounded-lg border border-stone-200 p-3">
+      <legend class="px-1 text-[12px] font-semibold uppercase tracking-wider text-stone-500">Room preference</legend>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>{% include "partials/form_field.html" with field=form.preferred_room field_label="Preferred room" %}</div>
+        <div data-hide-for-format="LECTURE_LAB">{% include "partials/form_field.html" with field=form.room_type field_label="Room type" %}</div>
+        <div data-show-for-format="LECTURE_LAB">{% include "partials/form_field.html" with field=form.preferred_lab_room field_label="Preferred lab room" %}</div>
+      </div>
+      <p data-show-for-format="LECTURE_LAB" class="mt-1.5 text-[12px] text-stone-500">Lecture + lab: the preferred room is the <b>lecture</b> room (a classroom), and the lab meets in a <b>laboratory</b>. Either one falls back to any free room of that type.</p>
+    </fieldset>
+
+    <fieldset class="rounded-lg border border-stone-200 p-3">
+      <legend class="px-1 text-[12px] font-semibold uppercase tracking-wider text-stone-500">Queue position</legend>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {% include "partials/form_field.html" with field=form.priority field_label="Priority" %}
+        {% include "partials/form_field.html" with field=form.requested_at field_label="Requested at" %}
+      </div>
+      <p class="mt-1.5 text-[12px] text-stone-500">Priority 5 (highest) runs first and 1 runs last. Within the same priority it is first come, first served by the request time.</p>
+    </fieldset>
+
+    {% include "partials/form_field.html" with field=form.notes field_label="Notes" %}
+    {% include "partials/form_field.html" with field=form.is_active field_label="Queued (uncheck to take it out of the queue)" field_container_class="pt-1" %}
+  </div>
+
+  <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+    <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+    <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="check" class="h-4 w-4"></i><span>Save offering</span>
+    </button>
+  </div>
+</form>

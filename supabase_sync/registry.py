@@ -1,7 +1,10 @@
 """Which models are mirrored to Supabase, and how.
 
-Order matters only for readability (parents before children); the generated
-schema has no foreign keys, so a failed table never blocks the others.
+Order matters: parents come before children, because the generated schema now
+creates real foreign keys between the mirrored tables (serializers
+.foreign_key_sql), so a child row cannot be pushed before its parent exists.
+Those keys carry `on delete cascade` down the retention purge chain and
+`set null` / `restrict` everywhere else — see accounts/retention.py.
 
 Modes:
   updated  push rows whose `updated_at` moved since the last successful run
@@ -38,7 +41,7 @@ class SyncSpec:
 
 # Never mirrored: password hashes, session data, Django admin/auth tables.
 USER_FIELDS = ("id", "username", "first_name", "last_name", "email", "employee_id",
-               "contact_number", "role", "department", "approval_status", "approved_at",
+               "contact_number", "role", "department",
                "assigned_post", "is_active", "date_joined", "last_login")
 
 SPECS = (
@@ -52,6 +55,10 @@ SPECS = (
     SyncSpec("keys.Key", mode="updated"),
     SyncSpec("scheduling.Term", mode="updated"),
     SyncSpec("scheduling.Subject"),
+    # Sections and the FCFS offering queue (scheduling/planner.py). Both sit
+    # above ScheduleBlock, whose section_id / offering_id point at them.
+    SyncSpec("scheduling.Section", mode="updated"),
+    SyncSpec("scheduling.SubjectOffering", mode="updated"),
     SyncSpec("scheduling.ScheduleBlock", mode="updated"),
     SyncSpec("scheduling.ScheduleException", mode="append"),
     SyncSpec("transactions.GuardShift"),

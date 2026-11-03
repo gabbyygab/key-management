@@ -106,3 +106,311 @@ aside :focus-visible {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Scroll lock — body.kt-scroll-locked (modal.js, navbar.js drawer).
+ *
+ * The bug this replaces: the lock used Tailwind's `overflow-hidden` on <body>.
+ * That removes the page scrollbar, so the viewport gains its ~15px back and
+ * every in-flow element — navbar, table, the whole shell — reflows wider for
+ * as long as the modal is open, then snaps back on close. Opening "Add user"
+ * looked like the page flashed and the right-hand page scrollbar vanished.
+ *
+ * So the lock also re-reserves exactly the width the scrollbar occupied.
+ * modal.js measures it once per lock (innerWidth - documentElement.clientWidth,
+ * which is 0 on overlay-scrollbar platforms) into --kt-scrollbar-width.
+ *
+ * `scrollbar-gutter: stable` is NOT a substitute: Chrome does not honour a
+ * gutter on the propagated viewport scroller once its overflow is hidden.
+ * ------------------------------------------------------------------------- */
+.kt-scroll-locked {
+  overflow: hidden;
+  padding-right: var(--kt-scrollbar-width, 0px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Modal enter animation — F1.2.
+ *
+ * Deliberately lightweight: opacity + transform only (both composited, no
+ * layout or paint), one short step, no library. Overlay fades; the panel
+ * fades up from 8px with a 2% scale so it reads as arriving rather than
+ * blinking into place. See guide.md "Modal enter animation" for the rule.
+ *
+ * No JS hook needed — `.hidden` is display:none, so removing it makes the
+ * element rendered again and CSS animations restart from the first frame.
+ * There is no exit animation on purpose: closing must feel instant, and
+ * holding a dismissed dialog on screen to animate it out costs a timer plus
+ * a "closing" state in the controller.
+ * ------------------------------------------------------------------------- */
+@keyframes kt-modal-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes kt-modal-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+[aria-modal="true"]:not(.hidden) > [data-modal-overlay] {
+  animation: kt-modal-overlay-in 120ms ease-out both;
+}
+
+[aria-modal="true"]:not(.hidden) > :not([data-modal-overlay]) {
+  animation: kt-modal-panel-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [aria-modal="true"]:not(.hidden) > [data-modal-overlay],
+  [aria-modal="true"]:not(.hidden) > :not([data-modal-overlay]) {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Modal scrollbars — the "side bar" of every scrollable modal body.
+ *
+ * The OS default bar is a light grey rail that reads as a seam against the
+ * white modal card and ignores the green accent. Theme it once here, and add
+ * `.kt-modal-scroll` to each scrolling modal region, so static modals, AJAX
+ * forms, the confirm/session dialogs and the schedule editor all share one
+ * thin green thumb. The track stays transparent and the thumb is inset with a
+ * transparent border (`background-clip: content-box`) so it reads as a 6px
+ * pill in a 10px gutter instead of a heavy solid bar.
+ *
+ * Textareas inside a modal get the same treatment because they scroll too.
+ * ------------------------------------------------------------------------- */
+.kt-modal-scroll,
+[aria-modal="true"] textarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent) transparent;
+}
+
+.kt-modal-scroll::-webkit-scrollbar,
+[aria-modal="true"] textarea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.kt-modal-scroll::-webkit-scrollbar-track,
+[aria-modal="true"] textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kt-modal-scroll::-webkit-scrollbar-thumb,
+[aria-modal="true"] textarea::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-color: var(--color-accent);
+  background-clip: content-box;
+}
+
+.kt-modal-scroll::-webkit-scrollbar-thumb:hover,
+[aria-modal="true"] textarea::-webkit-scrollbar-thumb:hover {
+  background-color: #0f2e1f;
+}
+
+.kt-modal-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * Toast styling/animation — F1.4, built on Toastify (static/js/toast.js).
+ *
+ * Toastify positions and stacks each `.toastify` div itself (there is no
+ * shared container to theme); it must not supply its own gradient
+ * background/shadow/padding — the message node already carries those via
+ * the same design tokens as everything else — or its default `transition:
+ * all 0.4s`, which both animates properties beyond opacity/transform and
+ * exceeds the 200ms motion budget (guide.md "Modal animation").
+ *
+ * The extra headroom past the sticky navbar (static/css/navbar.css
+ * .app-header, ~81px tall) is NOT done here: toast.js passes Toastify's own
+ * `offset: {y: ...}` option, a transform applied per toast that composes
+ * with its internal top-stacking, so multiple toasts still stack correctly.
+ * A fixed `top` override here would collapse them onto the same spot.
+ * ------------------------------------------------------------------------- */
+.toastify {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+  cursor: default;
+  overflow: visible;
+  /* Wider than Toastify's default (and than its `.toastify-center`
+   * `max-width: fit-content`, which this rule outranks by load order) so the
+   * larger 14px message box reads as one line instead of wrapping. */
+  max-width: min(34rem, calc(100vw - 2rem));
+  transition: opacity 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toastify {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Toast card — react-toastify's shape, KEYTRACK's tokens (static/js/toast.js).
+ *
+ * One white card for every variant instead of a tinted one per level: the
+ * meaning is carried by the icon and by the timer line draining along the
+ * bottom edge, so a run of toasts reads as one surface. The line is a
+ * transform-only animation (composited, no layout) and pauses on hover at the
+ * same moment Toastify's `stopOnFocus` pauses the real countdown, so what you
+ * see is what the timer is doing.
+ * ------------------------------------------------------------------------- */
+.kt-toast {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  /* The accent the timer line is drawn in; overridden per variant below. */
+  --kt-toast-accent: #a8a29e;
+}
+
+.kt-toast-success { --kt-toast-accent: #1e6b4a; }
+.kt-toast-error   { --kt-toast-accent: #b91c1c; }
+.kt-toast-warning { --kt-toast-accent: #d97706; }
+.kt-toast-info    { --kt-toast-accent: #78716c; }
+
+.kt-toast-bar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--kt-toast-accent);
+  transform-origin: left center;
+  animation-name: kt-toast-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.kt-toast:hover .kt-toast-bar {
+  animation-play-state: paused;
+}
+
+@keyframes kt-toast-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kt-toast-bar {
+    animation: none;
+    opacity: 0.3;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Clickability + button busy state (static/js/button-loading.js).
+ *
+ * Tailwind v4's preflight sets `cursor: default` on <button>, so every button
+ * in the app pointed at an arrow and read as decoration — the navbar hamburger
+ * most of all. Put the hand back, once, for everything.
+ * ------------------------------------------------------------------------- */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* A button is busy: dimmed, un-clickable, spinner in front of its label. */
+.kt-busy {
+  opacity: 0.75;
+}
+
+/* Tailwind preflight makes every <svg> display:block, so a spinner inserted
+ * into a button whose own classes are not flex drops onto its own line and
+ * the button grows taller mid-submit. Buttons should carry
+ * `inline-flex items-center gap-1.5` themselves; this keeps the busy state
+ * on one line for any that do not. */
+button.kt-busy:not(.flex):not(.inline-flex) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+/* With a replacement label ("Archiving…"), the button's own content is parked
+ * in this wrapper rather than overwritten, so restoring cannot lose it. */
+.kt-busy-original {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Bulk selection (static/js/bulk-actions.js).
+ * ------------------------------------------------------------------------- */
+tr.kt-row-selected > td {
+  background-color: #f0f7f3;
+}
+
+/* ---------------------------------------------------------------------------
+ * Select controls — one chevron for every dropdown in the app.
+ *
+ * The bug this replaces: every <select> rendered the browser's native arrow,
+ * which Chrome paints flush against the inner edge of the border with ~4px of
+ * air, while the label beside it sits on the template's `px-3`. The control
+ * read as lopsided — text comfortably inset on the left, arrow jammed into the
+ * right wall — and the arrow itself differed per platform (Chrome, Firefox and
+ * Safari each draw their own), so the filter rows never matched each other.
+ *
+ * Done once here rather than as a utility class on each of the ~30 selects
+ * across the list/filter templates: a new template cannot forget it, and the
+ * markup keeps using plain `rounded-lg border ... px-3 py-2` as before.
+ *
+ * NOT in @layer base, for the same cascade reason as the focus ring above:
+ * `padding-inline-end` has to outrank the `px-2/px-2.5/px-3` utility already
+ * on these elements. Only the inline-end padding is set, so each template
+ * keeps its own vertical padding and left inset.
+ *
+ * `select[multiple]` and a sized list box are excluded — they are scrolling
+ * lists, not dropdowns, and have no arrow to replace.
+ * ------------------------------------------------------------------------- */
+select:not([multiple]):not([size]:not([size="1"])) {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Chevron: lucide `chevron-down` at 16px in stone-500, the same mark the
+   * rest of the UI uses for "opens downward". Inlined as a data URI so it
+   * needs no CDN round-trip and renders before lucide's JS replacement runs. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 16px 16px;
+  /* 0.75rem gutter + 16px glyph + 0.625rem of air before the text. */
+  padding-inline-end: 2.375rem;
+  cursor: pointer;
+  transition: border-color 120ms ease-out, background-color 120ms ease-out;
+}
+
+/* Hover is the only affordance a closed select has, so make it visible. */
+select:not([multiple]):not([size]:not([size="1"])):hover:not(:disabled) {
+  border-color: #a8a29e;
+}
+
+/* The templates set the focus border inconsistently (some `focus:border-...`,
+ * some nothing). Give every dropdown the accent edge; :focus-visible above
+ * still supplies the keyboard ring on top of it. */
+select:not([multiple]):not([size]:not([size="1"])):focus {
+  border-color: var(--color-accent);
+}
+
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: #f5f5f4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select {
+    transition: none;
+  }
+}

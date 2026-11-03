@@ -6,7 +6,7 @@
 
   <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl
     {% if modal_size == 'sm' %}max-w-sm{% elif modal_size == 'md' %}max-w-md{% elif modal_size == 'lg' %}max-w-lg{% elif modal_size == 'xl' %}max-w-xl{% else %}max-w-md{% endif %}">
-    <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
       <div class="flex min-w-0 items-center gap-3">
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border
           {% if modal_icon_container_class %}{{ modal_icon_container_class }}{% else %}border-[#1E6B4A]/20 bg-[#1E6B4A]/10{% endif %}">
@@ -19,11 +19,11 @@
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
       {% if modal_body_template %}{% include modal_body_template %}{% endif %}
     </div>
 
-    <div class="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+    <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
       {% if modal_footer_template %}
         {% include modal_footer_template %}
       {% else %}

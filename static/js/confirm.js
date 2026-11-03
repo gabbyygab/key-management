@@ -1,6 +1,7 @@
 /* confirm.js — generic confirmation modal (F1.5).
  *
- * Any <form data-confirm="..."> is intercepted on submit: the shared
+ * Any <form data-confirm="..."> (or a submit <button data-confirm>, which then
+ * asks only when that button submits) is intercepted on submit: the shared
  * #confirm-modal opens with the message, the affected record and (optionally)
  * a required reason textarea. Accepting re-submits the form for real.
  *
@@ -106,24 +107,30 @@
     "submit",
     function (e) {
       var form = e.target;
-      if (!form.matches || !form.matches("form[data-confirm]")) return;
+      if (!form.matches || !form.matches("form")) return;
+      var submitter = e.submitter || null;
+      /* The question can sit on the form (every submit asks) or on one
+       * submit button (only that button asks — e.g. "Run and save" next to
+       * a harmless "Preview"). The button wins when both are set. */
+      var src = submitter && submitter.hasAttribute("data-confirm") ? submitter
+        : form.hasAttribute("data-confirm") ? form : null;
+      if (!src) return;
       if (form.dataset.confirmed === "1") {
         form.dataset.confirmed = "";
         return; /* second pass: let it through */
       }
       e.preventDefault();
       e.stopImmediatePropagation();
-      var submitter = e.submitter || null;
       confirm({
-        title: form.dataset.confirmTitle,
-        message: form.dataset.confirm,
-        subject: form.dataset.confirmSubject,
-        label: form.dataset.confirmLabel,
-        variant: form.dataset.confirmVariant,
-        reason: !!form.dataset.confirmReason,
+        title: src.dataset.confirmTitle,
+        message: src.dataset.confirm,
+        subject: src.dataset.confirmSubject,
+        label: src.dataset.confirmLabel,
+        variant: src.dataset.confirmVariant,
+        reason: !!src.dataset.confirmReason,
       }).then(
         function (result) {
-          var field = form.dataset.confirmReason;
+          var field = src.dataset.confirmReason;
           if (field) {
             var input = form.querySelector('input[name="' + field + '"]');
             if (!input) {

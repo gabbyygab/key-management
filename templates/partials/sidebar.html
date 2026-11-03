@@ -1,4 +1,4 @@
-{% load static %}
+{% load static keytrack %}
 {% comment %}
   F2.1 role-split sidebar. Admins get the full back office; guards get a
   deliberately small menu built around the POS. Server-side gating still
@@ -7,7 +7,7 @@
   F2.2: below 768px the same <aside> becomes a slide-in drawer, toggled by the
   hamburger in the navbar (navbar.js).
 {% endcomment %}
-{% with current=request.resolver_match.url_name ns=request.resolver_match.namespace %}
+{% with current=request.resolver_match.url_name|nav_key ns=request.resolver_match.namespace %}
 <link rel="stylesheet" href="{% static 'css/sidebar.css' %}">
 <div id="sidebar-backdrop" class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
 <aside id="app-sidebar" class="app-sidebar" aria-label="Sidebar">
@@ -25,7 +25,7 @@
     </button>
   </div>
 
-  <nav aria-label="Main navigation" class="sidebar-nav">
+  <nav aria-label="Main navigation" class="sidebar-nav" data-preserve-scroll="sidebar">
   {% if user.is_admin_role %}
     <div class="sidebar-section-title">Workspace</div>
     <a href="{% url 'dashboard' %}" {% if current == 'dashboard' and not ns %}aria-current="page" {% endif %}class="sidebar-link{% if current == 'dashboard' and not ns %} is-active{% endif %}">
@@ -33,6 +33,33 @@
     </a>
 
     <div class="sidebar-section-title">Scheduling</div>
+    <a href="{% url 'scheduling:term_list' %}" {% if ns == 'scheduling' and current == 'term_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'term_list' %} is-active{% endif %}">
+      <i data-lucide="calendar-range" aria-hidden="true"></i><span>Terms</span>
+    </a>
+    <a href="{% url 'scheduling:settings' %}" {% if ns == 'scheduling' and current == 'settings' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'settings' %} is-active{% endif %}">
+      <i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Schedule Settings</span>
+    </a>
+    <a href="{% url 'scheduling:department_list' %}" {% if ns == 'scheduling' and current == 'department_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'department_list' %} is-active{% endif %}">
+      <i data-lucide="building-2" aria-hidden="true"></i><span>Departments</span>
+    </a>
+    <a href="{% url 'scheduling:subject_list' %}" {% if ns == 'scheduling' and current == 'subject_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'subject_list' %} is-active{% endif %}">
+      <i data-lucide="book-open" aria-hidden="true"></i><span>Subjects</span>
+    </a>
+    <a href="{% url 'scheduling:curriculum' %}" {% if ns == 'scheduling' and current == 'curriculum' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'curriculum' %} is-active{% endif %}">
+      <i data-lucide="graduation-cap" aria-hidden="true"></i><span>Curriculum</span>
+    </a>
+    <a href="{% url 'scheduling:section_list' %}" {% if ns == 'scheduling' and current == 'section_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'section_list' %} is-active{% endif %}">
+      <i data-lucide="users-round" aria-hidden="true"></i><span>Sections</span>
+    </a>
+    <a href="{% url 'scheduling:offering_list' %}" {% if ns == 'scheduling' and current == 'offering_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'offering_list' %} is-active{% endif %}">
+      <i data-lucide="list-ordered" aria-hidden="true"></i><span>Subject Offerings</span>
+    </a>
+    <a href="{% url 'scheduling:autoschedule' %}" {% if ns == 'scheduling' and current == 'autoschedule' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'autoschedule' %} is-active{% endif %}">
+      <i data-lucide="wand-2" aria-hidden="true"></i><span>Auto-schedule</span>
+    </a>
+    <a href="{% url 'scheduling:section_timetable' %}" {% if ns == 'scheduling' and current == 'section_timetable' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'section_timetable' %} is-active{% endif %}">
+      <i data-lucide="calendar-days" aria-hidden="true"></i><span>Section Timetable</span>
+    </a>
     <a href="{% url 'scheduling:room_timetable' %}" {% if ns == 'scheduling' and current == 'room_timetable' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'room_timetable' %} is-active{% endif %}">
       <i data-lucide="calendar" aria-hidden="true"></i><span>Room Schedule</span>
     </a>
@@ -69,12 +96,6 @@
     </a>
     <a href="{% url 'facilities:post_list' %}" {% if ns == 'facilities' and current == 'post_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'facilities' and current == 'post_list' %} is-active{% endif %}">
       <i data-lucide="shield" aria-hidden="true"></i><span>Guard Posts</span>
-    </a>
-    <a href="{% url 'accounts:pending_user_list' %}" {% if ns == 'accounts' and current == 'pending_user_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'accounts' and current == 'pending_user_list' %} is-active{% endif %}">
-      <i data-lucide="user-check" aria-hidden="true"></i><span>Pending Approvals</span>
-      {% if pending_approvals_count > 0 %}
-      <span class="sidebar-badge" title="{{ pending_approvals_count }} pending approval{{ pending_approvals_count|pluralize }}">{{ pending_approvals_count }}</span>
-      {% endif %}
     </a>
 
     <div class="sidebar-section-title">Oversight</div>

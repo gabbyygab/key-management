@@ -175,5 +175,28 @@
     if (!e.target.matches("[data-select-all]")) return;
     document.querySelectorAll('input[name="selected_schedule"]').forEach(function (c) { c.checked = e.target.checked; });
   });
+
+  // Bulk deactivate is a soft delete of several blocks: confirm.js asks first.
+  // confirm.js reads data-confirm in a document-level capture listener, before
+  // any listener on the form, so the attributes are kept current on every
+  // change instead of being set at submit time.
+  (function () {
+    var form = document.getElementById("schedule-bulk-form");
+    if (!form) return;
+    function sync() {
+      var action = form.querySelector("[name=bulk_action]").value;
+      var n = form.querySelectorAll('input[name="selected_schedule"]:checked').length;
+      if (action === "deactivate" && n) {
+        form.dataset.confirm = "They stop appearing on the timetable and no longer block their rooms. You can reactivate them later.";
+        form.dataset.confirmTitle = "Deactivate " + n + " schedule block" + (n === 1 ? "" : "s") + "?";
+        form.dataset.confirmLabel = "Deactivate";
+        form.dataset.confirmVariant = "danger";
+      } else {
+        delete form.dataset.confirm;
+      }
+    }
+    form.addEventListener("change", function () { setTimeout(sync, 0); }); // after select-all ticks the boxes
+    sync();
+  })();
 </script>
 {% endblock %}

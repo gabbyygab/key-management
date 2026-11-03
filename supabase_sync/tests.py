@@ -15,7 +15,7 @@ from .client import SupabaseClient, SupabaseError
 from .conf import get_config
 from .models import SyncCursor
 from .registry import SPECS, select_specs
-from .serializers import create_table_sql, serialize, sync_fields
+from .serializers import create_table_sql, foreign_key_sql, serialize, sync_fields
 from .services import sync_all
 
 CONFIGURED = override_settings(
@@ -145,6 +145,45 @@ class SerializerTests(TestCase):
         self.assertEqual(row["building_id"], room.building_id)
         json.dumps(row)  # must be JSON-safe
         self.assertIn("enable row level security", create_table_sql(spec))
+
+    def test_existing_tables_gain_new_columns_when_the_schema_is_rerun(self):
+        spec = next(s for s in SPECS if s.model_label == "scheduling.ScheduleBlock")
+        sql = create_table_sql(spec)
+        table = '"public"."scheduling_scheduleblock"'
+        # Columns added after the table was first created must still arrive.
+        self.assertIn(f'alter table {table} add column if not exists "section_id" bigint;', sql)
+        self.assertIn(f'alter table {table} add column if not exists "offering_id" bigint;', sql)
+        # Added columns stay nullable, and the primary key is never re-added.
+        self.assertNotIn('add column if not exists "section_id" bigint not null', sql)
+        self.assertNotIn('add column if not exists "id"', sql)
+
+    def test_sections_and_offerings_are_mirrored_before_their_blocks(self):
+        order = [s.model_label for s in SPECS]
+        for parent in ("scheduling.Term", "scheduling.Subject", "scheduling.Section",
+                       "accounts.Borrower", "facilities.Room"):
+            self.assertLess(order.index(parent), order.index("scheduling.SubjectOffering"))
+        self.assertLess(order.index("scheduling.Section"), order.index("scheduling.ScheduleBlock"))
+        self.assertLess(order.index("scheduling.SubjectOffering"),
+                        order.index("scheduling.ScheduleBlock"))
+
+        offering = next(s for s in SPECS if s.model_label == "scheduling.SubjectOffering")
+        fks = foreign_key_sql(offering, SPECS)
+        # Term, subject and section are archivable now, so deleting one purges
+        # its offerings; the nullable SET_NULL links (professor, preferred room)
+        # detach instead of cascading.
+        self.assertRegex(fks, r'"section_id"\) references "public"."scheduling_section" '
+                              r'\("id"\)\s+on delete cascade')
+        self.assertRegex(fks, r'"instructor_id"\) references "public"."accounts_borrower" '
+                              r'\("id"\)\s+on delete set null')
+        self.assertRegex(fks, r'"preferred_room_id"\) references "public"."facilities_room" '
+                              r'\("id"\)\s+on delete set null')
+
+        block = next(s for s in SPECS if s.model_label == "scheduling.ScheduleBlock")
+        fks = foreign_key_sql(block, SPECS)
+        self.assertRegex(fks, r'"offering_id"\) references "public"."scheduling_subjectoffering" '
+                              r'\("id"\)\s+on delete set null')
+        self.assertRegex(fks, r'"section_id"\) references "public"."scheduling_section" '
+                              r'\("id"\)\s+on delete set null')
 
     def test_select_specs_rejects_unknown_tables(self):
         self.assertEqual([s.table_name for s in select_specs(["keys.Key"])], ["keys_key"])

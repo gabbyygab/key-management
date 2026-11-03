@@ -10,5 +10,6 @@ urlpatterns = [
     path("shifts/", views.shift_history, name="shift_history"),
     path("history/", views.transaction_history, name="history"),
     path("history/export/", views.export_transactions_csv, name="export_csv"),
+    path("<int:pk>/", views.transaction_detail, name="detail"),
     path("<int:pk>/correct/", views.transaction_correct, name="correct"),
 ]

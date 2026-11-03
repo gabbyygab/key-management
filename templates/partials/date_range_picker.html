@@ -1,0 +1,61 @@
+{# templates/partials/date_range_picker.html #}
+{# Aligned Date Range Picker trigger with hidden filtering inputs. #}
+{# Usage: #}
+{#   {% include "partials/date_range_picker.html" with start_date=start_date end_date=end_date %} #}
+{#   {% include "partials/date_range_picker.html" with start_date=start_date end_date=end_date auto_submit=True %} #}
+<div class="kt-date-range-picker relative inline-block w-full {{ container_class }}"
+     data-date-range-picker
+     data-placeholder="{{ placeholder|default:'Select date range' }}"
+     {% if auto_submit|default:True %}data-auto-submit="true"{% endif %}>
+  
+  {# Hidden inputs that preserve exact backend filtering contract #}
+  <input type="hidden"
+         {% if start_id %}id="{{ start_id }}"{% elif start_name %}id="{{ start_name }}"{% else %}id="start_date"{% endif %}
+         name="{{ start_name|default:'start_date' }}"
+         value="{{ start_date|default:'' }}"
+         data-date-range-start>
+  <input type="hidden"
+         {% if end_id %}id="{{ end_id }}"{% elif end_name %}id="{{ end_name }}"{% else %}id="end_date"{% endif %}
+         name="{{ end_name|default:'end_date' }}"
+         value="{{ end_date|default:'' }}"
+         data-date-range-end>
+
+  {# Aligned Trigger Button #}
+  <button type="button"
+          data-date-range-trigger
+          class="w-full flex items-center justify-between gap-2 rounded-lg border border-stone-200 {{ input_bg|default:'bg-[#FAF7F0]' }} px-3 py-2 text-[13px] text-stone-700 hover:border-stone-300 hover:bg-white focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A] transition-colors shadow-2xs group text-left {{ button_class }}"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          title="Filter by date range">
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <i data-lucide="calendar" class="w-4 h-4 text-stone-400 group-hover:text-stone-600 shrink-0"></i>
+      <span class="truncate font-medium text-stone-800" data-date-range-label>
+        {% if start_date and end_date %}
+          {% if start_date == end_date %}
+            {{ start_date }}
+          {% else %}
+            {{ start_date }} – {{ end_date }}
+          {% endif %}
+        {% elif start_date %}
+          From {{ start_date }}
+        {% elif end_date %}
+          Until {{ end_date }}
+        {% else %}
+          {{ placeholder|default:"Select date range" }}
+        {% endif %}
+      </span>
+    </div>
+    
+    <div class="flex items-center gap-1 shrink-0 ml-1">
+      <span role="button"
+            tabindex="0"
+            data-date-range-clear
+            class="{% if not start_date and not end_date %}hidden{% endif %} p-1 text-stone-400 hover:text-stone-700 hover:bg-stone-200/80 rounded-full transition-colors cursor-pointer"
+            title="Clear date range"
+            aria-label="Clear date range">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      </span>
+      <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-stone-400 shrink-0 group-hover:text-stone-600 transition-transform"></i>
+    </div>
+  </button>
+</div>

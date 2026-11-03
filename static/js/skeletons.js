@@ -5,7 +5,8 @@
  *   - Room scheduling timetable grid
  *   - "Currently Out" keys list
  *   - Room finder card results
- *   - Modal forms & generic lists/tables
+ *   - Modal forms (header + field grid + footer, sized like the real modal)
+ *   - Paginated table bodies (tableRows) & generic lists
  *
  * Design tokens per GUIDE.md §5: stone-100, stone-200, rounded-xl/2xl, animate-pulse.
  * Always sets aria-busy="true" during loading and role="status" on skeleton containers.
@@ -180,29 +181,91 @@
     );
   }
 
-  /* Form-in-modal skeleton */
-  function form() {
+  /* Form-in-modal skeleton. Mirrors partials/ajax_form_modal.html — header
+   * (icon + title + close), a field grid, fixed footer (Cancel + Save) — with
+   * the same paddings and control heights, so the dialog opens at about its
+   * loaded size and nothing jumps when the real form replaces it.
+   *   opts.fields  number of fields to draw (default 4)
+   *   opts.cols    1 or 2 (match the partial's grid="2") */
+  var LABEL_WIDTHS = ["w-20", "w-24", "w-16", "w-28", "w-20", "w-24", "w-16", "w-28"];
+
+  function form(opts) {
+    opts = opts || {};
+    var fields = Math.max(1, parseInt(opts.fields, 10) || 4);
+    var cols = String(opts.cols) === "2" ? 2 : 1;
+
+    var cells = [];
+    for (var i = 0; i < fields; i++) {
+      cells.push(
+        /* label row is 18px + mb-1, input 38px: same as partials/form_field.html */
+        '<div>' +
+          '<div class="mb-1 flex h-[18px] items-center">' +
+            '<div class="h-3 bg-stone-200 rounded ' + LABEL_WIDTHS[i % LABEL_WIDTHS.length] + '"></div>' +
+          '</div>' +
+          '<div class="h-[38px] bg-stone-100 rounded-lg w-full"></div>' +
+        '</div>'
+      );
+    }
+
     return (
-      '<div class="p-6 space-y-4 animate-pulse" role="status" aria-label="Loading form...">' +
-        '<div class="space-y-1.5">' +
-          '<div class="h-3 bg-stone-200 rounded w-24"></div>' +
-          '<div class="h-9 bg-stone-100 rounded-lg w-full"></div>' +
+      '<div class="flex min-h-0 flex-1 flex-col animate-pulse" role="status" aria-busy="true" aria-label="Loading form...">' +
+        /* header — same box as the loaded modal header */
+        '<div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-5 py-4">' +
+          '<div class="flex min-w-0 flex-1 items-center gap-3">' +
+            '<div class="h-10 w-10 shrink-0 rounded-xl bg-stone-100"></div>' +
+            '<div class="flex-1 space-y-1.5">' +
+              '<div class="h-4 bg-stone-200 rounded w-32"></div>' +
+              '<div class="h-3 bg-stone-100 rounded w-56 max-w-full"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="h-6 w-6 shrink-0 rounded-lg bg-stone-100"></div>' +
         '</div>' +
-        '<div class="space-y-1.5">' +
-          '<div class="h-3 bg-stone-200 rounded w-28"></div>' +
-          '<div class="h-9 bg-stone-100 rounded-lg w-full"></div>' +
+        /* body */
+        '<div class="min-h-0 flex-1 overflow-hidden px-5 py-4">' +
+          '<div class="grid grid-cols-1 gap-4' + (cols === 2 ? " sm:grid-cols-2" : "") + '">' +
+            cells.join("") +
+          '</div>' +
         '</div>' +
-        '<div class="space-y-1.5">' +
-          '<div class="h-3 bg-stone-200 rounded w-20"></div>' +
-          '<div class="h-20 bg-stone-100 rounded-lg w-full"></div>' +
-        '</div>' +
-        '<div class="flex justify-end gap-2 pt-2">' +
-          '<div class="h-8 bg-stone-100 rounded-lg w-16"></div>' +
-          '<div class="h-8 bg-stone-200 rounded-lg w-20"></div>' +
+        /* footer */
+        '<div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 px-5 py-3">' +
+          '<div class="h-[38px] bg-stone-100 rounded-lg w-20"></div>' +
+          '<div class="h-[38px] bg-stone-200 rounded-lg w-28"></div>' +
         '</div>' +
         '<span class="sr-only">Loading form...</span>' +
       '</div>'
     );
+  }
+
+  /* Table-body skeleton for a paginated list (partials/pagination.html pages).
+   * One <tr> per row with `cols` cells; the first cell gets an avatar-style
+   * circle + two lines, the last is right-aligned like an Actions column.
+   * Row height matches a real p-3.5 row so the table does not shrink. */
+  var CELL_WIDTHS = ["w-20", "w-16", "w-24", "w-14", "w-20", "w-16"];
+
+  function tableRows(cols, count) {
+    var c = Math.max(1, parseInt(cols, 10) || 5);
+    var n = Math.max(1, parseInt(count, 10) || 10);
+    var rows = [];
+    for (var r = 0; r < n; r++) {
+      var cells = [];
+      for (var i = 0; i < c; i++) {
+        if (i === 0) {
+          cells.push(
+            '<td class="p-3.5"><div class="flex items-center gap-2.5">' +
+              '<div class="h-8 w-8 shrink-0 rounded-full bg-stone-200"></div>' +
+              '<div class="space-y-1.5"><div class="h-3.5 bg-stone-200 rounded ' + (r % 2 ? "w-28" : "w-24") + '"></div>' +
+              '<div class="h-2.5 bg-stone-100 rounded w-14"></div></div>' +
+            '</div></td>'
+          );
+        } else if (i === c - 1 && c > 2) {
+          cells.push('<td class="p-3.5"><div class="ml-auto h-3.5 bg-stone-200 rounded w-32"></div></td>');
+        } else {
+          cells.push('<td class="p-3.5"><div class="h-3.5 bg-stone-200 rounded ' + CELL_WIDTHS[(i + r) % CELL_WIDTHS.length] + '"></div></td>');
+        }
+      }
+      rows.push('<tr class="animate-pulse" aria-hidden="true">' + cells.join("") + "</tr>");
+    }
+    return rows.join("");
   }
 
   /* Generic list skeleton */
@@ -257,7 +320,7 @@
         html = roomCards(count);
         break;
       case "form":
-        html = form();
+        html = form(opts);
         break;
       default:
         html = list(count);
@@ -295,10 +358,11 @@
       if (!target) return roomCards(count);
       render(target, "room-cards", count);
     },
-    form: function (target) {
-      if (!target) return form();
-      render(target, "form");
+    form: function (target, opts) {
+      if (!target) return form(opts);
+      render(target, "form", opts);
     },
+    tableRows: tableRows,
     list: function (target, count) {
       if (!target) return list(count);
       render(target, "list", count);

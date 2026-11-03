@@ -16,27 +16,29 @@
 <div id="confirm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
      role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
-  <div class="relative w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
-    <div class="flex items-start gap-3 px-5 pt-5">
-      <div data-confirm-icon-wrap class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-700">
-        <i data-lucide="alert-triangle" aria-hidden="true" class="h-5 w-5"></i>
+  <div class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
+      <div class="flex items-start gap-3">
+        <div data-confirm-icon-wrap class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-700">
+          <i data-lucide="alert-triangle" aria-hidden="true" class="h-5 w-5"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h2 id="confirm-modal-title" class="text-[15px] font-bold text-stone-900">Are you sure?</h2>
+          <p id="confirm-modal-message" class="mt-1 text-[13px] text-stone-600"></p>
+          <p data-confirm-subject class="mt-2 hidden rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[12px] font-semibold text-stone-800"></p>
+        </div>
       </div>
-      <div class="min-w-0 flex-1">
-        <h2 id="confirm-modal-title" class="text-[15px] font-bold text-stone-900">Are you sure?</h2>
-        <p id="confirm-modal-message" class="mt-1 text-[13px] text-stone-600"></p>
-        <p data-confirm-subject class="mt-2 hidden rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[12px] font-semibold text-stone-800"></p>
+      <div data-confirm-reason-wrap class="hidden pt-4">
+        <label for="confirm-modal-reason" class="mb-1 block text-[13px] font-semibold text-stone-700">
+          Reason <span class="text-red-600" aria-hidden="true">*</span>
+        </label>
+        <textarea id="confirm-modal-reason" rows="3" minlength="3"
+                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"
+                  aria-describedby="confirm-modal-reason-help"></textarea>
+        <p id="confirm-modal-reason-help" class="mt-1 text-[12px] text-stone-500">Required. Recorded in the audit log.</p>
       </div>
     </div>
-    <div data-confirm-reason-wrap class="hidden px-5 pt-4">
-      <label for="confirm-modal-reason" class="mb-1 block text-[13px] font-semibold text-stone-700">
-        Reason <span class="text-red-600" aria-hidden="true">*</span>
-      </label>
-      <textarea id="confirm-modal-reason" rows="3" minlength="3"
-                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"
-                aria-describedby="confirm-modal-reason-help"></textarea>
-      <p id="confirm-modal-reason-help" class="mt-1 text-[12px] text-stone-500">Required. Recorded in the audit log.</p>
-    </div>
-    <div class="mt-5 flex items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+    <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
       <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
       <button type="button" data-confirm-accept class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] disabled:cursor-not-allowed disabled:opacity-50">Confirm</button>
     </div>

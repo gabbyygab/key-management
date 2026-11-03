@@ -1,10 +1,12 @@
 from django import forms
-from django.contrib.auth import password_validation
-from django.db.models import Q
+from django.conf import settings
+from django.contrib.auth import authenticate, password_validation
+from django.db.models import Max, Q
 
 from facilities.models import Building, GuardPost, Room
 from keys.models import Key, KeyCategory
 from .models import Borrower, Department, User
+from .services import next_borrower_id, next_employee_id
 
 TAILWIND = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]"
 
@@ -25,6 +27,12 @@ class StyledFormMixin:
     #: Rendered by the templates as the id of each field's error paragraph.
     error_id_suffix = "-error"
 
+    #: {field name: example value}. Rendered as the input's placeholder so the
+    #: expected shape ("09XX-XXX-XXXX") is visible before anything is typed.
+    #: partials/form_field.html marks every non-required field "(optional)", so
+    #: a placeholder is a sample, never an instruction.
+    placeholders = {}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name, f in self.fields.items():
@@ -32,6 +40,10 @@ class StyledFormMixin:
                 f.widget.attrs.setdefault("class", "h-4 w-4 accent-[#1E6B4A]")
             else:
                 f.widget.attrs.setdefault("class", TAILWIND)
+
+            sample = self.placeholders.get(name)
+            if sample and not isinstance(f.widget, (forms.CheckboxInput, forms.Select)):
+                f.widget.attrs.setdefault("placeholder", sample)
 
             if f.required:
                 f.widget.attrs.setdefault("required", "required")
@@ -52,14 +64,67 @@ class StyledFormMixin:
 
 
 class BorrowerForm(StyledFormMixin, forms.ModelForm):
+    placeholders = {
+        "first_name": "e.g. Juan",
+        "last_name": "e.g. Dela Cruz",
+        "contact_number": "09XX-XXX-XXXX",
+        "email": "e.g. juan.delacruz@example.edu.ph",
+    }
+
     class Meta:
         model = Borrower
-        fields = ("id_number", "first_name", "last_name", "borrower_type",
+        # id_number is absent: next_borrower_id() assigns it on create.
+        fields = ("first_name", "last_name", "borrower_type",
                   "department", "contact_number", "email",
                   "is_authorized", "authorized_until", "is_active")
         widgets = {
             "authorized_until": forms.DateInput(attrs={"type": "date"}),
         }
+
+    #: Only these people belong to a department. Students and others never do.
+    DEPARTMENT_TYPES = (Borrower.BorrowerType.FACULTY, Borrower.BorrowerType.STAFF)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Archived departments cannot be picked, but an existing borrower
+        # keeps the one they already have.
+        keep = Q(pk=self.instance.department_id) if self.instance.pk and self.instance.department_id else Q()
+        self.fields["department"].queryset = Department.objects.filter(Q(is_active=True) | keep)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("borrower_type") not in self.DEPARTMENT_TYPES:
+            cleaned["department"] = None
+        elif (cleaned.get("borrower_type") == Borrower.BorrowerType.FACULTY
+              and not cleaned.get("department")):
+            self.add_error("department", "Department is required for faculty.")
+        return cleaned
+
+    def save(self, commit=True):
+        borrower = super().save(commit=False)
+        if not borrower.id_number:
+            borrower.id_number = next_borrower_id()
+        if commit:
+            borrower.save()
+        return borrower
+
+
+class GroupedRoomSelect(forms.Select):
+    def __init__(self, attrs=None, room_map=None):
+        super().__init__(attrs)
+        self.room_map = room_map or {}
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        opt = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        if value:
+            info = self.room_map.get(str(value)) or self.room_map.get(value)
+            if info:
+                opt["attrs"]["data-building"] = info.get("building", "")
+                opt["attrs"]["data-room"] = info.get("room", "")
+                opt["attrs"]["data-prefix"] = info.get("prefix", "")
+                opt["attrs"]["data-category"] = str(info.get("category_id", ""))
+                opt["attrs"]["data-next-copy"] = str(info.get("next_copy", "1"))
+        return opt
 
 
 class GroupedRoomModelChoiceIterator(forms.models.ModelChoiceIterator):
@@ -79,6 +144,7 @@ class GroupedRoomModelChoiceIterator(forms.models.ModelChoiceIterator):
 
 class GroupedRoomChoiceField(forms.ModelChoiceField):
     iterator = GroupedRoomModelChoiceIterator
+    widget = GroupedRoomSelect
 
     def label_from_instance(self, obj):
         name_part = f" · {obj.name}" if obj.name else ""
@@ -86,14 +152,31 @@ class GroupedRoomChoiceField(forms.ModelChoiceField):
 
 
 class KeyForm(StyledFormMixin, forms.ModelForm):
+    key_code = forms.CharField(
+        max_length=50,
+        required=False,
+        label="Key Code",
+        help_text="Leave blank to automatically generate from room and copy number.",
+        widget=forms.TextInput(attrs={
+            "placeholder": "Auto-generated if left blank (e.g. ENG-101-1)",
+            "autocomplete": "off",
+        }),
+    )
     room = GroupedRoomChoiceField(
         queryset=Room.objects.select_related("building").all(),
         empty_label="— Select a room —",
         help_text="Rooms are grouped by building. Use search to filter.",
     )
+    category = forms.ModelChoiceField(
+        queryset=KeyCategory.objects.filter(is_active=True),
+        required=False,
+        empty_label="— Select a category —",
+        help_text="Category (defaults to Office/Room based on room type).",
+    )
     copy_number = forms.IntegerField(
         min_value=1,
         initial=1,
+        required=False,
         help_text="Copy 1 is designated Original. Each copy number must be unique per room and category.",
         widget=forms.NumberInput(attrs={"min": 1}),
     )
@@ -115,8 +198,29 @@ class KeyForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if not (self.instance and self.instance.pk):
-            self.fields["room"].queryset = Room.objects.select_related("building").filter(is_active=True)
+        keep = Q(pk=self.instance.room_id) if self.instance and self.instance.pk and self.instance.room_id else Q()
+        rooms_qs = Room.objects.select_related("building").filter(Q(is_active=True) | keep)
+        self.fields["room"].queryset = rooms_qs
+
+        # Build metadata room_map for widget
+        from keys.services import default_key_category
+        max_copies = dict(
+            Key.objects.values("room_id").annotate(max_copy=Max("copy_number")).values_list("room_id", "max_copy")
+        )
+        room_map = {}
+        for r in rooms_qs:
+            b_code = r.building.code if r.building else ""
+            cat = default_key_category(r)
+            room_map[str(r.pk)] = {
+                "building": b_code,
+                "room": r.room_code,
+                "prefix": f"{b_code}-{r.room_code}" if b_code else r.room_code,
+                "category_id": cat.pk if cat else "",
+                "next_copy": (max_copies.get(r.pk) or 0) + 1,
+            }
+        self.fields["room"].widget.room_map = room_map
+        self.fields["room"].widget.choices = self.fields["room"].choices
+
         # F4.4: inactive categories cannot be picked for new keys, but an
         # existing key keeps its current (possibly inactive) category.
         if "category" in self.fields:
@@ -129,9 +233,45 @@ class KeyForm(StyledFormMixin, forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        key_code = (cleaned_data.get("key_code") or "").strip()
         room = cleaned_data.get("room")
         category = cleaned_data.get("category")
         copy_number = cleaned_data.get("copy_number")
+
+        # Default category if not chosen
+        if room and not category:
+            from keys.services import default_key_category
+            category = default_key_category(room)
+            cleaned_data["category"] = category
+
+        # Default copy_number if not provided
+        if room and copy_number is None:
+            max_c = Key.objects.filter(room=room).aggregate(Max("copy_number"))["copy_number__max"] or 0
+            copy_number = max_c + 1
+            cleaned_data["copy_number"] = copy_number
+
+        # Auto-generate key_code if blank
+        if room and copy_number is not None:
+            if not key_code:
+                from keys.services import generate_key_code
+                exclude_id = self.instance.pk if self.instance and self.instance.pk else None
+                key_code = generate_key_code(
+                    room=room,
+                    copy_number=copy_number,
+                    category=category,
+                    exclude_key_id=exclude_id,
+                )
+                cleaned_data["key_code"] = key_code
+            else:
+                cleaned_data["key_code"] = key_code
+
+        # Validate unique key_code across system
+        if key_code:
+            qs = Key.objects.filter(key_code=key_code)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("key_code", f"Key code '{key_code}' is already in use. Please enter a unique code.")
 
         if room and category and copy_number is not None:
             qs = Key.objects.filter(room=room, category=category, copy_number=copy_number)
@@ -219,12 +359,15 @@ class RoomForm(StyledFormMixin, forms.ModelForm):
             "room_type",
             "floor",
             "capacity",
+            "department",
             "status",
             "is_active",
         )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["department"].queryset = Department.objects.filter(is_active=True)
+        self.fields["department"].empty_label = "Shared (any department)"
         qs = Building.objects.filter(is_active=True)
         if self.instance and self.instance.pk and self.instance.building_id:
             qs = Building.objects.filter(Q(is_active=True) | Q(pk=self.instance.building_id))
@@ -260,6 +403,10 @@ class RoomBulkForm(StyledFormMixin, forms.Form):
     room_type = forms.ChoiceField(choices=Room.RoomType.choices, initial=Room.RoomType.CLASSROOM)
     floor = forms.IntegerField(required=False)
     capacity = forms.IntegerField(required=False, min_value=0)
+    department = forms.ModelChoiceField(
+        queryset=Department.objects.filter(is_active=True), required=False,
+        empty_label="Shared (any department)",
+        help_text="The department these rooms are designated to.")
 
     MAX_ROOMS = 100
 
@@ -299,20 +446,19 @@ class _UserFieldsMixin:
             raise forms.ValidationError("Another account already uses this email address.")
         return email
 
-    def clean_employee_id(self):
-        emp = (self.cleaned_data.get("employee_id") or "").strip()
-        if not emp:
-            return None  # unique + null: store NULL, never "", or two blanks collide
-        qs = User.objects.filter(employee_id__iexact=emp)
-        if self.instance and self.instance.pk:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise forms.ValidationError("Another account already uses this employee ID.")
-        return emp
 
-
-USER_FIELDS = ("username", "first_name", "last_name", "email", "employee_id",
+# employee_id is deliberately absent: accounts.services.next_employee_id()
+# assigns it on create, so nobody can type a duplicate or leave it blank.
+USER_FIELDS = ("username", "first_name", "last_name", "email",
                "contact_number", "role", "department", "assigned_post")
+
+USER_PLACEHOLDERS = {
+    "username": "e.g. jdelacruz",
+    "first_name": "e.g. Juan",
+    "last_name": "e.g. Dela Cruz",
+    "email": "e.g. juan.delacruz@example.edu.ph",
+    "contact_number": "09XX-XXX-XXXX",
+}
 
 
 def _tune_user_fields(form):
@@ -327,10 +473,8 @@ def _tune_user_fields(form):
 
 
 class UserCreateForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
-    password1 = forms.CharField(label="Password", strip=False,
-                                widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
-    password2 = forms.CharField(label="Confirm password", strip=False,
-                                widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    """New accounts start with settings.DEFAULT_USER_PASSWORD; the user
+    changes it themselves from the navbar (accounts:password_change)."""
 
     class Meta:
         model = User
@@ -340,31 +484,22 @@ class UserCreateForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         _tune_user_fields(self)
 
-    def clean(self):
-        cleaned = super().clean()
-        p1, p2 = cleaned.get("password1"), cleaned.get("password2")
-        if p1 and p2 and p1 != p2:
-            self.add_error("password2", "The two passwords do not match.")
-        elif p1:
-            candidate = User(username=cleaned.get("username") or "",
-                             email=cleaned.get("email") or "",
-                             first_name=cleaned.get("first_name") or "",
-                             last_name=cleaned.get("last_name") or "")
-            try:
-                password_validation.validate_password(p1, candidate)
-            except forms.ValidationError as e:
-                self.add_error("password1", e)
-        return cleaned
+    placeholders = USER_PLACEHOLDERS
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        user.set_password(self.cleaned_data["password1"])
+        user.set_password(settings.DEFAULT_USER_PASSWORD)
+        user.must_change_password = True
+        if not user.employee_id:
+            user.employee_id = next_employee_id()
         if commit:
             user.save()
         return user
 
 
 class UserEditForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
+    placeholders = USER_PLACEHOLDERS
+
     class Meta:
         model = User
         fields = USER_FIELDS
@@ -375,8 +510,14 @@ class UserEditForm(_UserFieldsMixin, StyledFormMixin, forms.ModelForm):
 
 
 class AdminPasswordResetForm(StyledFormMixin, forms.Form):
-    new_password1 = forms.CharField(label="New password", strip=False,
-                                    widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    #: `data-password-strength` is what static/js/password-strength.js looks
+    #: for: it draws the live Weak/Fair/Good/Strong meter and the rule
+    #: checklist under the field. Guidance only — this form's clean() is still
+    #: the only thing that decides what is accepted.
+    new_password1 = forms.CharField(
+        label="New password", strip=False,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password",
+                                          "data-password-strength": "1"}))
     new_password2 = forms.CharField(label="Confirm new password", strip=False,
                                     widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
 
@@ -396,7 +537,47 @@ class AdminPasswordResetForm(StyledFormMixin, forms.Form):
                 self.add_error("new_password1", e)
         return cleaned
 
+    #: An admin chose this password, so the user must replace it on next sign-in.
+    must_change = True
+
     def save(self):
         self.user.set_password(self.cleaned_data["new_password1"])
-        self.user.save(update_fields=["password"])
+        self.user.must_change_password = self.must_change
+        self.user.save(update_fields=["password", "must_change_password"])
         return self.user
+
+
+class OwnPasswordChangeForm(AdminPasswordResetForm):
+    """A signed-in admin or guard changing their own password.
+
+    The current password goes through authenticate(), so with Supabase Auth
+    on it is Supabase that confirms it, not just the local hash.
+    """
+
+    current_password = forms.CharField(label="Current password", strip=False,
+                                       widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}))
+    field_order = ["current_password", "new_password1", "new_password2"]
+    must_change = False  # the user chose it themselves
+
+    def __init__(self, user, *args, request=None, **kwargs):
+        self.request = request
+        super().__init__(user, *args, **kwargs)
+
+    def clean_current_password(self):
+        pw = self.cleaned_data.get("current_password") or ""
+        who = authenticate(self.request, username=self.user.username, password=pw)
+        if who is None or who.pk != self.user.pk:
+            if getattr(self.request, "supabase_auth_unavailable", False):
+                raise forms.ValidationError(
+                    "The sign-in service cannot be reached right now. Try again shortly.")
+            raise forms.ValidationError("Your current password is incorrect.")
+        return pw
+
+    def clean(self):
+        cleaned = super().clean()
+        new = cleaned.get("new_password1")
+        if new and new == cleaned.get("current_password"):
+            self.add_error("new_password1", "Choose a password different from your current one.")
+        elif new and new == settings.DEFAULT_USER_PASSWORD:
+            self.add_error("new_password1", "Choose a password other than the default one.")
+        return cleaned

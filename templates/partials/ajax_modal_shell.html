@@ -3,16 +3,23 @@
   form partial into [data-modal-body] on open.
 
   Params: modal_id (required), modal_size sm|md|lg|xl (default lg),
-          modal_label (fallback accessible name until the partial loads).
+          modal_label (fallback accessible name until the partial loads),
+          skeleton_fields (form fields to draw while loading, default 4),
+          skeleton_cols ("2" when the form uses grid="2").
+  The loading skeleton mirrors the loaded modal (header, field grid, footer),
+  so the dialog opens at roughly its final size and does not jump.
   Trigger: <a href="<create/edit url>" data-modal-form="<modal_id>"
               data-modal-refresh="#region-id">
 {% endcomment %}
 <div id="{{ modal_id }}" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-     role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+     role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title"
+     data-skeleton-fields="{{ skeleton_fields|default:4 }}" data-skeleton-cols="{{ skeleton_cols|default:1 }}">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
   <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl
     {% if modal_size == 'sm' %}max-w-sm{% elif modal_size == 'md' %}max-w-lg{% elif modal_size == 'xl' %}max-w-4xl{% else %}max-w-2xl{% endif %}">
     <span id="{{ modal_id }}-title" class="sr-only">{{ modal_label|default:"Form" }}</span>
-    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden"></div>
+    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {# Header, scrolling body and fixed footer are rendered by the loaded partial. #}
+    </div>
   </div>
 </div>

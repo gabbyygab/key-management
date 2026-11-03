@@ -3,7 +3,7 @@
   <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
     
     <!-- Modal Header -->
-    <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 flex items-center justify-center text-[#1E6B4A] shrink-0">
           <i data-lucide="calendar" class="w-5 h-5"></i>
@@ -23,7 +23,7 @@
           data-save-url="{% url 'scheduling:schedule_block_save' %}"
           data-delete-url="{% url 'scheduling:schedule_block_delete' 0 %}"
           data-open-on-load="{% if form_invalid %}1{% else %}0{% endif %}"
-          class="flex-1 overflow-y-auto p-5 space-y-4">
+          class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
       {% csrf_token %}
       <input type="hidden" name="block_id" id="modal-block-id" value="">
       
@@ -36,11 +36,13 @@
       <!-- Title & Subject -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {% include "partials/form_field.html" with field=form.title field_label="Title / Class Name" field_container_class="sm:col-span-2" %}
-        {% include "partials/form_field.html" with field=form.subject field_label="Subject" field_optional=True field_container_class="sm:col-span-2" %}
+        {% include "partials/form_field.html" with field=form.subject field_label="Subject" field_optional=True %}
+        {% include "partials/form_field.html" with field=form.section field_label="Section" field_optional=True %}
       </div>
 
       <!-- Instructor -->
       {% include "partials/form_field.html" with field=form.instructor field_label="Instructor / Borrower" field_optional=True %}
+      <p class="-mt-2 text-[12px] text-stone-500">A block with a section shows on that section's timetable and cannot overlap another class the same students have.</p>
 
       <!-- Timing: Day, Start, End -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -72,7 +74,7 @@
     </form>
 
     <!-- Modal Footer -->
-    <div class="sticky bottom-0 z-10 border-t border-stone-200 bg-white px-5 py-3 flex items-center justify-between gap-3">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 py-3">
       <div>
         <button type="button" id="modal-delete-btn" class="hidden text-red-600 hover:text-red-700 font-semibold text-[13px] hover:underline inline-flex items-center gap-1.5">
           <i data-lucide="archive" aria-hidden="true" class="w-4 h-4"></i> Deactivate block

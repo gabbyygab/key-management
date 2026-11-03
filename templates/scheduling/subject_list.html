@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{% if archived %}Archived subjects{% else %}Subjects{% endif %} — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived subjects{% else %}Subjects{% endif %}</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      {% if archived %}An archived subject is not offered to new sections. Restore one to bring it back.
+      {% else %}The catalogue. A subject becomes schedulable once it is offered to a section with a professor.{% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% if archived %}{% url 'scheduling:subject_list' %}{% else %}{% url 'scheduling:subject_archived' %}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
+      <span>{% if archived %}Live subjects{% else %}Archived{% if archived_count %} ({{ archived_count }}){% endif %}{% endif %}</span>
+    </a>
+    {% if not archived %}
+    <a href="{% url 'scheduling:offering_list' %}" class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="list-ordered" class="h-4 w-4 text-stone-500"></i><span>Offering queue</span>
+    </a>
+    <a href="{% url 'scheduling:subject_create' %}" data-modal-form="subject-modal" data-modal-refresh="#subject-list-region"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add subject</span>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<form method="get" data-list-region-form="#subject-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter subjects">
+  <label for="subj-q" class="sr-only">Search subject code or title</label>
+  <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+    <input id="subj-q" name="q" value="{{ q }}" placeholder="Search code or title…" autocomplete="off"
+           class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+  </div>
+  <label for="subj-dept" class="sr-only">Department</label>
+  <select id="subj-dept" name="department" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Any department</option>
+    {% for d in departments %}<option value="{{ d.pk }}" {% if department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.code }} — {{ d.name }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or department %}
+  <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
+  {% endif %}
+</form>
+
+<div id="subject-list-region" data-list-region
+     data-bulk-url="{% url 'scheduling:subject_bulk' %}"
+     data-bulk-noun="subject" data-bulk-noun-plural="subjects">
+  {% include "partials/bulk_bar.html" %}
+  <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Subject catalogue</caption>
+      <thead>
+        <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every subject on this page">
+          </th>
+          <th scope="col" class="p-3.5 font-semibold">Code</th>
+          <th scope="col" class="p-3.5 font-semibold">Title</th>
+          <th scope="col" class="p-3.5 font-semibold">Department</th>
+          <th scope="col" class="p-3.5 font-semibold">Offerings</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for s in subjects %}
+        <tr class="transition-colors hover:bg-stone-50/60">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ s.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if s.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ s.code }}"
+                   aria-label="Select {{ s.code }}">
+          </td>
+          <td class="p-3.5 font-mono font-semibold text-stone-900">{{ s.code }}</td>
+          <td class="max-w-md p-3.5 text-stone-700">{{ s.title }}</td>
+          <td class="p-3.5 text-stone-600">{{ s.department.code|default:"—" }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.offering_count %}
+              <a href="{% url 'scheduling:offering_list' %}?q={{ s.code|urlencode }}" class="font-semibold text-[#1E6B4A] hover:underline">{{ s.offering_count }} offering{{ s.offering_count|pluralize }}</a>
+            {% else %}<span class="text-stone-400">none</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if s.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Offered" %}
+            {% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-right">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:subject_update' s.pk %}" data-modal-form="subject-modal" data-modal-refresh="#subject-list-region"
+                 class="inline-flex items-center gap-1 font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">
+                <i data-lucide="edit-3" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Edit</span><span class="sr-only">{{ s.code }}</span>
+              </a>
+              <form method="post" action="{% url 'scheduling:subject_toggle' s.pk %}" class="inline"
+                    {% if s.is_active %}data-confirm="Archiving {{ s.code }} stops it being offered to new sections. Existing offerings and timetable blocks are kept."
+                    data-confirm-title="Archive subject" data-confirm-label="Archive" data-confirm-subject="{{ s.code }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if s.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if s.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if s.is_active %}archive{% else %}archive-restore{% endif %}" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                  <span>{% if s.is_active %}Archive{% else %}Restore{% endif %}</span><span class="sr-only">{{ s.code }}</span>
+                </button>
+              </form>
+              {% if not s.is_active %}
+              {# The one hard delete in the UI — see accounts/retention.py. #}
+              <form method="post" action="{% url 'scheduling:subject_delete' s.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ s.code }} is removed from the database along with its offerings and timetable blocks. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete subject forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ s.code }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Delete</span><span class="sr-only">{{ s.code }} forever</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=7 icon="archive" title="Nothing archived" message="Archived subjects show up here." %}
+        {% else %}{% include "partials/empty_state.html" with colspan=7 icon="book-open" title="No subjects yet" message="Add the subjects your professors teach, then offer them to sections." action_url=create_url action_label="Add subject" action_icon="plus" %}{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="subjects" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="subject-modal" modal_size="md" modal_label="Subject form" skeleton_fields=4 %}
+{% endblock %}

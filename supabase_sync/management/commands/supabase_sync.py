@@ -14,7 +14,8 @@ from django.core.management.base import BaseCommand, CommandError
 from supabase_sync.client import SupabaseClient, SupabaseError
 from supabase_sync.conf import get_config
 from supabase_sync.registry import select_specs
-from supabase_sync.serializers import create_table_sql, serialize, sync_fields
+from supabase_sync.serializers import (create_table_sql, foreign_key_sql, serialize,
+                                       sync_fields)
 from supabase_sync.services import check_tables, pending_queryset, sync_all
 
 
@@ -45,6 +46,16 @@ class Command(BaseCommand):
             self.stdout.write("-- KEYTRACK -> Supabase mirror. Run once in the Supabase SQL editor.\n")
             for spec in specs:
                 self.stdout.write(create_table_sql(spec, config.schema) + "\n")
+            # Foreign keys come last: a child cannot reference a parent table
+            # that has not been created yet. They carry `on delete cascade`
+            # (NOT NULL) or `set null` (nullable), mirroring the Django models,
+            # so `manage.py purge_archived` only has to delete the parent row
+            # here and the copies below it go with it.
+            self.stdout.write("-- Cascading foreign keys (see accounts/retention.py).\n")
+            for spec in specs:
+                sql = foreign_key_sql(spec, specs, config.schema)
+                if sql:
+                    self.stdout.write(f"-- {spec.model_label}\n{sql}\n")
             return
 
         if dry_run:

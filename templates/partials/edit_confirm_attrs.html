@@ -1,0 +1,13 @@
+{% comment %}
+  Attributes for a <form> tag: confirm.js asks "Save changes?" before an EDIT
+  is submitted. Automatic for a ModelForm editing a saved record
+  (form.instance.pk); a create form gets nothing. Other forms opt in by
+  passing confirm_message (e.g. a password reset).
+
+  Optional: confirm_message, confirm_title, confirm_label, confirm_subject,
+  confirm_variant ("danger").
+  Usage: <form method="post" {% include "partials/edit_confirm_attrs.html" %}>
+
+  Note: form.instance is only ever used in {% if %} / {{ }}, never as a filter
+  argument; a plain Form has no .instance and a filter argument would raise.
+{% endcomment %}{% if confirm_message or form.instance.pk %} data-confirm="{{ confirm_message|default:'Your changes will be saved to this record.' }}" data-confirm-title="{{ confirm_title|default:'Save changes?' }}" data-confirm-label="{{ confirm_label|default:'Save changes' }}"{% if confirm_subject %} data-confirm-subject="{{ confirm_subject }}"{% elif form.instance.pk %} data-confirm-subject="{{ form.instance }}"{% endif %}{% if confirm_variant %} data-confirm-variant="{{ confirm_variant }}"{% endif %}{% endif %}

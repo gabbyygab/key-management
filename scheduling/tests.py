@@ -16,9 +16,9 @@ class FreeRoomsTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.admin = User.objects.create_user("admin1", "admin1@example.com", "x",
-                                             role=User.Role.ADMIN, approval_status="APPROVED")
+                                             role=User.Role.ADMIN)
         cls.guard = User.objects.create_user("guard1", "guard1@example.com", "x",
-                                             role=User.Role.GUARD, approval_status="APPROVED")
+                                             role=User.Role.GUARD)
         cls.ccs = Building.objects.create(code="CCS", name="Computing")
         cls.eng = Building.objects.create(code="ENG", name="Engineering")
         cls.closed = Building.objects.create(code="OLD", name="Old Wing", is_active=False)
@@ -117,7 +117,7 @@ class ScheduleConflictTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(
             "sched_admin", "sched_admin@example.com", "x",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+            role=User.Role.ADMIN, 
         )
         cls.building = Building.objects.create(code="CCS", name="Computing")
         cls.room = Room.objects.create(building=cls.building, room_code="204", capacity=30)
@@ -196,11 +196,11 @@ class RoomTimetableTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(
             "tt_admin", "tt_admin@example.com", "x",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+            role=User.Role.ADMIN, 
         )
         cls.guard = User.objects.create_user(
             "tt_guard", "tt_guard@example.com", "x",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+            role=User.Role.GUARD, 
         )
         cls.building = Building.objects.create(code="CCS", name="Computing")
         cls.room = Room.objects.create(
@@ -453,7 +453,7 @@ class TodayInRoomServiceTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(
             "admin_test", "admin_test@example.com", "x",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+            role=User.Role.ADMIN, 
         )
         cls.building = Building.objects.create(code="SCI", name="Science")
         cls.room = Room.objects.create(building=cls.building, room_code="101", capacity=30)
@@ -666,11 +666,11 @@ class RoomTodayScheduleApiTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(
             "admin_api", "admin_api@example.com", "x",
-            role=User.Role.ADMIN, approval_status=User.Approval.APPROVED,
+            role=User.Role.ADMIN, 
         )
         cls.guard = User.objects.create_user(
             "guard_api", "guard_api@example.com", "x",
-            role=User.Role.GUARD, approval_status=User.Approval.APPROVED,
+            role=User.Role.GUARD, 
         )
         cls.building = Building.objects.create(code="CCS", name="Computing")
         cls.room = Room.objects.create(building=cls.building, room_code="301", capacity=40)

@@ -1,5 +1,8 @@
 {% comment %} Shared form field for Django BoundFields and simple modal controls.
    BoundField mode: field, optional field_label, field_container_class.
+   A required BoundField gets a red *, any other gets "(optional)" — no flag
+   needed, so field_optional is only read in manual mode and for checkboxes.
+   Sample text comes from the form's `placeholders` dict (accounts/forms.py).
    Manual mode: field_id, field_name, field_label, control_type, and optional
    field_required, field_optional, field_help_text, field_error,
    field_error_id, field_placeholder, field_rows, field_minlength,
@@ -16,8 +19,7 @@
     {% else %}
     <label for="{{ field.id_for_label }}" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">
       {{ field_label|default:field.label }}
-      {% if field.field.required %}<span class="text-red-600" aria-hidden="true">*</span>{% endif %}
-      {% if field_optional %}<span class="normal-case font-normal text-stone-400">(optional)</span>{% endif %}
+      {% if field.field.required %}<span class="text-red-600" aria-hidden="true">*</span>{% else %}<span class="normal-case font-normal text-stone-400">(optional)</span>{% endif %}
     </label>
     {{ field }}
     {% endif %}

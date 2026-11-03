@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{% if archived %}Archived departments{% else %}Departments{% endif %} — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived departments{% else %}Departments{% endif %}</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      {% if archived %}An archived department is no longer offered when adding subjects, sections or rooms. Restore one to bring it back.
+      {% else %}Departments own subjects, sections and rooms. Add one here before using it in the other forms.{% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% if archived %}{% url 'scheduling:department_list' %}{% else %}{% url 'scheduling:department_archived' %}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
+      <span>{% if archived %}Live departments{% else %}Archived{% if archived_count %} ({{ archived_count }}){% endif %}{% endif %}</span>
+    </a>
+    {% if not archived %}
+    <a href="{% url 'scheduling:department_create' %}" data-modal-form="department-modal" data-modal-refresh="#department-list-region"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add department</span>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<form method="get" data-list-region-form="#department-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search departments">
+  <label for="dept-q" class="sr-only">Search department code or name</label>
+  <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+    <input id="dept-q" name="q" value="{{ q }}" placeholder="Search code or name…" autocomplete="off"
+           class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+  </div>
+  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
+  {% if q %}<a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>{% endif %}
+</form>
+
+<div id="department-list-region" data-list-region
+     data-bulk-url="{% url 'scheduling:department_bulk' %}"
+     data-bulk-noun="department" data-bulk-noun-plural="departments">
+  {% include "partials/bulk_bar.html" %}
+  <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Departments</caption>
+      <thead>
+        <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every department on this page">
+          </th>
+          <th scope="col" class="p-3.5 font-semibold">Code</th>
+          <th scope="col" class="p-3.5 font-semibold">Name</th>
+          <th scope="col" class="p-3.5 font-semibold">Subjects</th>
+          <th scope="col" class="p-3.5 font-semibold">Sections</th>
+          <th scope="col" class="p-3.5 font-semibold">Status</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for d in departments %}
+        <tr class="transition-colors hover:bg-stone-50/60">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ d.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if d.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ d.code }}" aria-label="Select {{ d.code }}">
+          </td>
+          <td class="p-3.5 font-mono font-semibold text-stone-900">
+            <a href="{% url 'scheduling:department_detail' d.pk %}" data-modal-form="department-detail-modal" class="hover:text-[#1E6B4A] hover:underline">{{ d.code }}<span class="sr-only"> — view faculty and subjects</span></a>
+          </td>
+          <td class="max-w-md p-3.5 text-stone-700">
+            <a href="{% url 'scheduling:department_detail' d.pk %}" data-modal-form="department-detail-modal" class="block hover:text-[#1E6B4A]" tabindex="-1" aria-hidden="true">{{ d.name }}</a>
+          </td>
+          <td class="p-3.5 text-stone-600">{{ d.subject_count }}</td>
+          <td class="p-3.5 text-stone-600">{{ d.section_count }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if d.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
+            {% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-right">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:department_update' d.pk %}" data-modal-form="department-modal" data-modal-refresh="#department-list-region"
+                 class="inline-flex items-center gap-1 font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">
+                <i data-lucide="edit-3" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Edit</span><span class="sr-only">{{ d.code }}</span>
+              </a>
+              <form method="post" action="{% url 'scheduling:department_toggle' d.pk %}" class="inline"
+                    {% if d.is_active %}data-confirm="Archiving {{ d.code }} removes it from the department pickers. Subjects, sections and rooms already using it are kept."
+                    data-confirm-title="Archive department" data-confirm-label="Archive" data-confirm-subject="{{ d.code }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if d.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if d.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if d.is_active %}archive{% else %}archive-restore{% endif %}" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                  <span>{% if d.is_active %}Archive{% else %}Restore{% endif %}</span><span class="sr-only">{{ d.code }}</span>
+                </button>
+              </form>
+              {% if not d.is_active %}
+              <form method="post" action="{% url 'scheduling:department_delete' d.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ d.code }} is removed from the database. Subjects, sections, rooms and people that used it are kept but lose their department."
+                    data-confirm-title="Delete department forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ d.code }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Delete</span><span class="sr-only">{{ d.code }} forever</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=7 icon="archive" title="Nothing archived" message="Archived departments show up here." %}
+        {% else %}{% include "partials/empty_state.html" with colspan=7 icon="building-2" title="No departments yet" message="Add a department, then pick it when adding subjects, sections and rooms." action_url=create_url action_label="Add department" action_icon="plus" %}{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="departments" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="department-detail-modal" modal_size="xl" modal_label="Department details" skeleton_fields=4 %}
+{% include "partials/ajax_modal_shell.html" with modal_id="department-modal" modal_size="md" modal_label="Department form" skeleton_fields=3 %}
+{% endblock %}

@@ -312,12 +312,13 @@
 {# F3.9 shortcut reference #}
 <div id="pos-help-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="pos-help-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
-  <div class="relative w-full max-w-md overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
-    <div class="flex items-center justify-between border-b border-stone-200 px-5 py-4">
+  <div class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="flex shrink-0 items-center justify-between border-b border-stone-200 px-5 py-4">
       <h2 id="pos-help-title" class="text-[15px] font-bold text-stone-900">Keyboard shortcuts</h2>
       <button type="button" data-modal-close aria-label="Close" class="rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50"><i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i></button>
     </div>
-    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-5 py-4 text-[13px]">
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
       <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">F1</kbd> / <kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">/</kbd></dt><dd>Focus borrower search</dd>
       <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">↑</kbd> <kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">↓</kbd></dt><dd>Move through results</dd>
       <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Enter</kbd> in a search</dt><dd>Pick the exact match or the only result (works with a barcode scanner)</dd>
@@ -326,6 +327,7 @@
       <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">Esc</kbd></dt><dd>Clear the search you're in, or the picked key</dd>
       <dt><kbd class="rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px]">?</kbd></dt><dd>Show this list</dd>
     </dl>
+    </div>
   </div>
 </div>
 {% endblock %}

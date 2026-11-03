@@ -48,6 +48,19 @@ class SupabaseClient:
                       prefer="resolution=merge-duplicates,return=minimal")
         return len(rows)
 
+    def delete(self, table, **filters):
+        """DELETE rows matching PostgREST filters, e.g. id="eq.7".
+
+        Used by the retention purge (accounts/retention.py): the mirror's
+        foreign keys are `on delete cascade` / `set null`, so deleting the
+        parent row here cleans up the mirrored children in one request.
+        PostgREST refuses an unfiltered delete, so a filter is required.
+        """
+        if not filters:
+            raise SupabaseError("delete() needs at least one filter.")
+        self._request("DELETE", table, params=filters, prefer="return=minimal")
+        return True
+
     def select(self, table, *, columns="*", limit=None, **filters):
         """GET rows. Filters use PostgREST syntax, e.g. status="eq.AVAILABLE"."""
         params = {"select": columns, **filters}

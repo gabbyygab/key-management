@@ -114,17 +114,19 @@
     el.setAttribute("aria-describedby", "session-expired-modal-desc");
     el.innerHTML =
       '<div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>' +
-      '<div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-6">' +
-        '<div class="flex items-start gap-3">' +
-          '<div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">' +
-            '<i data-lucide="shield-alert" class="w-5 h-5 text-amber-600"></i>' +
-          '</div>' +
-          '<div class="min-w-0">' +
-            '<h2 id="session-expired-modal-title" class="text-[15px] font-bold text-stone-900">Session expired</h2>' +
-            '<p id="session-expired-modal-desc" class="text-[13px] text-stone-500 mt-1">Your session has timed out or you are no longer signed in. Please log in again to continue.</p>' +
+      '<div class="relative flex max-h-[90vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">' +
+        '<div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto p-6">' +
+          '<div class="flex items-start gap-3">' +
+            '<div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">' +
+              '<i data-lucide="shield-alert" class="w-5 h-5 text-amber-600"></i>' +
+            '</div>' +
+            '<div class="min-w-0">' +
+              '<h2 id="session-expired-modal-title" class="text-[15px] font-bold text-stone-900">Session expired</h2>' +
+              '<p id="session-expired-modal-desc" class="text-[13px] text-stone-500 mt-1">Your session has timed out or you are no longer signed in. Please log in again to continue.</p>' +
+            '</div>' +
           '</div>' +
         '</div>' +
-        '<div class="flex items-center justify-end gap-2 mt-5">' +
+        '<div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">' +
           '<button type="button" data-modal-close class="px-4 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Dismiss</button>' +
           '<a href="' + loginUrl + '" data-session-login-btn class="px-4 py-2 rounded-lg bg-[#0F2E1F] text-white text-[13px] font-semibold hover:bg-[#143d28] inline-flex items-center gap-2">' +
             '<i data-lucide="log-in" class="w-4 h-4"></i> Log in again' +

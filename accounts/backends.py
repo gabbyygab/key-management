@@ -10,19 +10,15 @@ log = logging.getLogger(__name__)
 
 
 class ApprovedUserBackend(ModelBackend):
-    def user_can_authenticate(self, user):
-        # Superusers always allowed (so initial setup never locks out).
-        if getattr(user, "is_superuser", False):
-            return super().user_can_authenticate(user)
-        return super().user_can_authenticate(user) and user.is_approved
+    """Kept as the local backend; is_active is the only local gate."""
 
 
 class SupabaseAuthBackend(ApprovedUserBackend):
     """Supabase Auth checks the password; Django decides who may come in.
 
     The login form accepts a username or an email. The Django account is found
-    first, then its email and the typed password go to Supabase. Role,
-    approval and is_active are still enforced here and by the role decorators.
+    first, then its email and the typed password go to Supabase. Role and
+    is_active are still enforced here and by the role decorators.
 
     Accounts made before the switch have no ``supabase_uid``. On their first
     login the old Django password is checked, and if it matches, a Supabase

@@ -1,6 +1,6 @@
-<form method="post" action="{% if instance %}{% url 'keys:key_update' instance.pk %}{% else %}{% url 'keys:key_create' %}{% endif %}" data-success-message="{% if instance %}Key updated successfully.{% else %}Key added successfully.{% endif %}" class="space-y-4" id="key-modal-form">
+<form method="post" action="{% if instance %}{% url 'keys:key_update' instance.pk %}{% else %}{% url 'keys:key_create' %}{% endif %}" data-success-message="{% if instance %}Key updated successfully.{% else %}Key added successfully.{% endif %}" class="flex min-h-0 flex-1 flex-col" id="key-modal-form" {% include "partials/edit_confirm_attrs.html" %}>
   {% csrf_token %}
-  
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
   {% if form.non_field_errors %}
   <div class="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-800 space-y-1" role="alert">
     {% for error in form.non_field_errors %}
@@ -11,7 +11,7 @@
 
   <!-- Key Code & Status -->
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-    {% include "partials/form_field.html" with field=form.key_code field_label="Key Code" %}
+    {% include "partials/form_field.html" with field=form.key_code field_label="Key Code" field_optional=True %}
     {% include "partials/form_field.html" with field=form.status field_label="Status" %}
   </div>
 
@@ -50,7 +50,7 @@
 
   <!-- Category & Copy Number -->
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-    {% include "partials/form_field.html" with field=form.category field_label="Category" %}
+    {% include "partials/form_field.html" with field=form.category field_label="Category" field_optional=True %}
     <div data-form-field data-field-name="copy_number">
       <div class="flex items-center justify-between mb-1">
         <label for="{{ form.copy_number.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500">
@@ -84,16 +84,18 @@
   <!-- Remarks -->
   {% include "partials/form_field.html" with field=form.remarks field_label="Remarks" field_optional=True %}
 
-  <!-- Footer buttons -->
-  <div class="flex items-center justify-between pt-3 border-t border-stone-200">
-    <div>
+  </div>
+
+  <!-- Footer buttons stay fixed while the fields above scroll. -->
+  <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 py-3">
+    <div class="min-w-0">
       {% if not instance %}
       <a href="{% url 'keys:key_bulk_create' %}" data-modal-form="key-bulk-modal" data-modal-refresh="#key-list-region" class="text-[#1E6B4A] hover:underline inline-flex items-center gap-1 font-medium text-[12px]">
         <i data-lucide="layers" class="w-3.5 h-3.5"></i> Need multiple copies? Bulk add
       </a>
       {% endif %}
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex shrink-0 items-center gap-2">
       <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
         Cancel
       </button>

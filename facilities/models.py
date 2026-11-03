@@ -1,11 +1,17 @@
 from django.db import models
 
+from accounts.retention import ArchiveClockMixin
 
-class Building(models.Model):
+
+class Building(ArchiveClockMixin):
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    # When this row was archived (is_active=False). Starts the retention clock
+    # read by accounts.retention / `manage.py purge_archived`; cleared on
+    # restore. Never set by hand — go through retention.mark_archived().
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["code"]
@@ -14,7 +20,7 @@ class Building(models.Model):
         return self.code
 
 
-class Room(models.Model):
+class Room(ArchiveClockMixin):
     class RoomType(models.TextChoices):
         CLASSROOM = "CLASSROOM", "Classroom"
         LABORATORY = "LABORATORY", "Laboratory"
@@ -35,8 +41,16 @@ class Room(models.Model):
                                  default=RoomType.CLASSROOM)
     floor = models.IntegerField(null=True, blank=True)
     capacity = models.IntegerField(null=True, blank=True)
+    # The department this room is designated to. The auto-scheduler only puts a
+    # department's classes in that department's rooms (scheduling/planner.py
+    # candidate_rooms); a room with no department is shared and open to all.
+    department = models.ForeignKey("accounts.Department", null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name="rooms",
+                                   help_text="Leave blank for a shared room any department may use.")
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.AVAILABLE)
     is_active = models.BooleanField(default=True)
+    # See Building.archived_at.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -51,7 +65,7 @@ class Room(models.Model):
         return f"{self.building.code}-{self.room_code}"
 
 
-class GuardPost(models.Model):
+class GuardPost(ArchiveClockMixin):
     """A desk or gate a guard is stationed at (B2.5).
 
     The admin assigns a post to each guard (User.assigned_post); the login
@@ -61,6 +75,8 @@ class GuardPost(models.Model):
     building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.PROTECT,
                                  related_name="guard_posts")
     is_active = models.BooleanField(default=True)
+    # See Building.archived_at.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["name"]

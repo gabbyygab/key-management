@@ -1,0 +1,43 @@
+{% comment %}
+  AJAX form partial for the department catalogue. Served by scheduling.views
+  subject_create / subject_update through accounts.crud.form_view, so a modal
+  POST answers 201/200 or 422 with this partial re-rendered.
+{% endcomment %}
+<div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+  <div class="flex min-w-0 items-center gap-3">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+      <i data-lucide="building-2" aria-hidden="true" class="h-5 w-5"></i>
+    </div>
+    <div class="min-w-0">
+      <h2 id="department-modal-title" class="truncate text-[15px] font-bold text-stone-900">{{ title|default:"Add department" }}</h2>
+      <p class="text-[12px] text-stone-500">Owns subjects, sections and rooms.</p>
+    </div>
+  </div>
+  <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+    <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+  </button>
+</div>
+
+<form method="post" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Department saved." class="flex min-h-0 flex-1 flex-col">
+  {% csrf_token %}
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {% include "partials/form_field.html" with field=form.code field_label="Code" %}
+      {% include "partials/form_field.html" with field=form.name field_label="Name" field_container_class="sm:col-span-2" %}
+    </div>
+    {% include "partials/form_field.html" with field=form.is_active field_label="Active (uncheck to archive)" field_container_class="pt-1" %}
+  </div>
+
+  <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+    <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+    <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="check" class="h-4 w-4"></i><span>Save department</span>
+    </button>
+  </div>
+</form>

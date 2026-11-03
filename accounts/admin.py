@@ -7,11 +7,11 @@ from .models import User, Department, Borrower
 class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
         ("Key System", {"fields": ("employee_id", "contact_number", "role", "department",
-                                   "profile_picture", "approval_status",
-                                   "approved_by", "approved_at")}),
+                                   "profile_picture", "must_change_password")}),
     )
-    list_display = ("username", "email", "role", "approval_status", "is_active")
-    list_filter = ("role", "approval_status", "is_active")
+    list_display = ("username", "email", "role", "is_active",
+                    "must_change_password")
+    list_filter = ("role", "is_active")
     search_fields = ("username", "email", "employee_id", "first_name", "last_name")
 
     def has_add_permission(self, request):

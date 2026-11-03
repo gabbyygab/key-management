@@ -1,0 +1,56 @@
+{% comment %}
+  AJAX form partial for a section. Leaving Group blank files the whole block
+  (BSIT-4D); filling it in with G1 files a group of that block. The family is
+  the program/year/block triple, so the rows find each other in either order.
+{% endcomment %}
+<div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+  <div class="flex min-w-0 items-center gap-3">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+      <i data-lucide="users-round" aria-hidden="true" class="h-5 w-5"></i>
+    </div>
+    <div class="min-w-0">
+      <h2 id="section-modal-title" class="truncate text-[15px] font-bold text-stone-900">{{ title|default:"Add section" }}</h2>
+      <p class="text-[12px] text-stone-500">A whole block, or one of its groups.</p>
+    </div>
+  </div>
+  <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+    <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+  </button>
+</div>
+
+<form method="post" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Section saved." class="flex min-h-0 flex-1 flex-col">
+  {% csrf_token %}
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {% include "partials/form_field.html" with field=form.program field_label="Program" %}
+      {% include "partials/form_field.html" with field=form.year_level field_label="Year" %}
+      {% include "partials/form_field.html" with field=form.block field_label="Block" %}
+      {% include "partials/form_field.html" with field=form.group field_label="Group" %}
+    </div>
+
+    <div class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-[12px] text-stone-600">
+      <p class="font-semibold text-stone-800">How the split works</p>
+      <p class="mt-1">Leave <strong>Group</strong> blank for the whole block, e.g. <code class="rounded bg-white px-1 py-0.5 font-mono">BSIT-4D</code>. Add <code class="rounded bg-white px-1 py-0.5 font-mono">G1</code> or <code class="rounded bg-white px-1 py-0.5 font-mono">G2</code> to file a group, e.g. <code class="rounded bg-white px-1 py-0.5 font-mono">BSIT-4DG1</code>.</p>
+      <p class="mt-1">The whole block and its groups are the same students, so a block-wide class blocks both groups. Two groups may still meet at the same time in different rooms.</p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {% include "partials/form_field.html" with field=form.department field_label="Department" %}
+      {% include "partials/form_field.html" with field=form.student_count field_label="Students" %}
+    </div>
+    {% include "partials/form_field.html" with field=form.is_active field_label="Active (uncheck to archive)" field_container_class="pt-1" %}
+  </div>
+
+  <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
+    <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+    <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="check" class="h-4 w-4"></i><span>Save section</span>
+    </button>
+  </div>
+</form>

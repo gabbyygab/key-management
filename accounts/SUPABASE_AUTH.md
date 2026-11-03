@@ -1,12 +1,12 @@
 # Supabase Auth for guards and admins
 
 Supabase Auth checks the password. Django still owns the session, the role
-(`ADMIN` / `GUARD`), approval and `is_active`, so `@admin_required`,
+(`ADMIN` / `GUARD`) and `is_active`, so `@admin_required`,
 `@guard_required` and the shift-on-login signal work the same as before.
 
 ```
 login form ──► SupabaseAuthBackend ──► find Django user (username or email)
-                     │                    └─ inactive / not approved → refused, Supabase never called
+                     │                    └─ inactive → refused, Supabase never called
                      ├─► Supabase /auth/v1/token (email + password, anon key)
                      │      ok        → uid must equal user.supabase_uid → Django session
                      │      wrong pw  → refused (or first-login move, below)
@@ -48,11 +48,12 @@ who registered the email first.
 
 | Screen | Django | Supabase |
 |---|---|---|
-| Add user | creates user (pre-approved) | creates confirmed auth user; on failure the Django user is rolled back |
-| Edit user | saves | updates email + `user_metadata` (role, username) |
+| Add user | creates user with `DEFAULT_USER_PASSWORD` (`Admin2026`) | creates confirmed auth user with the same password; on failure the Django user is rolled back |
+| Change password (navbar key icon, the user themselves) | checks the current password through Supabase, sets the new hash | sets password; rolled back together on failure. Wrong current passwords share the login lockout |
+| Edit user | saves (refused while the account is on duty) | updates email + `user_metadata` (role, username) |
 | Reset password | sets hash | sets password; rolled back together on failure |
 | Deactivate / activate | `is_active` | ban / lift ban (warning only if Supabase fails; Django's flag is what login checks) |
-| Approve / reject | approval status | nothing; approval is checked in Django |
+| Delete user | deletes the row (refused while on duty, for your own account, and when a shift or transaction references it) | deletes the auth user; a failure is a warning only, since the Django row is already gone |
 
 ## Offline fallback
 

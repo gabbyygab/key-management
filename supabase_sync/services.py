@@ -1,8 +1,11 @@
 """Push KEYTRACK rows to Supabase. One direction only: Django is the source
 of truth and nothing is ever read back into the local database.
 
-Soft deletes (is_active=False) mirror like any other update. Nothing is ever
-hard-deleted in KEYTRACK, so the mirror never needs to delete either.
+Soft deletes (is_active=False) mirror like any other update. The one real
+delete is the retention purge (accounts/retention.py), which deletes a row
+archived longer than ARCHIVE_RETENTION_DAYS; it calls client.delete() for the
+purged parent itself, and the mirror's `on delete cascade` keys clear the
+copies below it. Nothing else here ever deletes.
 """
 from dataclasses import dataclass
 

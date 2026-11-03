@@ -1,11 +1,15 @@
 from django.conf import settings
 from django.db import models
 
+from accounts.retention import ArchiveClockMixin
 
-class KeyCategory(models.Model):
+
+class KeyCategory(ArchiveClockMixin):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    # See facilities.Building.archived_at.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name_plural = "key categories"
@@ -46,7 +50,7 @@ class KeyCategory(models.Model):
         return self.name
 
 
-class Key(models.Model):
+class Key(ArchiveClockMixin):
     class Status(models.TextChoices):
         AVAILABLE = "AVAILABLE", "Available"
         BORROWED = "BORROWED", "Borrowed"
@@ -61,6 +65,9 @@ class Key(models.Model):
     description = models.CharField(max_length=255, blank=True)
     copy_number = models.PositiveSmallIntegerField(default=1)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.AVAILABLE)
+    # Key has no is_active flag: Status.INACTIVE *is* the archived state.
+    # See facilities.Building.archived_at.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
     remarks = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
                                    related_name="keys_created")

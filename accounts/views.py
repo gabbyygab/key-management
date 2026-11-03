@@ -1,23 +1,30 @@
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from audit.services import Action, log_activity
-from .crud import form_view, is_modal, querystring_without_page
-from .forms import AdminPasswordResetForm, BorrowerForm, UserCreateForm, UserEditForm
+from .crud import (BULK_ACTIONS, archive_context,
+                   bulk_delete_forever, bulk_response, bulk_selection,
+                   bulk_summary, delete_forever, form_view, is_modal,
+                   paginate, post_redirect, querystring_without_page)
+from .forms import (AdminPasswordResetForm, BorrowerForm, OwnPasswordChangeForm,
+                    UserCreateForm, UserEditForm)
 from .models import Borrower, Department, User
 from .permissions import admin_or_guard_required, admin_required
-from .services import ApprovalError, approve_user, push_active, push_password, push_profile, reject_user
+from .retention import mark_archived
+from .services import push_active, push_delete, push_password, push_profile
 from .supabase_auth import SupabaseAuthError
 
 
@@ -109,7 +116,7 @@ def login_view(request):
                 status = 503
             else:
                 _record_failure(key)
-                error = "Invalid credentials, or account not approved yet."
+                error = "Invalid credentials."
 
     # `next` goes back into the template so the form can carry it through the
     # POST; the form used to drop it, which sent every guard to the dashboard.
@@ -121,6 +128,9 @@ def logout_view(request):
     """B8.2: POST only. A GET logout is CSRF-able, and logging out closes the
     guard's shift — an <img src="/accounts/logout/"> could end a shift."""
     logout(request)
+    # After logout() the session is a fresh, empty one, so the message is
+    # stored there and the login page shows it as a toast.
+    messages.success(request, "You have been signed out.")
     return redirect("accounts:login")
 
 
@@ -137,13 +147,29 @@ def _holding_annotation():
 
 @admin_required
 def borrower_list(request):
+    """Live borrowers only. Archived ones live on borrower_archived."""
+    return _borrower_list(request, archived=False)
+
+
+@admin_required
+def borrower_archived(request):
+    """Archived borrowers only, with Restore.
+
+    A borrower is never hard-deleted: BorrowTransaction PROTECTs the row, so
+    archiving (is_active=False) is what takes them out of the guard's search.
+    """
+    return _borrower_list(request, archived=True)
+
+
+def _borrower_list(request, *, archived):
     q = request.GET.get("q", "").strip()
     type_filter = request.GET.get("type", "").strip()
     dept_filter = request.GET.get("department", "").strip()
     auth_filter = request.GET.get("auth", "").strip()
 
     borrowers = (Borrower.objects.select_related("department")
-                 .annotate(is_holding=_holding_annotation()))
+                 .annotate(is_holding=_holding_annotation())
+                 .filter(is_active=not archived))
     if q:
         borrowers = borrowers.filter(
             Q(first_name__icontains=q) | Q(last_name__icontains=q)
@@ -163,7 +189,8 @@ def borrower_list(request):
     elif auth_filter == "holding":
         borrowers = borrowers.filter(is_holding=True)
 
-    page_obj = Paginator(borrowers, 25).get_page(request.GET.get("page"))
+    page_obj = Paginator(borrowers.order_by("last_name", "first_name", "-pk"),
+                         25).get_page(request.GET.get("page"))
     return render(request, "accounts/borrower_list.html", {
         "borrowers": page_obj, "page_obj": page_obj,
         "querystring": querystring_without_page(request),
@@ -171,6 +198,13 @@ def borrower_list(request):
         "auth_filter": auth_filter, "today": today,
         "borrower_types": Borrower.BorrowerType.choices,
         "departments": Department.objects.filter(is_active=True),
+        **archive_context(
+            request, archived=archived,
+            live_url=reverse("accounts:borrower_list"),
+            archived_url=reverse("accounts:borrower_archived"),
+            noun="borrowers",
+            archived_count=Borrower.objects.filter(is_active=False).count(),
+        ),
     })
 
 
@@ -203,22 +237,90 @@ def borrower_update(request, pk):
     )
 
 
+def _borrower_blocker(borrower):
+    """Why this borrower cannot be archived right now, or None.
+
+    A borrower holding a key has to hand it back first: the open transaction
+    is what the POS looks at, and archiving would hide the holder from the
+    guard who needs to receive the key.
+    """
+    if borrower.active_transaction():
+        return f"{borrower.full_name} still holds a key"
+    return None
+
+
+def _set_borrower_archived(request, borrower, *, archived):
+    """Flip is_active and write the audit row. The caller checks the blocker."""
+    borrower.is_active = not archived
+    # Also stamps/clears the retention clock (accounts/retention.py).
+    borrower.save(update_fields=["is_active", *mark_archived(borrower, archived=archived)])
+    state = "archived" if archived else "restored"
+    log_activity(request.user, Action.UPDATE, obj=borrower, request=request,
+                 description=f"Borrower {borrower.full_name} {state}.",
+                 changes={"is_active": [str(archived), str(not archived)]})
+    return state
+
+
 @admin_required
 @require_POST
 def borrower_toggle(request, pk):
     """B8.3: POST only, no silent GET redirect."""
     obj = get_object_or_404(Borrower, pk=pk)
-    if obj.is_active and obj.active_transaction():
-        messages.error(request, f"{obj.full_name} still holds a key. Receive it before deactivating.")
-        return redirect("accounts:borrower_list")
-    obj.is_active = not obj.is_active
-    obj.save(update_fields=["is_active"])
-    state = "activated" if obj.is_active else "deactivated"
-    log_activity(request.user, Action.UPDATE, obj=obj, request=request,
-                 description=f"Borrower {obj.full_name} {state}.",
-                 changes={"is_active": [str(not obj.is_active), str(obj.is_active)]})
+    back = post_redirect(request, "accounts:borrower_list")
+    if obj.is_active:
+        why = _borrower_blocker(obj)
+        if why:
+            messages.error(request, f"{why}. Receive it before archiving.")
+            return redirect(back)
+    state = _set_borrower_archived(request, obj, archived=obj.is_active)
     messages.success(request, f"{obj.full_name} {state}.")
-    return redirect("accounts:borrower_list")
+    return redirect(back)
+
+
+@admin_required
+@require_POST
+def borrower_delete(request, pk):
+    """Delete an archived borrower for good, with their borrow history
+    (retention). Refused while they still hold a key."""
+    obj = get_object_or_404(Borrower, pk=pk)
+    return delete_forever(request, obj, noun="borrower(s)",
+                          redirect_to=post_redirect(request, "accounts:borrower_archived"))
+
+
+@admin_required
+@require_POST
+def borrower_bulk(request):
+    """Archive or restore several borrowers in one post (bulk-actions.js).
+
+    There is no hard delete here: transactions PROTECT the borrower row, so
+    archiving is the bulk verb and Restore undoes it.
+    """
+    action = request.POST.get("action", "")
+    back = post_redirect(request, "accounts:borrower_list")
+    if action not in BULK_ACTIONS:
+        return bulk_response(request, message="Unknown bulk action.", ok=False,
+                             redirect_to=back)
+    if action == "delete":
+        return bulk_delete_forever(
+            request, bulk_selection(request, Borrower.objects.all()),
+            noun="borrower(s)",
+            redirect_to=post_redirect(request, "accounts:borrower_archived"))
+    archive = action == "archive"
+    done, blocked = [], []
+    for obj in bulk_selection(request, Borrower.objects.all()):
+        if obj.is_active is not archive:
+            continue  # already in the requested state
+        if archive:
+            why = _borrower_blocker(obj)
+            if why:
+                blocked.append(why)
+                continue
+        _set_borrower_archived(request, obj, archived=archive)
+        done.append(obj)
+    message = bulk_summary(done=done, blocked=blocked, noun="borrower(s)",
+                           verb="archived" if archive else "restored")
+    return bulk_response(request, message=message or "Nothing to update.",
+                         ok=bool(done), blocked=blocked, redirect_to=back)
 
 
 @admin_required
@@ -245,7 +347,13 @@ def borrower_lookup(request):
             | Q(last_name__icontains=q)
             | Q(id_number__icontains=q)
         )
-    page_obj = Paginator(borrowers, 25).get_page(request.GET.get("page"))
+    borrowers = borrowers.order_by("last_name", "first_name", "-pk")
+    page_obj = paginate(request, borrowers)
+    from scheduling.services import faculty_schedule
+    faculty = [b for b in page_obj if b.borrower_type == Borrower.BorrowerType.FACULTY]
+    held = faculty_schedule(faculty)
+    for b in faculty:
+        b.today_blocks = [x for x in held[b.pk] if x.is_today]
     return render(request, "accounts/borrower_lookup.html", {
         "borrowers": page_obj,
         "page_obj": page_obj,
@@ -258,15 +366,44 @@ def borrower_lookup(request):
 # Users & guards (B2.1 / B2.2)
 # ---------------------------------------------------------------------------
 
+def _on_duty_annotation():
+    from transactions.models import GuardShift
+    return Exists(GuardShift.objects.filter(guard=OuterRef("pk"), is_on_duty=True))
+
+
+def _on_duty_block(request, obj, verb):
+    """Refuse an edit/delete while the account is on duty.
+
+    Returns the refusal response when blocked, else None. The open shift and
+    its transactions point at this account, so it is only changed off duty.
+    The list already hides both actions for an on-duty row; this covers a
+    stale page or a hand-made request.
+    """
+    if not obj.is_on_duty:
+        return None
+    reason = (f"{obj.full_name} is on duty right now. They must sign out "
+              f"before you can {verb} the account.")
+    if is_modal(request):
+        # 422 on a POST so modal-form.js does not read it as a saved form;
+        # 200 on the GET that only loads the form.
+        return render(request, "accounts/_blocked_modal.html",
+                      {"reason": reason, "title": f"Cannot {verb} this account"},
+                      status=422 if request.method == "POST" else 200)
+    messages.error(request, reason)
+    return redirect("accounts:user_list")
+
+
 @admin_required
 def user_list(request):
     """Admin view: Users & Guards list."""
     q = request.GET.get("q", "").strip()
     role_filter = request.GET.get("role", "").strip()
-    approval_filter = request.GET.get("approval", "").strip()
     dept_filter = request.GET.get("department", "").strip()
 
-    users = User.objects.select_related("department", "assigned_post").all()
+    # on_duty drives the row: a guard with an open shift cannot be edited or
+    # deleted, so the template disables both actions for that row.
+    users = (User.objects.select_related("department", "assigned_post")
+             .annotate(on_duty=_on_duty_annotation()))
     if q:
         users = users.filter(
             Q(username__icontains=q)
@@ -277,23 +414,19 @@ def user_list(request):
         )
     if role_filter:
         users = users.filter(role=role_filter)
-    if approval_filter:
-        users = users.filter(approval_status=approval_filter)
     if dept_filter.isdigit():
         users = users.filter(department_id=int(dept_filter))
-    users = users.order_by("-date_joined")
+    users = users.order_by("-date_joined", "-pk")
 
-    page_obj = Paginator(users, 25).get_page(request.GET.get("page"))
+    page_obj = paginate(request, users)
     return render(request, "accounts/user_list.html", {
         "users": page_obj,
         "page_obj": page_obj,
         "querystring": querystring_without_page(request),
         "roles": User.Role.choices,
-        "approvals": User.Approval.choices,
         "departments": Department.objects.filter(is_active=True),
         "q": q,
         "role_filter": role_filter,
-        "approval_filter": approval_filter,
         "dept_filter": dept_filter,
     })
 
@@ -310,13 +443,10 @@ def _push_or_fail(push, user, *args):
 @admin_required
 def user_create(request):
     def save(form):
-        # Admin-created users are pre-approved (B2.2).
-        user = form.save(commit=False)
-        user.approval_status = User.Approval.APPROVED
-        user.approved_by = request.user
-        user.approved_at = timezone.now()
-        user.save()
-        _push_or_fail(push_password, user, form.cleaned_data["password1"])
+        # Admin-created users start with the default password, which they
+        # change themselves after signing in.
+        user = form.save()
+        _push_or_fail(push_password, user, settings.DEFAULT_USER_PASSWORD)
         return user
 
     return form_view(
@@ -324,7 +454,9 @@ def user_create(request):
         form=UserCreateForm(request.POST or None),
         full_template="accounts/user_form.html",
         modal_template="accounts/_user_form_modal.html",
-        context={"title": "Add user"},
+        context={"title": "Add user",
+                 "subtitle": f"Signs in with the default password "
+                             f"{settings.DEFAULT_USER_PASSWORD} and should change it after."},
         redirect_to="accounts:user_list",
         success_message=lambda u: f"{u.full_name} ({u.get_role_display()}) created.",
         created=True,
@@ -335,6 +467,9 @@ def user_create(request):
 @admin_required
 def user_update(request, pk):
     obj = get_object_or_404(User, pk=pk)
+    blocked = _on_duty_block(request, obj, "edit")
+    if blocked:
+        return blocked
     form = UserEditForm(request.POST or None, instance=obj)
     # An admin demoting themselves would lock themselves out mid-session.
     if request.method == "POST" and obj.pk == request.user.pk and not request.user.is_superuser:
@@ -387,6 +522,48 @@ def user_toggle(request, pk):
 
 
 @admin_required
+@require_POST
+def user_delete(request, pk):
+    """Permanently remove an account.
+
+    Refused while the account is on duty, for your own account, and when the
+    row is referenced by a recorded shift or transaction (those FKs are
+    PROTECT, so the history would otherwise be destroyed or the delete would
+    crash) — deactivate instead.
+    """
+    obj = get_object_or_404(User, pk=pk)
+    if obj.pk == request.user.pk:
+        messages.error(request, "You cannot delete your own account.")
+        return redirect("accounts:user_list")
+    blocked = _on_duty_block(request, obj, "delete")
+    if blocked:
+        return blocked
+
+    name, username, role, pk = obj.full_name, obj.username, obj.get_role_display(), obj.pk
+    supabase_uid = obj.supabase_uid
+    try:
+        with transaction.atomic():
+            obj.delete()
+    except ProtectedError:
+        messages.error(request, f"{name} has recorded shifts or transactions and cannot be "
+                                f"deleted. Deactivate the account instead.")
+        return redirect("accounts:user_list")
+
+    if supabase_uid:
+        # The Django row is gone either way; a failed Supabase delete only
+        # leaves an orphaned auth user, so it is a warning, not a rollback.
+        try:
+            push_delete(supabase_uid)
+        except SupabaseAuthError as e:
+            messages.warning(request, f"The Supabase Auth user was not removed ({e}).")
+
+    log_activity(request.user, Action.DELETE, request=request,
+                 description=f"User {username} (#{pk}, {role}) deleted.")
+    messages.success(request, f"{name} deleted.")
+    return redirect("accounts:user_list")
+
+
+@admin_required
 def user_reset_password(request, pk):
     obj = get_object_or_404(User, pk=pk)
     form = AdminPasswordResetForm(obj, request.POST or None)
@@ -418,82 +595,53 @@ def user_reset_password(request, pk):
     return render(request, "accounts/user_form.html", ctx)
 
 
-# ---------------------------------------------------------------------------
-# Approval workflow (B2.3)
-# ---------------------------------------------------------------------------
-
-@admin_required
-def pending_user_list(request):
-    q = request.GET.get("q", "").strip()
-    role_filter = request.GET.get("role", "").strip()
-    dept_filter = request.GET.get("department", "").strip()
-
-    pending_users = User.objects.filter(
-        approval_status=User.Approval.PENDING
-    ).select_related("department")
-
-    if q:
-        pending_users = pending_users.filter(
-            Q(username__icontains=q)
-            | Q(first_name__icontains=q)
-            | Q(last_name__icontains=q)
-            | Q(email__icontains=q)
-            | Q(employee_id__icontains=q)
-        )
-    if role_filter:
-        pending_users = pending_users.filter(role=role_filter)
-    if dept_filter:
-        pending_users = pending_users.filter(department__id=dept_filter)
-
-    pending_users = pending_users.order_by("-date_joined")
-    departments = Department.objects.filter(is_active=True)
-
-    return render(
-        request,
-        "accounts/pending_users.html",
-        {
-            "pending_users": pending_users,
-            "roles": User.Role.choices,
-            "departments": departments,
-            "q": q,
-            "role_filter": role_filter,
-            "dept_filter": dept_filter,
-        },
-    )
-
-
-@admin_required
-@require_POST
-def user_approve(request, pk):
-    try:
-        user = approve_user(user_id=pk, approved_by=request.user)
-        log_activity(request.user, Action.APPROVE, obj=user, request=request,
-                     description=f"Approved {user.username} as {user.get_role_display()}.")
-        messages.success(
-            request,
-            f"Approved registration for {user.full_name} ({user.get_role_display()}).",
-        )
-    except ApprovalError as e:
-        messages.error(request, str(e))
-    return redirect("accounts:pending_user_list")
-
-
-@admin_required
-@require_POST
-def user_reject(request, pk):
-    reason = request.POST.get("reason", "").strip()
-    if not reason:
-        messages.error(request, "A reason is required to reject an account registration.")
-        return redirect("accounts:pending_user_list")
-
-    try:
-        user = reject_user(user_id=pk, rejected_by=request.user, reason=reason)
-        log_activity(request.user, Action.REJECT, obj=user, request=request,
-                     description=f"Rejected {user.username}. Reason: {reason}")
-        messages.warning(
-            request,
-            f"Rejected registration for {user.full_name}. Reason: {reason}",
-        )
-    except ApprovalError as e:
-        messages.error(request, str(e))
-    return redirect("accounts:pending_user_list")
+@admin_or_guard_required
+def password_change(request):
+    """Any signed-in admin or guard changes their own password, in Django and
+    Supabase together. Wrong current passwords share the login lockout, so a
+    borrowed session cannot be used to guess the password."""
+    user = request.user
+    form = OwnPasswordChangeForm(user, request.POST or None, request=request)
+    forced = user.must_change_password
+    rules = "Use at least 8 characters, not only numbers, and not the default password."
+    ctx = {"form": form,
+           "title": "Choose your own password" if forced else "Change password",
+           "subtitle": (f"You signed in with a temporary password set by an admin. "
+                        f"Replace it to continue. {rules}") if forced else rules,
+           "cancel_url": get_post_login_redirect(user),
+           "hide_cancel": forced,
+           "confirm_message": "Use the new password from your next sign-in.",
+           "confirm_title": "Change your password?", "confirm_label": "Change password",
+           # Nothing else sits on this page, so centre the card vertically too.
+           "center_page": True}
+    status = 200
+    if request.method == "POST":
+        key = _throttle_key(request, user.username)
+        if _is_throttled(key):
+            # Checked before the form, so a locked-out session never even
+            # reaches authenticate().
+            minutes = max(1, settings.LOGIN_RATE_WINDOW // 60)
+            messages.error(request, f"Too many wrong passwords. Try again in about {minutes} "
+                                    f"minute{'s' if minutes != 1 else ''}.")
+            ctx["form"] = OwnPasswordChangeForm(user, request=request)
+            status = 429
+        elif form.is_valid():
+            try:
+                with transaction.atomic():
+                    form.save()
+                    _push_or_fail(push_password, user, form.cleaned_data["new_password1"])
+            except ValidationError as e:
+                form.add_error(None, e)
+                status = 422
+            else:
+                cache.delete(key)
+                update_session_auth_hash(request, user)  # stay signed in
+                log_activity(user, Action.UPDATE, obj=user, request=request,
+                             description=f"{user.username} changed their own password.")
+                messages.success(request, "Your password has been changed.")
+                return redirect(get_post_login_redirect(user))
+        else:
+            if "current_password" in form.errors:
+                _record_failure(key)
+            status = 422
+    return render(request, "accounts/user_form.html", ctx, status=status)

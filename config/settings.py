@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import sys
 from pathlib import Path
 
 from decouple import Csv, config
@@ -53,6 +54,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'accounts.middleware.ForcePasswordChangeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -75,7 +77,6 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'accounts.context_processors.pending_approvals',
                 # F2.3: guard shift indicator + navbar quick-add context
                 'accounts.context_processors.navbar_context',
                 # F2.1 / F7.3: active navigation identifier for sidebar highlighting
@@ -153,6 +154,12 @@ USE_TZ = True
 # typed override reason that is written to the audit log, "block" refuses.
 SCHEDULE_ENFORCEMENT = config("SCHEDULE_ENFORCEMENT", default="warn")
 
+# Archive retention. An archived row (Building, Room, KeyCategory, Key,
+# Borrower) is hard-deleted once it has been archived this many days, together
+# with everything that points at it — see accounts/retention.py and
+# `python manage.py purge_archived`. 0 turns purging off (archive forever).
+ARCHIVE_RETENTION_DAYS = config("ARCHIVE_RETENTION_DAYS", default=30, cast=int)
+
 # B7.4: login throttling. After LOGIN_RATE_LIMIT failed attempts for one
 # username+IP inside LOGIN_RATE_WINDOW seconds, further attempts are refused
 # until the window expires. Uses the default (local-memory) cache.
@@ -169,15 +176,34 @@ SUPABASE_TIMEOUT = config("SUPABASE_TIMEOUT", default=10, cast=int)
 SUPABASE_SYNC_ENABLED = config("SUPABASE_SYNC_ENABLED", default=False, cast=bool)
 
 # Supabase Auth checks guard/admin passwords (accounts/supabase_auth.py).
-# Roles, approval and sessions stay in Django. Needs SUPABASE_URL, the anon or
+# Roles and sessions stay in Django. Needs SUPABASE_URL, the anon or
 # publishable key (sign-in) and the service-role key (admin user management).
 SUPABASE_AUTH_ENABLED = config("SUPABASE_AUTH_ENABLED", default=False, cast=bool)
 # When Supabase cannot be reached, fall back to the password hash Django keeps
 # in step with Supabase, so a guard desk keeps working through an outage.
 # Wrong passwords are never retried locally; only network failures are.
 SUPABASE_AUTH_OFFLINE_FALLBACK = config("SUPABASE_AUTH_OFFLINE_FALLBACK", default=True, cast=bool)
+
+# `manage.py test` must never reach the real project, whatever .env says: the
+# test suite creates and edits users, which would land in the live auth.users.
+# Tests that exercise Supabase turn it back on with override_settings and a
+# fake client (accounts/test_supabase_auth.py, supabase_sync/tests.py).
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+if TESTING:
+    SUPABASE_URL = SUPABASE_ANON_KEY = SUPABASE_SERVICE_ROLE_KEY = ""
+    SUPABASE_AUTH_ENABLED = SUPABASE_SYNC_ENABLED = False
+
 if SUPABASE_AUTH_ENABLED:
     AUTHENTICATION_BACKENDS = ["accounts.backends.SupabaseAuthBackend"]
+
+# Password every account made from Users → Add user starts with. The user
+# changes it from the navbar key icon (accounts:password_change).
+DEFAULT_USER_PASSWORD = config("DEFAULT_USER_PASSWORD", default="Admin2026")
+
+# Built-in admin made once by migration accounts/0007, so a fresh install can
+# sign in without createsuperuser. It must change its password on first login.
+DEFAULT_ADMIN_USERNAME = config("DEFAULT_ADMIN_USERNAME", default="Admin")
+DEFAULT_ADMIN_EMAIL = config("DEFAULT_ADMIN_EMAIL", default="keytrack.admin@keytrack.local")
 
 # B7.4: production hardening. These switch on automatically when DEBUG=False.
 # Deployment checklist (see README "Deploying"):

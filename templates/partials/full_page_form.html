@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 {% comment %}
   No-JS fallback for every modal form: the same fields rendered as a normal
-  page. Views pass title, form, and optionally subtitle / cancel_url.
+  page. Views pass title, form, and optionally subtitle / cancel_url /
+  hide_cancel (a page the user may not leave, e.g. a forced password change).
 {% endcomment %}
 {% block title %}{{ title }} — KEYTRACK{% endblock %}
 {% block content %}
-<div class="max-w-2xl">
+{# mx-auto always: the card is centred in the content area. A forced change (hide_cancel) or a view that asks for it (center_page) also centres it vertically, since there is nothing else on the page. #}
+<div class="max-w-2xl mx-auto {% if hide_cancel or center_page %}min-h-[70vh] flex flex-col justify-center{% endif %}">
   <div class="mb-4">
     <h1 class="text-[22px] font-extrabold tracking-tight">{{ title }}</h1>
     {% if subtitle %}<p class="text-[13px] text-stone-500 mt-0.5">{{ subtitle }}</p>{% endif %}
   </div>
-  <form method="post" novalidate class="space-y-4 rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+  <form method="post" novalidate {% include "partials/edit_confirm_attrs.html" %} class="space-y-4 rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
     {% csrf_token %}
     {% if form.non_field_errors %}
     <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
@@ -24,8 +26,10 @@
     </div>
     {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
     <div class="flex gap-2 pt-1">
-      <button class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Save</button>
-      <a href="{% if cancel_url %}{{ cancel_url }}{% else %}{{ request.META.HTTP_REFERER|default:'/' }}{% endif %}" class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px]">Cancel</a>
+      <button class="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Save</button>
+      {% if not hide_cancel %}
+      <a href="{% if cancel_url %}{{ cancel_url }}{% else %}{{ request.META.HTTP_REFERER|default:'/' }}{% endif %}" class="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px]">Cancel</a>
+      {% endif %}
     </div>
   </form>
 </div>

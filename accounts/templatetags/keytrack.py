@@ -21,3 +21,20 @@ def page_url(context, number):
         params = request.GET.copy() if request is not None else QueryDict(mutable=True)
     params["page"] = number
     return "?" + params.urlencode()
+
+
+@register.filter
+def nav_key(url_name):
+    """The sidebar key for a view name.
+
+    An Archived page (``key_archived``) or a create page (``offering_create``)
+    belongs to the same nav item as its live list (``key_list``, ``offering_list``),
+    so it maps onto it and the sidebar entry stays lit instead of nothing being
+    highlighted.
+    """
+    if url_name:
+        if url_name.endswith("_archived"):
+            return url_name[: -len("_archived")] + "_list"
+        if url_name.endswith("_create"):
+            return url_name[: -len("_create")] + "_list"
+    return url_name

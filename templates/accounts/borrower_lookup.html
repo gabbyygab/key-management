@@ -11,7 +11,7 @@
   </a>
 </div>
 
-<form method="get" class="flex gap-2" role="search" aria-label="Search borrowers">
+<form method="get" class="flex gap-2" role="search" aria-label="Search borrowers" data-list-region-form="#borrower-lookup-region">
   <label for="borrower-q" class="sr-only">Search name or ID number</label>
   <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -20,7 +20,8 @@
   <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Search</button>
 </form>
 
-<div class="mt-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
+<div id="borrower-lookup-region" data-list-region class="mt-3">
+  <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
   <table class="min-w-full text-[13px]">
     <caption class="sr-only">Borrower Lookup</caption>
     <thead>
@@ -39,7 +40,13 @@
         <td class="p-3 font-mono text-[12px] text-stone-700">{{ b.id_number }}</td>
         <td class="p-3 font-semibold text-stone-900">{{ b.last_name }}, {{ b.first_name }}</td>
         <td class="p-3 text-stone-600">{{ b.get_borrower_type_display|default:b.borrower_type }}</td>
-        <td class="p-3 text-stone-600">{{ b.department.code|default:"—" }}</td>
+        <td class="p-3 text-stone-600">{{ b.department.code|default:"—" }}
+          {% if b.today_blocks %}
+          <ul class="mt-1 space-y-0.5 text-[11px]">
+            {% for x in b.today_blocks %}<li class="{% if x.is_now %}font-semibold text-[#1E6B4A]{% else %}text-stone-500{% endif %}">{{ x.start_time|time:"g:i A" }}–{{ x.end_time|time:"g:i A" }} · {{ x.subject.code|default:x.title }} · {{ x.room.room_code }}{% if x.is_now %} · in class now{% endif %}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </td>
         <td class="p-3 text-stone-600">{{ b.contact_number|default:"—" }}</td>
         <td class="p-3">
           {% if b.can_borrow %}
@@ -60,7 +67,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {% include "partials/pagination.html" with page_obj=page_obj querystring=querystring item_label="borrowers" %}
+  </div>
 </div>
-
-{% include "partials/pagination.html" with page_obj=page_obj querystring=querystring %}
 {% endblock %}

@@ -945,6 +945,14 @@ class AuditConfig(AppConfig):
 
 ## 9. Phase 7: Authentication, Registration and Approval
 
+> **Superseded.** Self-registration and the approval queue were removed from the
+> build: `approval_status` / `approved_by` / `approved_at` no longer exist
+> (migration `accounts/0008_remove_user_approval`), and there is no pending list,
+> approve or reject view. Admins create accounts directly from
+> **Users & Guards → Add user**, and may edit or delete an account only while its
+> guard is off duty. The rest of this section is kept as a record of the original
+> design; do not follow it.
+
 ### Flow
 
 1. A new person registers. Account is created with `approval_status = PENDING`.

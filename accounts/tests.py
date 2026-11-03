@@ -3,9 +3,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .test_components import SharedComponentsTests
-from .context_processors import pending_approvals
 from .models import Department
-from .services import ApprovalError, approve_user, pending_count, reject_user
 from transactions.models import GuardShift
 
 User = get_user_model()
@@ -18,14 +16,12 @@ class RoleAccessTests(TestCase):
             email="guard1@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.admin = User.objects.create_user(
             username="admin1",
             email="admin1@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
 
     def test_guard_login_redirects_to_pos(self):
@@ -57,195 +53,6 @@ class RoleAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
-class PendingApprovalsWorkflowTests(TestCase):
-    def setUp(self):
-        self.dept = Department.objects.create(code="CS", name="Computer Science")
-        self.admin = User.objects.create_user(
-            username="admin_user",
-            email="admin_user@example.com",
-            password="secret123",
-            role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
-        )
-        self.guard = User.objects.create_user(
-            username="guard_user",
-            email="guard_user@example.com",
-            password="secret123",
-            role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
-        )
-        self.pending_user = User.objects.create_user(
-            username="pending_faculty",
-            first_name="Ada",
-            last_name="Lovelace",
-            email="ada@example.com",
-            password="secret123",
-            role=User.Role.FACULTY_STAFF,
-            department=self.dept,
-            employee_id="EMP-001",
-            approval_status=User.Approval.PENDING,
-        )
-
-    def test_approve_user_service(self):
-        user = approve_user(user_id=self.pending_user.pk, approved_by=self.admin)
-        self.assertEqual(user.approval_status, User.Approval.APPROVED)
-        self.assertEqual(user.approved_by, self.admin)
-        self.assertIsNotNone(user.approved_at)
-        self.assertTrue(user.is_approved)
-
-        # Cannot approve twice
-        with self.assertRaises(ApprovalError):
-            approve_user(user_id=self.pending_user.pk, approved_by=self.admin)
-
-    def test_reject_user_service(self):
-        # Empty reason should raise ApprovalError
-        with self.assertRaises(ApprovalError):
-            reject_user(user_id=self.pending_user.pk, rejected_by=self.admin, reason="   ")
-
-        user = reject_user(
-            user_id=self.pending_user.pk,
-            rejected_by=self.admin,
-            reason="Incomplete ID proof",
-        )
-        self.assertEqual(user.approval_status, User.Approval.REJECTED)
-        self.assertEqual(user.approved_by, self.admin)
-        self.assertIsNotNone(user.approved_at)
-        self.assertFalse(user.is_approved)
-
-        # Cannot reject already-rejected user
-        with self.assertRaises(ApprovalError):
-            reject_user(user_id=self.pending_user.pk, rejected_by=self.admin, reason="Duplicate")
-
-    def test_pending_count_service(self):
-        self.assertEqual(pending_count(), 1)
-        approve_user(user_id=self.pending_user.pk, approved_by=self.admin)
-        self.assertEqual(pending_count(), 0)
-
-    def test_guard_cannot_access_pending_approval_views(self):
-        self.client.force_login(self.guard)
-
-        list_resp = self.client.get(reverse("accounts:pending_user_list"))
-        self.assertEqual(list_resp.status_code, 403)
-
-        approve_resp = self.client.post(
-            reverse("accounts:user_approve", kwargs={"pk": self.pending_user.pk})
-        )
-        self.assertEqual(approve_resp.status_code, 403)
-
-        reject_resp = self.client.post(
-            reverse("accounts:user_reject", kwargs={"pk": self.pending_user.pk}),
-            {"reason": "Unauthorized"},
-        )
-        self.assertEqual(reject_resp.status_code, 403)
-
-    def test_anonymous_redirected_to_login(self):
-        resp = self.client.get(reverse("accounts:pending_user_list"))
-        self.assertEqual(resp.status_code, 302)
-        self.assertIn(reverse("accounts:login"), resp.url)
-
-    def test_admin_view_pending_list_and_empty_state(self):
-        self.client.force_login(self.admin)
-        resp = self.client.get(reverse("accounts:pending_user_list"))
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "Ada Lovelace")
-        self.assertContains(resp, "@pending_faculty")
-        self.assertContains(resp, "Approve")
-        self.assertContains(resp, "Reject")
-        # Sidebar should display pending badge count
-        self.assertContains(resp, "Pending Approvals")
-
-        # Approve and confirm empty state
-        approve_user(user_id=self.pending_user.pk, approved_by=self.admin)
-        empty_resp = self.client.get(reverse("accounts:pending_user_list"))
-        self.assertEqual(empty_resp.status_code, 200)
-        self.assertContains(empty_resp, "No pending approvals")
-
-    def test_admin_approve_flow_post_only(self):
-        self.client.force_login(self.admin)
-
-        # GET should be rejected with 405 Method Not Allowed
-        get_resp = self.client.get(
-            reverse("accounts:user_approve", kwargs={"pk": self.pending_user.pk})
-        )
-        self.assertEqual(get_resp.status_code, 405)
-
-        # POST approves and redirects to pending list
-        post_resp = self.client.post(
-            reverse("accounts:user_approve", kwargs={"pk": self.pending_user.pk}),
-            follow=True,
-        )
-        self.assertEqual(post_resp.status_code, 200)
-        self.pending_user.refresh_from_db()
-        self.assertEqual(self.pending_user.approval_status, User.Approval.APPROVED)
-        self.assertContains(post_resp, "Approved registration for")
-
-    def test_admin_reject_flow_requires_reason(self):
-        self.client.force_login(self.admin)
-
-        # GET should be rejected with 405 Method Not Allowed
-        get_resp = self.client.get(
-            reverse("accounts:user_reject", kwargs={"pk": self.pending_user.pk})
-        )
-        self.assertEqual(get_resp.status_code, 405)
-
-        # POST without reason should fail and keep status PENDING
-        post_no_reason = self.client.post(
-            reverse("accounts:user_reject", kwargs={"pk": self.pending_user.pk}),
-            {"reason": "   "},
-            follow=True,
-        )
-        self.assertEqual(post_no_reason.status_code, 200)
-        self.pending_user.refresh_from_db()
-        self.assertEqual(self.pending_user.approval_status, User.Approval.PENDING)
-        self.assertContains(post_no_reason, "A reason is required to reject an account registration.")
-
-        # POST with reason succeeds
-        post_with_reason = self.client.post(
-            reverse("accounts:user_reject", kwargs={"pk": self.pending_user.pk}),
-            {"reason": "Not an active faculty member"},
-            follow=True,
-        )
-        self.assertEqual(post_with_reason.status_code, 200)
-        self.pending_user.refresh_from_db()
-        self.assertEqual(self.pending_user.approval_status, User.Approval.REJECTED)
-        self.assertContains(post_with_reason, "Rejected registration for")
-
-    def test_login_blocked_for_pending_and_rejected_users(self):
-        from django.contrib.auth import authenticate
-
-        # Pending user cannot authenticate
-        user = authenticate(username="pending_faculty", password="secret123")
-        self.assertIsNone(user)
-
-        # Rejected user cannot authenticate
-        reject_user(user_id=self.pending_user.pk, rejected_by=self.admin, reason="Rejected")
-        user = authenticate(username="pending_faculty", password="secret123")
-        self.assertIsNone(user)
-
-        # Re-set to approved
-        self.pending_user.approval_status = User.Approval.APPROVED
-        self.pending_user.save()
-        user = authenticate(username="pending_faculty", password="secret123")
-        self.assertIsNotNone(user)
-        self.assertEqual(user.username, "pending_faculty")
-
-    def test_context_processor(self):
-        from django.test import RequestFactory
-        factory = RequestFactory()
-
-        # Admin request
-        admin_req = factory.get("/")
-        admin_req.user = self.admin
-        data = pending_approvals(admin_req)
-        self.assertEqual(data["pending_approvals_count"], 1)
-
-        # Guard request
-        guard_req = factory.get("/")
-        guard_req.user = self.guard
-        data = pending_approvals(guard_req)
-        self.assertEqual(data["pending_approvals_count"], 0)
-
-
 # ---------------------------------------------------------------------------
 # F2.3 — navbar context processor tests
 # ---------------------------------------------------------------------------
@@ -260,14 +67,12 @@ class NavbarContextTests(TestCase):
             email="guard_nb@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.admin = User.objects.create_user(
             username="admin_nb",
             email="admin_nb@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
 
 
@@ -312,14 +117,12 @@ class NavbarRenderTests(TestCase):
             email="guard_render@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.admin = User.objects.create_user(
             username="admin_render",
             email="admin_render@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
 
     # -- breadcrumb ----------------------------------------------------------
@@ -394,14 +197,12 @@ class LoginNextParameterTests(TestCase):
             email="guard_test@example.com",
             password="password123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.admin = User.objects.create_user(
             username="admin_test",
             email="admin_test@example.com",
             password="password123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
 
     def test_login_get_includes_hidden_next_input(self):
@@ -531,7 +332,6 @@ class SidebarRoleSplitTests(TestCase):
             email="jane.admin@example.com",
             password="adminpassword123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.guard = User.objects.create_user(
             username="guard_bob",
@@ -540,13 +340,11 @@ class SidebarRoleSplitTests(TestCase):
             email="bob.guard@example.com",
             password="guardpassword123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.superuser = User.objects.create_superuser(
             username="super_root",
             email="root@example.com",
             password="rootpassword123",
-            approval_status=User.Approval.APPROVED,
         )
 
     def test_admin_sidebar_full_menu_rendered(self):
@@ -584,8 +382,6 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Borrowers")
         self.assertContains(res, reverse("accounts:user_list"))
         self.assertContains(res, "Users &amp; Guards")
-        self.assertContains(res, reverse("accounts:pending_user_list"))
-        self.assertContains(res, "Pending Approvals")
 
         self.assertContains(res, reverse("transactions:history"))
         self.assertContains(res, "Transaction History")
@@ -639,8 +435,6 @@ class SidebarRoleSplitTests(TestCase):
         self.assertNotContains(res, "Rooms")
         self.assertNotContains(res, reverse("accounts:user_list"))
         self.assertNotContains(res, "Users &amp; Guards")
-        self.assertNotContains(res, reverse("accounts:pending_user_list"))
-        self.assertNotContains(res, "Pending Approvals")
         self.assertNotContains(res, reverse("audit:log_list"))
         self.assertNotContains(res, "Audit Log")
         self.assertNotContains(res, reverse("reports:index"))
@@ -654,28 +448,6 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Audit Log")
         self.assertContains(res, "Key Inventory")
         self.assertNotContains(res, "Key Transactions (POS)")
-
-    def test_pending_approvals_count_badge_display(self):
-        """Pending approvals count badge shows for admin when count > 0, hidden when 0."""
-        self.client.force_login(self.admin)
-
-        # When 0 pending users
-        res = self.client.get(reverse("dashboard"))
-        self.assertEqual(res.context["pending_approvals_count"], 0)
-        self.assertNotContains(res, 'title="0 pending approval"')
-
-        # Create a pending user
-        User.objects.create_user(
-            username="pending_applicant",
-            email="pending@example.com",
-            password="secretpassword",
-            role=User.Role.GUARD,
-            approval_status=User.Approval.PENDING,
-        )
-
-        res = self.client.get(reverse("dashboard"))
-        self.assertEqual(res.context["pending_approvals_count"], 1)
-        self.assertContains(res, "1 pending approval")
 
     def test_user_chip_role_display_and_initials(self):
         """User chip uses user.get_role_display (not 'GUARD' fallback) and proper initials."""

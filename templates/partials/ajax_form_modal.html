@@ -1,5 +1,5 @@
 {% comment %}
-  Body of an AJAX form modal (header + form + sticky footer), injected into
+  Body of an AJAX form modal (header + scrolling form + fixed footer), injected into
   partials/ajax_modal_shell.html by modal-form.js. On a 422 the server
   re-renders this with the bound form, so inline errors appear and the typed
   input is preserved.
@@ -25,11 +25,11 @@
   </button>
 </div>
 
-<form method="post" action="{{ action_url|default:request.path }}" novalidate
+<form method="post" action="{{ action_url|default:request.path }}" novalidate {% include "partials/edit_confirm_attrs.html" %}
       data-success-message="{{ success_message|default:'Saved.' }}"
       class="flex min-h-0 flex-1 flex-col">
   {% csrf_token %}
-  <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+  <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
     {% if form.non_field_errors %}
     <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">
       {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}

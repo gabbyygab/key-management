@@ -1,13 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Key Categories — KEYTRACK{% endblock %}
+{% block title %}{% if archived %}Archived categories{% else %}Key Categories{% endif %} — KEYTRACK{% endblock %}
 
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Key Categories</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Master, Room, Cabinet, Gate — group keys by purpose or access tier.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived categories{% else %}Key Categories{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}An archived category is not offered for new keys. Restore one to bring it back{% if retention_days %} — after {{ retention_days }} days an archived category is deleted for good, with its keys and their borrow history{% endif %}.{% else %}Master, Room, Cabinet, Gate — group keys by purpose or access tier.{% endif %}</p>
   </div>
   <div class="flex items-center gap-2">
+    {% include "partials/archive_switch.html" %}
+    {% if not archived %}
     <a href="{% url 'keys:key_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="key" class="w-4 h-4 text-stone-500"></i>
       <span>Key Inventory</span>
@@ -19,6 +21,7 @@
       <i data-lucide="plus" class="w-4 h-4"></i>
       <span>Add Category</span>
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -28,28 +31,29 @@
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
     <input id="cat-q" name="q" value="{{ q }}" placeholder="Search category name or description..." autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
-  <label for="cat-status" class="sr-only">Filter by active status</label>
-  <select id="cat-status" name="status" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
-    <option value="">All statuses</option>
-    <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active only</option>
-    <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inactive only</option>
-  </select>
   <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">
     Filter
   </button>
-  {% if q or status_filter %}
-  <a href="{% url 'keys:category_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">
+  {% if q %}
+  <a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">
     Reset
   </a>
   {% endif %}
 </form>
 
-<div id="category-list-region">
+<div id="category-list-region" data-list-region
+     data-bulk-url="{% url 'keys:category_bulk' %}"
+     data-bulk-noun="category" data-bulk-noun-plural="categories">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Key categories list</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every category on this page">
+          </th>
           <th scope="col" class="p-3.5 font-semibold">Category Name</th>
           <th scope="col" class="p-3.5 font-semibold">Description</th>
           <th scope="col" class="p-3.5 font-semibold">Key Count</th>
@@ -60,6 +64,12 @@
       <tbody class="divide-y divide-stone-100">
         {% for c in categories %}
         <tr class="hover:bg-stone-50/60 transition-colors">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ c.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if c.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ c.name }}"
+                   aria-label="Select {{ c.name }}">
+          </td>
           <td class="p-3.5 font-semibold text-stone-900">
             {{ c.name }}
           </td>
@@ -91,7 +101,7 @@
             {% if c.is_active %}
               {% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}
             {% else %}
-              {% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}
+              {% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}
             {% endif %}
           </td>
           <td class="p-3.5 text-right whitespace-nowrap">
@@ -106,6 +116,7 @@
               </a>
 
               {% if c.is_active %}
+                {# Archive, not delete: keys PROTECT their category. #}
                 <button type="button"
                         class="category-deactivate-trigger font-medium text-stone-500 hover:text-red-700 hover:underline inline-flex items-center gap-1"
                         data-category-id="{{ c.pk }}"
@@ -113,22 +124,39 @@
                         data-key-count="{{ c.key_count }}"
                         data-borrowed-count="{{ c.borrowed_count }}"
                         data-toggle-url="{% url 'keys:category_toggle' c.pk %}">
-                  <span>Deactivate</span>
+                  <i data-lucide="archive" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                  <span>Archive</span>
                   <span class="sr-only">{{ c.name }}</span>
                 </button>
                 <noscript>
                   <form method="post" action="{% url 'keys:category_toggle' c.pk %}" class="inline">
                     {% csrf_token %}
-                    <button type="submit" class="font-medium text-stone-500 hover:text-red-700 hover:underline">Deactivate</button>
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" data-loading-label="Archiving…" class="font-medium text-stone-500 hover:text-red-700 hover:underline">Archive</button>
                   </form>
                 </noscript>
               {% else %}
                 <form method="post" action="{% url 'keys:category_toggle' c.pk %}" class="inline">
                   {% csrf_token %}
-                  <button type="submit" class="font-medium text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1">
-                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                    <span>Activate</span>
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" data-loading-label="Restoring…" class="font-medium text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="archive-restore" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                    <span>Restore</span>
                     <span class="sr-only">{{ c.name }}</span>
+                  </button>
+                </form>
+                {# The one hard delete in the UI (accounts/retention.py). #}
+                <form method="post" action="{% url 'keys:category_delete' c.pk %}" class="inline"
+                      data-confirm="This cannot be undone. {{ c.name }} is removed from the database along with its keys and the borrow history of those keys. Restore it instead if you only want it offered for new keys again."
+                      data-confirm-title="Delete category forever" data-confirm-label="Delete forever"
+                      data-confirm-variant="danger" data-confirm-subject="{{ c.name }}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" data-loading-label="Deleting…"
+                          class="font-medium text-red-700 hover:text-red-900 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                    <span>Delete</span>
+                    <span class="sr-only">{{ c.name }} forever</span>
                   </button>
                 </form>
               {% endif %}
@@ -136,7 +164,7 @@
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=5 icon="tags" title="No categories found" message="No key categories defined yet. Add categories like Master, Room, or Cabinet to organize keys." action_modal="category-modal" action_label="Add category" action_icon="plus" %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=6 icon="archive" title="Nothing archived" message="Archived categories show up here. Nothing is archived right now." %}{% else %}{% include "partials/empty_state.html" with colspan=6 icon="tags" title="No categories found" message="No key categories defined yet. Add categories like Master, Room, or Cabinet to organize keys." action_modal="category-modal" action_label="Add category" action_icon="plus" %}{% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -151,7 +179,7 @@
      aria-labelledby="category-modal-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
   <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl max-w-md">
-    <div data-modal-body class="flex flex-col max-h-[90vh] overflow-hidden">
+    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden">
       {% include "keys/_category_form_modal.html" with form=form title="Add Category" action_url=create_url %}
     </div>
   </div>
@@ -164,16 +192,16 @@
      aria-modal="true"
      aria-labelledby="deactivate-modal-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
-  <div class="relative bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-md overflow-hidden flex flex-col">
+  <div class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
     <!-- Header -->
-    <div class="flex items-start justify-between gap-3 p-5 border-b border-stone-200 bg-white">
+    <div class="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-white p-5">
       <div class="flex items-center gap-3">
         <div id="deactivate-modal-icon-container" class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700">
           <i data-lucide="alert-triangle" class="w-5 h-5" id="deactivate-modal-icon"></i>
         </div>
         <div class="min-w-0">
-          <h2 id="deactivate-modal-title" class="text-[15px] font-bold text-stone-900">Deactivate Category</h2>
-          <p id="deactivate-modal-subtitle" class="text-[12px] text-stone-500 mt-0.5">Check category usage before deactivation.</p>
+          <h2 id="deactivate-modal-title" class="text-[15px] font-bold text-stone-900">Archive Category</h2>
+          <p id="deactivate-modal-subtitle" class="text-[12px] text-stone-500 mt-0.5">Check category usage before archiving. Nothing is deleted.</p>
         </div>
       </div>
       <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
@@ -182,42 +210,45 @@
     </div>
 
     <!-- Body -->
-    <form id="category-deactivate-form" method="post" action="" class="p-5 space-y-3">
+    <form id="category-deactivate-form" method="post" action="" class="flex min-h-0 flex-1 flex-col">
       {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
       <input type="hidden" name="confirm" id="deactivate-modal-confirm" value="true">
 
-      <div id="deactivate-modal-message" class="text-[13px] text-stone-700"></div>
+      <div class="kt-modal-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+        <div id="deactivate-modal-message" class="text-[13px] text-stone-700"></div>
 
-      <!-- Hard Block Alert (when keys are borrowed/overdue) -->
-      <div id="deactivate-modal-block-alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800">
-        <div class="flex items-start gap-2">
-          <i data-lucide="shield-alert" class="w-4 h-4 text-red-600 shrink-0 mt-0.5"></i>
-          <div>
-            <p class="font-semibold text-red-900">Deactivation Blocked</p>
-            <p id="deactivate-modal-block-text" class="text-red-700 mt-0.5"></p>
+        <!-- Hard Block Alert (when keys are borrowed/overdue) -->
+        <div id="deactivate-modal-block-alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800">
+          <div class="flex items-start gap-2">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-red-600 shrink-0 mt-0.5"></i>
+            <div>
+              <p class="font-semibold text-red-900">Archiving Blocked</p>
+              <p id="deactivate-modal-block-text" class="text-red-700 mt-0.5"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Warning Alert (when keys exist in category) -->
+        <div id="deactivate-modal-warn-alert" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+          <div class="flex items-start gap-2">
+            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0 mt-0.5"></i>
+            <div>
+              <p class="font-semibold text-amber-900">Warning: Category In Use</p>
+              <p id="deactivate-modal-warn-text" class="text-amber-800 mt-0.5"></p>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Warning Alert (when keys exist in category) -->
-      <div id="deactivate-modal-warn-alert" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
-        <div class="flex items-start gap-2">
-          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0 mt-0.5"></i>
-          <div>
-            <p class="font-semibold text-amber-900">Warning: Category In Use</p>
-            <p id="deactivate-modal-warn-text" class="text-amber-800 mt-0.5"></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Footer Buttons inside form -->
-      <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-200">
+      <!-- Footer buttons stay fixed while the body above scrolls. -->
+      <div class="flex shrink-0 items-center justify-end gap-2 border-t border-stone-200 bg-white px-5 py-3">
         <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">
           Cancel
         </button>
-        <button type="submit" id="deactivate-modal-submit-btn" class="rounded-lg bg-red-700 hover:bg-red-800 px-4 py-2 text-[13px] font-semibold text-white inline-flex items-center gap-1.5 shadow-sm">
-          <i data-lucide="ban" class="w-4 h-4"></i>
-          <span id="deactivate-modal-submit-label">Deactivate</span>
+        <button type="submit" id="deactivate-modal-submit-btn" data-loading-label="Archiving…" class="rounded-lg bg-red-700 hover:bg-red-800 px-4 py-2 text-[13px] font-semibold text-white inline-flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="archive" class="w-4 h-4"></i>
+          <span id="deactivate-modal-submit-label">Archive</span>
         </button>
       </div>
     </form>
@@ -240,6 +271,17 @@ document.addEventListener("DOMContentLoaded", function () {
   var iconContainer = document.getElementById("deactivate-modal-icon-container");
   var title = document.getElementById("deactivate-modal-title");
 
+  // The category name is user input: build the sentence with text nodes,
+  // never innerHTML, so a name like <img onerror=...> cannot run script.
+  function setMessage(before, name, after) {
+    if (!message) return;
+    var strong = document.createElement("strong");
+    strong.className = "font-semibold text-stone-900";
+    strong.textContent = name;
+    message.textContent = "";
+    message.append(before, strong, after);
+  }
+
   document.addEventListener("click", function (e) {
     var trigger = e.target.closest(".category-deactivate-trigger");
     if (!trigger) return;
@@ -255,10 +297,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (borrowedCount > 0) {
       // Hard block state
-      if (title) title.textContent = "Cannot Deactivate Category";
+      if (title) title.textContent = "Cannot Archive Category";
       if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0 text-red-700";
-      if (message) message.innerHTML = 'Category <strong class="font-semibold text-stone-900">' + catName + '</strong> cannot be deactivated while keys are in circulation.';
-      if (blockText) blockText.textContent = borrowedCount + " key" + (borrowedCount === 1 ? "" : "s") + " in this category are currently borrowed or overdue. All keys must be returned before this category can be deactivated.";
+      setMessage("Category ", catName, " cannot be archived while keys are in circulation.");
+      if (blockText) blockText.textContent = borrowedCount + " key" + (borrowedCount === 1 ? "" : "s") + " in this category are currently borrowed or overdue. All keys must be returned before this category can be archived.";
       if (blockAlert) blockAlert.classList.remove("hidden");
       if (warnAlert) warnAlert.classList.add("hidden");
       if (submitBtn) submitBtn.classList.add("hidden");
@@ -266,24 +308,24 @@ document.addEventListener("DOMContentLoaded", function () {
       // Warning state with explicit confirmation
       if (title) title.textContent = "Warning: Category In Use";
       if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-700";
-      if (message) message.innerHTML = 'Are you sure you want to deactivate <strong class="font-semibold text-stone-900">' + catName + '</strong>?';
-      if (warnText) warnText.textContent = "This category currently has " + keyCount + " key" + (keyCount === 1 ? "" : "s") + " assigned to it. Deactivating it will prevent assigning new keys to this category.";
+      setMessage("Archive ", catName, "?");
+      if (warnText) warnText.textContent = "This category currently has " + keyCount + " key" + (keyCount === 1 ? "" : "s") + " assigned to it. Those keys are kept — archiving only stops new keys being filed under it.";
       if (warnAlert) warnAlert.classList.remove("hidden");
       if (blockAlert) blockAlert.classList.add("hidden");
       if (submitBtn) {
         submitBtn.classList.remove("hidden");
-        if (submitLabel) submitLabel.textContent = "Confirm Deactivation";
+        if (submitLabel) submitLabel.textContent = "Confirm Archive";
       }
     } else {
       // Normal confirmation
-      if (title) title.textContent = "Deactivate Category";
+      if (title) title.textContent = "Archive Category";
       if (iconContainer) iconContainer.className = "w-10 h-10 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0 text-stone-600";
-      if (message) message.innerHTML = 'Are you sure you want to deactivate category <strong class="font-semibold text-stone-900">' + catName + '</strong>?';
+      setMessage("Are you sure you want to archive category ", catName, "?");
       if (blockAlert) blockAlert.classList.add("hidden");
       if (warnAlert) warnAlert.classList.add("hidden");
       if (submitBtn) {
         submitBtn.classList.remove("hidden");
-        if (submitLabel) submitLabel.textContent = "Deactivate";
+        if (submitLabel) submitLabel.textContent = "Archive";
       }
     }
 

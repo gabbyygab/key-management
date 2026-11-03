@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Buildings — KEYTRACK{% endblock %}
+{% block title %}{% if archived %}Archived buildings{% else %}Buildings{% endif %} — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Buildings</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Buildings group rooms and feed the dashboard availability chart.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived buildings{% else %}Buildings{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}Archived buildings and their rooms are not offered anywhere new. Restore one to bring it back{% if retention_days %} — after {{ retention_days }} days an archived building is deleted for good, with its rooms, keys and their borrow history{% endif %}.{% else %}Buildings group rooms and feed the dashboard availability chart.{% endif %}</p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
+    {% include "partials/archive_switch.html" %}
+    {% if not archived %}
     <a href="{% url 'facilities:room_list' %}" class="bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-3.5 py-2 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="door-open" aria-hidden="true" class="w-4 h-4 text-stone-500"></i><span>Rooms</span>
     </a>
@@ -14,6 +16,7 @@
        class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="plus" aria-hidden="true" class="w-4 h-4"></i><span>Add building</span>
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -23,22 +26,23 @@
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
     <input id="bld-q" name="q" value="{{ q }}" placeholder="Search code or name…" autocomplete="off" class="flex-1 bg-transparent outline-none py-2 text-[13px] min-w-0">
   </div>
-  <label for="bld-state" class="sr-only">Filter by state</label>
-  <select id="bld-state" name="state" class="rounded-lg border border-stone-300 bg-white text-[13px] px-3 py-2 text-stone-700">
-    <option value="">All states</option>
-    <option value="active" {% if state == "active" %}selected{% endif %}>Active only</option>
-    <option value="inactive" {% if state == "inactive" %}selected{% endif %}>Inactive only</option>
-  </select>
   <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
-  {% if q or state %}<a href="{% url 'facilities:building_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+  {% if q %}<a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
-<div id="building-list-region">
+<div id="building-list-region" data-list-region
+     data-bulk-url="{% url 'facilities:building_bulk' %}"
+     data-bulk-noun="building" data-bulk-noun-plural="buildings">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Buildings</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every building on this page">
+          </th>
           <th scope="col" class="p-3.5 font-semibold">Code</th>
           <th scope="col" class="p-3.5 font-semibold">Name</th>
           <th scope="col" class="p-3.5 font-semibold">Rooms</th>
@@ -50,27 +54,54 @@
       <tbody class="divide-y divide-stone-100">
         {% for b in buildings %}
         <tr class="hover:bg-stone-50/60{% if not b.is_active %} text-stone-400{% endif %}">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ b.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if b.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ b.code }} · {{ b.name }}"
+                   aria-label="Select {{ b.code }}">
+          </td>
           <td class="p-3.5 font-mono font-semibold text-stone-900">{{ b.code }}</td>
           <td class="p-3.5">{{ b.name }}</td>
           <td class="p-3.5"><a href="{% url 'facilities:room_list' %}?building={{ b.pk }}" class="font-mono hover:underline">{{ b.room_count }}</a></td>
           <td class="p-3.5 font-mono">{{ b.key_count }}</td>
-          <td class="p-3.5">{% if b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}</td>
+          <td class="p-3.5">{% if b.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}</td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">
+              {% if b.is_active %}
               <a href="{% url 'facilities:room_create' %}?building={{ b.pk }}" data-modal-form="room-modal" data-modal-refresh="#building-list-region"
                  class="font-medium text-stone-600 hover:underline inline-flex items-center gap-1"><i data-lucide="plus" aria-hidden="true" class="w-3.5 h-3.5"></i>Room<span class="sr-only"> in {{ b.code }}</span></a>
+              {% endif %}
               <a href="{% url 'facilities:building_update' b.pk %}" data-modal-form="building-modal" data-modal-refresh="#building-list-region"
                  class="font-medium text-[#1E6B4A] hover:underline inline-flex items-center gap-1"><i data-lucide="edit-3" aria-hidden="true" class="w-3.5 h-3.5"></i>Edit<span class="sr-only"> {{ b.code }}</span></a>
+              {# Archive, not delete: rooms PROTECT their building, so the row stays. #}
               <form method="post" action="{% url 'facilities:building_toggle' b.pk %}" class="inline"
-                    {% if b.is_active %}data-confirm="Deactivated buildings and their rooms stop appearing in the borrow screen and room finder. Existing history is kept." data-confirm-title="Deactivate building" data-confirm-label="Deactivate" data-confirm-variant="danger" data-confirm-subject="{{ b.code }} · {{ b.name }}"{% endif %}>
+                    {% if b.is_active %}data-confirm="Archived buildings and their rooms stop appearing in the borrow screen and room finder. Nothing is deleted — existing history is kept and you can restore the building at any time." data-confirm-title="Archive building" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ b.code }} · {{ b.name }}"{% endif %}>
                 {% csrf_token %}
-                <button type="submit" class="font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">{% if b.is_active %}Deactivate{% else %}Activate{% endif %}<span class="sr-only"> {{ b.code }}</span></button>
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if b.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if b.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if b.is_active %}archive{% else %}archive-restore{% endif %}" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if b.is_active %}Archive{% else %}Restore{% endif %}<span class="sr-only"> {{ b.code }}</span>
+                </button>
               </form>
+              {% if not b.is_active %}
+              {# The one hard delete in the UI — see accounts/retention.py. #}
+              <form method="post" action="{% url 'facilities:building_delete' b.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ b.code }} is removed from the database along with its rooms, their keys and the borrow history of those keys. Restore it instead if you only want it back in the lists."
+                    data-confirm-title="Delete building forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ b.code }} · {{ b.name }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" aria-hidden="true" class="w-3.5 h-3.5"></i>Delete<span class="sr-only"> {{ b.code }} forever</span>
+                </button>
+              </form>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=6 icon="building-2" title="No buildings found" message="Add a building, then its rooms, before registering keys." %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=7 icon="archive" title="Nothing archived" message="Archived buildings show up here. Nothing is archived right now." %}{% else %}{% include "partials/empty_state.html" with colspan=7 icon="building-2" title="No buildings found" message="Add a building, then its rooms, before registering keys." %}{% endif %}
         {% endfor %}
       </tbody>
     </table>

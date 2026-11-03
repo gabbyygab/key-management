@@ -28,8 +28,18 @@
   /* F6.8: Use animated pulse form skeleton while fetching the partial */
   function setLoading(modal) {
     var body = bodyOf(modal);
+    /* Once this modal has shown its form, hold the skeleton at that height
+     * so later opens (every Edit after the first) do not move at all. */
+    if (modal.dataset.loadedHeight) {
+      body.style.minHeight = "min(" + modal.dataset.loadedHeight + "px, calc(90vh - 2px))";
+    }
     if (KeyTrack.skeletons) {
-      KeyTrack.skeletons.form(body);
+      /* Shell params skeleton_fields / skeleton_cols size the skeleton like
+       * the form that is about to load (partials/ajax_modal_shell.html). */
+      KeyTrack.skeletons.form(body, {
+        fields: modal.getAttribute("data-skeleton-fields"),
+        cols: modal.getAttribute("data-skeleton-cols"),
+      });
     } else {
       body.innerHTML =
         '<div class="py-10 text-center text-[13px] text-stone-400">Loading…</div>';
@@ -41,10 +51,16 @@
   function inject(modal, html) {
     var body = bodyOf(modal);
     body.innerHTML = html;
+    body.removeAttribute("aria-busy");
+    body.style.minHeight = "";
+    if (body.querySelector("form")) modal.dataset.loadedHeight = String(body.offsetHeight);
     KeyTrack.refreshIcons(body);
     /* A form may itself contain a live search (instructor picker, borrower
      * select) — wire it now that it exists in the DOM. */
     if (KeyTrack.bindSearch) KeyTrack.bindSearch(body);
+    /* Same for a new-password field: show its strength meter and rules before
+     * the first keystroke, not only once the field is focused. */
+    if (KeyTrack.passwordStrength) KeyTrack.passwordStrength.scan(body);
     var focus = body.querySelector(FOCUS_SELECTOR);
     if (focus) focus.focus();
     return body;
@@ -211,12 +227,12 @@
               restore();
               return null;
             }
-            KeyTrack.toast(
-              form.getAttribute("data-success-message") || "Saved.",
-              "success"
-            );
+            var msg = serverMessage(text) ||
+              form.getAttribute("data-success-message") || "Saved.";
             window.KeyTrackModal.close(modalId);
-            refreshRegion(modal);
+            /* The toast is shown once the list is fresh, and survives a
+             * full reload (pages without a list region). */
+            refreshRegion(modal, msg);
             return null;
           });
         }
@@ -237,13 +253,27 @@
       });
   }
 
+  /* crud.form_view answers a modal save with a one-line plain message
+   * ("Fresh Guard (Guard) created."); prefer it to the form's generic
+   * data-success-message. Anything that looks like markup or JSON is not one. */
+  function serverMessage(text) {
+    var t = (text || "").trim();
+    if (!t || t.length > 200 || /[<>{}\[\]]/.test(t.charAt(0)) || t.indexOf("<") !== -1) return "";
+    return t;
+  }
+
   /* Refresh just the affected list region, or reload the page for v1 when the
-   * template has not opted into a region. */
-  function refreshRegion(modal) {
+   * template has not opted into a region. `message`, if given, is toasted
+   * after the refresh, including across a reload. */
+  function refreshRegion(modal, message) {
     var selector = modal.dataset.refresh;
     var region = selector ? document.querySelector(selector) : null;
+    function reload() {
+      if (message && KeyTrack.reloadWithToast) KeyTrack.reloadWithToast(message, "success");
+      else window.location.reload();
+    }
     if (!region) {
-      window.location.reload();
+      reload();
       return;
     }
     fetch(window.location.href, {
@@ -262,16 +292,17 @@
           .parseFromString(html, "text/html")
           .querySelector(selector);
         if (!fresh) {
-          window.location.reload();
+          reload();
           return;
         }
         region.innerHTML = fresh.innerHTML;
         KeyTrack.refreshIcons(region);
         if (KeyTrack.bindSearch) KeyTrack.bindSearch(region);
+        if (message) KeyTrack.toast(message, "success");
       })
       .catch(function (err) {
         if (err && err.message === "session_expired") return;
-        window.location.reload();
+        reload();
       });
   }
 

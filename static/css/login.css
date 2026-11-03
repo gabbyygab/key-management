@@ -373,3 +373,87 @@ body {
         transition-duration: .01ms !important;
     }
 }
+/* ---------------------------------------------------------------------------
+ * Password field with a show/hide toggle, and the sign-in button's loading
+ * state (static/js/login.js). The login page is standalone — it does not load
+ * base.html's shared JS — so both live here instead of in Tailwind classes.
+ * ------------------------------------------------------------------------- */
+
+.field-wrap {
+    position: relative;
+}
+
+.field-wrap .field-input {
+    padding-right: 46px;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #7c827a;
+    cursor: pointer;
+    transition: color .16s ease, background .16s ease;
+}
+
+.password-toggle:hover {
+    background: #eceee6;
+    color: #244e39;
+}
+
+.password-toggle:focus-visible {
+    outline: 3px solid #9db79f;
+    outline-offset: 1px;
+}
+
+.password-toggle svg {
+    display: block;
+}
+
+/* Only one of the two icons shows; which one is swapped by login.js. */
+.password-toggle [data-icon-hide] {
+    display: none;
+}
+
+.password-toggle[aria-pressed="true"] [data-icon-show] {
+    display: none;
+}
+
+.password-toggle[aria-pressed="true"] [data-icon-hide] {
+    display: block;
+}
+
+.submit-button:disabled {
+    background: #3f6a52;
+    cursor: progress;
+}
+
+.submit-button:disabled:active {
+    transform: none;
+}
+
+.submit-spinner {
+    animation: login-spin .7s linear infinite;
+}
+
+@keyframes login-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .submit-spinner {
+        animation: none;
+    }
+}

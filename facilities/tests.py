@@ -14,7 +14,6 @@ class RoomCrudTests(TestCase):
             email="admin@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.client.force_login(self.user)
         self.building = Building.objects.create(code="ENG", name="Engineering")
@@ -73,14 +72,12 @@ class RoomDetailViewTests(TestCase):
             email="admin_fac@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.guard = User.objects.create_user(
             username="guard_fac",
             email="guard_fac@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.building = Building.objects.create(code="ENG", name="Engineering")
         self.room = Room.objects.create(

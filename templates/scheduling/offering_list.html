@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{% if archived %}Archived offerings{% else %}Subject offerings{% endif %} — KEYTRACK{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived offerings{% else %}Subject offerings{% endif %}</h1>
+    <p class="mt-0.5 text-[13px] text-stone-500">
+      {% if archived %}Archived offerings are out of the queue and have nothing placed. Restore one to queue it again.{% else %}The scheduling queue. Each row is one subject taught to one section by one professor; the <span class="font-semibold text-stone-700">#</span> column is the order the auto-scheduler will serve them in.{% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% if archived %}{% url 'scheduling:offering_list' %}{% else %}{% url 'scheduling:offering_archived' %}{% endif %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
+      <span>{% if archived %}Live offerings{% else %}Archived{% if archived_count %} ({{ archived_count }}){% endif %}{% endif %}</span>
+    </a>
+    {% if not archived %}
+    <a href="{% url 'scheduling:autoschedule' %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+      <i data-lucide="wand-2" class="h-4 w-4 text-stone-500"></i><span>Auto-schedule</span>
+    </a>
+    <a href="{% url 'scheduling:offering_create' %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}"
+       data-modal-form="offering-modal" data-modal-refresh="#offering-list-region"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add offering</span>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+  {% include "partials/stat_card.html" with label="In the queue" value=queue_total icon="list-ordered" %}
+  {% include "partials/stat_card.html" with label="Still unplaced" value=pending_count icon="clock" %}
+  {% include "partials/stat_card.html" with label="Term" value=selected_term icon="calendar-range" %}
+</div>
+
+<form method="get" data-list-region-form="#offering-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter offerings">
+  <label for="off-q" class="sr-only">Search subject, section or professor</label>
+  <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
+    <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
+    <input id="off-q" name="q" value="{{ q }}" placeholder="Search subject, section or professor…" autocomplete="off"
+           class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
+  </div>
+  <label for="off-term" class="sr-only">Term</label>
+  <select id="off-term" name="term" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    {% for t in terms %}<option value="{{ t.pk }}" {% if selected_term and selected_term.pk == t.pk %}selected{% endif %}>{{ t.name }}{% if t.is_active %} (active){% endif %}</option>{% endfor %}
+  </select>
+  <label for="off-section" class="sr-only">Section</label>
+  <div class="w-full sm:w-60">
+  <select id="off-section" name="section" data-searchable data-search-placeholder="Search section…"
+          class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Any section</option>
+    {% for s in sections %}<option value="{{ s.pk }}" {% if section == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.option_label }}</option>{% endfor %}
+  </select>
+  </div>
+  <label for="off-state" class="sr-only">Scheduling state</label>
+  <select id="off-state" name="state" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
+    <option value="">Any state</option>
+    <option value="pending" {% if state == "pending" %}selected{% endif %}>Not fully placed</option>
+    <option value="scheduled" {% if state == "scheduled" %}selected{% endif %}>Fully placed</option>
+  </select>
+  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
+  {% if q or section or state %}
+  <a href="{{ request.path }}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
+  {% endif %}
+</form>
+
+<div id="offering-list-region" data-list-region
+     data-bulk-url="{% url 'scheduling:offering_bulk' %}"
+     data-bulk-noun="offering" data-bulk-noun-plural="offerings">
+  {% include "partials/bulk_bar.html" %}
+  <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+    <table class="min-w-full text-[13px]">
+      <caption class="sr-only">Subject offerings in first-come-first-served order</caption>
+      <thead>
+        <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">
+          <th scope="col" class="p-3.5 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every offering on this page">
+          </th>
+          <th scope="col" class="p-3.5 font-semibold" title="Position in the first-come-first-served queue">#</th>
+          <th scope="col" class="p-3.5 font-semibold">Subject</th>
+          <th scope="col" class="p-3.5 font-semibold">Section</th>
+          <th scope="col" class="p-3.5 font-semibold">Professor</th>
+          <th scope="col" class="p-3.5 font-semibold">Weekly load</th>
+          <th scope="col" class="p-3.5 font-semibold">Room preference</th>
+          <th scope="col" class="p-3.5 font-semibold">Requested</th>
+          <th scope="col" class="p-3.5 font-semibold">Placed</th>
+          <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-stone-100">
+        {% for o in offerings %}
+        <tr class="transition-colors hover:bg-stone-50/60">
+          <td class="p-3.5">
+            <input type="checkbox" data-bulk-item value="{{ o.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if o.is_active %}active{% else %}archived{% endif %}"
+                   data-bulk-label="{{ o }}"
+                   aria-label="Select {{ o }}">
+          </td>
+          <td class="p-3.5">
+            <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700">{{ o.queue_position|default:"—" }}</span>
+            {% if o.priority != 3 %}<span class="ml-1 text-[11px] font-semibold text-amber-700" title="Priority {{ o.priority }} — 5 is highest">P{{ o.priority }}</span>{% endif %}
+          </td>
+          <td class="p-3.5">
+            <div class="font-mono font-semibold text-stone-900">{{ o.subject.code }}</div>
+            <div class="text-[12px] text-stone-500">{{ o.subject.title }}</div>
+          </td>
+          <td class="whitespace-nowrap p-3.5">
+            <span class="font-mono font-semibold text-stone-800">{{ o.section.code }}</span>
+            {% if o.shared_groups %}
+            <span class="ml-1 inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-semibold text-violet-800" title="Shared class: every group of {{ o.section.code }} attends it together">
+              <i data-lucide="users-round" class="h-3 w-3" aria-hidden="true"></i>{{ o.shared_groups }} together
+            </span>
+            {% endif %}
+          </td>
+          <td class="p-3.5 text-stone-700">{% if o.instructor %}{{ o.instructor.full_name }}{% else %}<span class="text-amber-700">Unassigned</span>{% endif %}</td>
+          <td class="whitespace-nowrap p-3.5 text-stone-600">{% if o.is_lecture_lab %}1 lecture · {{ o.minutes_per_meeting }} min + 1 lab · {{ o.lab_minutes }} min{% else %}{{ o.meetings_per_week }} × {{ o.minutes_per_meeting }} min{% endif %}</td>
+          <td class="whitespace-nowrap p-3.5 text-stone-600">
+            {% if o.preferred_room %}{{ o.preferred_room }}{% elif o.room_type %}Any {{ o.get_room_type_display|default:o.room_type|lower }}{% else %}<span class="text-stone-400">Any free room</span>{% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-[12px] text-stone-500">{{ o.requested_at|date:"M d, H:i" }}</td>
+          <td class="whitespace-nowrap p-3.5">
+            {% if o.is_fully_scheduled %}
+              <span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                <i data-lucide="check" class="h-3 w-3"></i>{{ o.scheduled_count }} / {{ o.meetings_per_week }}
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                <i data-lucide="clock" class="h-3 w-3"></i>{{ o.scheduled_count }} / {{ o.meetings_per_week }}
+              </span>
+            {% endif %}
+          </td>
+          <td class="whitespace-nowrap p-3.5 text-right">
+            <div class="inline-flex items-center justify-end gap-3">
+              <a href="{% url 'scheduling:offering_update' o.pk %}" data-modal-form="offering-modal" data-modal-refresh="#offering-list-region"
+                 class="inline-flex items-center gap-1 font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">
+                <i data-lucide="edit-3" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Edit</span><span class="sr-only">{{ o }}</span>
+              </a>
+              {% if o.scheduled_count and o.is_active %}
+              <form method="post" action="{% url 'scheduling:offering_unschedule' o.pk %}" class="inline"
+                    data-confirm="The {{ o.scheduled_count }} placed meeting{{ o.scheduled_count|pluralize }} of {{ o }} come off the timetable and the offering goes back in the queue. The slot is freed for someone else."
+                    data-confirm-title="Unschedule offering" data-confirm-label="Unschedule" data-confirm-subject="{{ o }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Unscheduling…" class="inline-flex items-center gap-1 font-medium text-stone-500 hover:text-amber-700 hover:underline">
+                  <i data-lucide="calendar-minus" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Unschedule</span>
+                </button>
+              </form>
+              {% endif %}
+              <form method="post" action="{% url 'scheduling:offering_archive' o.pk %}" class="inline"
+                    {% if o.is_active %}data-confirm="{{ o }} leaves the queue and anything it has placed comes off the timetable."
+                    data-confirm-title="Archive offering" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ o }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if o.is_active %}Archiving…{% else %}Restoring…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium {% if o.is_active %}text-stone-500 hover:text-red-700{% else %}text-emerald-700 hover:text-emerald-900{% endif %} hover:underline">
+                  <i data-lucide="{% if o.is_active %}archive{% else %}archive-restore{% endif %}" class="h-3.5 w-3.5" aria-hidden="true"></i><span>{% if o.is_active %}Archive{% else %}Restore{% endif %}</span>
+                </button>
+              </form>
+              {% if not o.is_active %}
+              {# The one hard delete in the UI — see accounts/retention.py. #}
+              <form method="post" action="{% url 'scheduling:offering_delete' o.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ o }} is removed from the database. Restore it instead if you only want it back in the queue."
+                    data-confirm-title="Delete offering forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ o }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="h-3.5 w-3.5" aria-hidden="true"></i><span>Delete</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        {% if archived %}{% include "partials/empty_state.html" with colspan=10 icon="archive" title="Nothing archived" message="Archived offerings show up here." %}
+        {% else %}{% include "partials/empty_state.html" with colspan=10 icon="list-ordered" title="Nothing queued" message="Add an offering for each subject a professor teaches a section this term, then run the auto-scheduler." action_url=create_url action_modal_form="offering-modal" action_modal_refresh="#offering-list-region" action_label="Add offering" action_icon="plus" %}{% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "partials/pagination.html" with item_label="offerings" %}
+  </div>
+</div>
+
+{% include "partials/ajax_modal_shell.html" with modal_id="offering-modal" modal_size="lg" modal_label="Subject offering form" skeleton_fields=8 skeleton_cols="2" %}
+{% endblock %}
+
+{% block extra_js %}<script src="{% static 'js/offering-form.js' %}"></script>{% endblock %}

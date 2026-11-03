@@ -1,0 +1,49 @@
+{% comment %}
+partials/bulk_bar.html — the Archive / Restore toolbar for a multi-select list.
+
+Include it as the FIRST child of a list region that carries the bulk contract
+(see static/js/bulk-actions.js):
+
+  <div id="room-list-region" data-list-region
+       data-bulk-url="{% url 'facilities:room_bulk' %}"
+       data-bulk-noun="room" data-bulk-noun-plural="rooms">
+    {% include "partials/bulk_bar.html" %}
+
+bulk-actions.js shows it as soon as something is checked, writes the count and
+hides whichever action the selection cannot use: Archive for live rows
+(is_active=False, status=INACTIVE for keys), Restore for archived ones, and
+Delete forever only when every selected row is already archived.
+
+Delete forever is the one hard delete in the UI (accounts/retention.py). It
+cascades past the PROTECTed foreign keys — the row's keys, their borrow
+history, its schedule blocks — so it is deliberately unreachable from a live
+list: a row must be archived first, which gives Restore as the way back.
+{% endcomment %}
+<div data-bulk-bar
+     class="hidden mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#1E6B4A]/25 bg-[#1E6B4A]/[0.06] px-4 py-2.5"
+     role="region" aria-label="Bulk actions">
+  <span data-bulk-count class="text-[13px] font-semibold text-[#0F2E1F]"
+        role="status" aria-live="polite"></span>
+
+  <span class="flex-1"></span>
+
+  <button type="button" data-bulk-action="archive"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-red-800 disabled:opacity-60">
+    <i data-lucide="archive" aria-hidden="true" class="w-4 h-4"></i><span>Archive</span>
+  </button>
+
+  <button type="button" data-bulk-action="restore"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F] disabled:opacity-60">
+    <i data-lucide="archive-restore" aria-hidden="true" class="w-4 h-4"></i><span>Restore</span>
+  </button>
+
+  <button type="button" data-bulk-action="delete"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-red-700 bg-white px-3.5 py-1.5 text-[13px] font-semibold text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-60">
+    <i data-lucide="trash-2" aria-hidden="true" class="w-4 h-4"></i><span>Delete forever</span>
+  </button>
+
+  <button type="button" data-bulk-clear
+          class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[13px] font-medium text-stone-600 hover:bg-stone-50">
+    <i data-lucide="x" aria-hidden="true" class="w-3.5 h-3.5"></i><span>Clear</span>
+  </button>
+</div>

@@ -77,6 +77,9 @@ class BorrowTransaction(models.Model):
     return_confirmed = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
     remarks = models.TextField(blank=True)
+    # True when the room was scheduled to someone else (or the semester had no
+    # timetable and the guard had to say why) at the moment the key went out.
+    off_schedule = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

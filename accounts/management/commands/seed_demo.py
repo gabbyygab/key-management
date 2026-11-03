@@ -18,7 +18,9 @@ from django.utils import timezone
 from accounts.models import Borrower, Department, User
 from facilities.models import Building, GuardPost, Room
 from keys.models import Key, KeyCategory
-from scheduling.models import ScheduleBlock, ScheduleException, Subject, Term
+from scheduling.curriculum import add_subjects
+from scheduling.models import (CurriculumSubject, ScheduleBlock, ScheduleException,
+                               Section, Subject, SubjectOffering, Term)
 from scheduling.services import find_conflicts
 from transactions.models import BorrowTransaction, GuardShift
 from transactions.services import generate_transaction_no, mark_overdue
@@ -33,6 +35,10 @@ USERS = [
 
 DEPARTMENTS = [("CCS", "College of Computer Studies"), ("COE", "College of Engineering"),
                ("CAS", "College of Arts and Sciences"), ("ADM", "Administration")]
+
+# Each building's rooms are designated to this department, which is what the
+# auto-scheduler's department rule keys on.
+BUILDING_DEPARTMENT = {"CCS": "CCS", "ENG": "COE", "SCI": "CAS"}
 
 BUILDINGS = [
     ("CCS", "Computer Studies Building", [
@@ -91,6 +97,49 @@ SUBJECTS = [("IT401", "Capstone Project 1", "CCS"), ("CS101", "Introduction to C
 SLOTS = [(time(7, 30), time(9, 0)), (time(9, 0), time(10, 30)),
          (time(10, 30), time(12, 0)), (time(13, 0), time(14, 30))]
 
+# (program, year, block, groups, department, students). A block with groups
+# splits: BSIT-4D also gets BSIT-4DG1 and BSIT-4DG2, which may be taught at the
+# same time in different rooms. A block with no groups stays whole.
+SECTIONS = [
+    ("BSIT", 4, "D", ["G1", "G2"], "CCS", 44),
+    ("BSIT", 3, "A", [], "CCS", 38),
+    ("BSCE", 2, "B", ["G1", "G2"], "COE", 40),
+    ("BSBIO", 1, "C", [], "CAS", 30),
+]
+
+# Subjects that only the curriculum uses (kept out of SUBJECTS so the demo
+# timetable above keeps cycling through the same subjects it always did).
+CURRICULUM_SUBJECTS = [("IT402", "Capstone Project 2", "CCS"),
+                       ("IT403", "Systems Administration and Maintenance", "CCS"),
+                       ("MST1", "Science, Technology and Society", "CAS")]
+
+# (program, year level, semester, subject codes): what each year takes per
+# semester. The offering form narrows its subject list to the slot of the
+# picked section and the term's semester.
+CURRICULUM = [
+    ("BSIT", 4, Term.Semester.FIRST, ["IT401", "IT403", "CS221", "MST1"]),
+    ("BSIT", 4, Term.Semester.SECOND, ["IT402"]),
+    ("BSIT", 3, Term.Semester.FIRST, ["CS101", "CS221"]),
+    ("BSCE", 2, Term.Semester.FIRST, ["EE201", "ME110"]),
+    ("BSBIO", 1, Term.Semester.FIRST, ["CHEM1", "BIO1", "MST1"]),
+]
+
+# The first-come-first-served queue, in request order:
+# (subject code, section code, meetings per week, minutes, room type).
+# Block-wide rows (BSIT-4D) are lectures the whole block attends; group rows
+# (BSIT-4DG1) are the split laboratory sessions.
+OFFERINGS = [
+    ("IT401", "BSIT-4D", 2, 90, ""),
+    ("CS221", "BSIT-4DG1", 1, 180, Room.RoomType.LABORATORY),
+    ("CS221", "BSIT-4DG2", 1, 180, Room.RoomType.LABORATORY),
+    ("CS101", "BSIT-3A", 3, 60, ""),
+    ("EE201", "BSCE-2B", 2, 90, ""),
+    ("ME110", "BSCE-2BG1", 1, 180, Room.RoomType.LABORATORY),
+    ("ME110", "BSCE-2BG2", 1, 180, Room.RoomType.LABORATORY),
+    ("CHEM1", "BSBIO-1C", 2, 90, ""),
+    ("BIO1", "BSBIO-1C", 2, 90, "LECTURE_LAB"),  # 1 lecture + 1 lab
+]
+
 
 class Command(BaseCommand):
     help = "Seed the database with realistic demo data (idempotent)."
@@ -113,6 +162,8 @@ class Command(BaseCommand):
             keys = self.seed_keys(rooms, users["admin"])
             borrowers = self.seed_borrowers(depts)
             term = self.seed_schedule(rooms, borrowers, depts, users["admin"])
+            self.seed_sections_and_offerings(term, borrowers, depts, users["admin"])
+            self.seed_curriculum(depts, users["admin"])
             self.seed_history(keys, borrowers, users)
 
         self.stdout.write(self.style.SUCCESS("\nDemo data ready. Accounts:"))
@@ -127,7 +178,9 @@ class Command(BaseCommand):
         from audit.models import ActivityLog
         with transaction.atomic():
             for model in (ActivityLog, BorrowTransaction, GuardShift, ScheduleException,
-                          ScheduleBlock, Subject, Term, Key, KeyCategory):
+                          ScheduleBlock, SubjectOffering, CurriculumSubject, Section,
+                          Subject, Term,
+                          Key, KeyCategory):
                 model.objects.all().delete()
             User.objects.update(assigned_post=None)
             Room.objects.all().delete()
@@ -140,24 +193,16 @@ class Command(BaseCommand):
 
     def seed_users(self):
         out = {}
-        now = timezone.now()
         for username, password, role, first, last, superuser in USERS:
             user = User.objects.filter(username=username).first()
             if user is None:
                 user = User(username=username, email=f"{username}@keytrack.local",
                             first_name=first, last_name=last, role=role,
-                            approval_status=User.Approval.APPROVED, approved_at=now,
                             is_staff=superuser, is_superuser=superuser,
                             employee_id=f"EMP-{username.upper()}")
                 user.set_password(password)
                 user.save()
             out[username] = user
-        # One pending registration so the approvals badge has something to show.
-        User.objects.get_or_create(
-            username="applicant", defaults={
-                "email": "applicant@keytrack.local", "first_name": "Pending",
-                "last_name": "Applicant", "role": User.Role.GUARD,
-                "approval_status": User.Approval.PENDING})
         return out
 
     def seed_departments(self):
@@ -168,10 +213,28 @@ class Command(BaseCommand):
         rooms = []
         for code, name, room_rows in BUILDINGS:
             building, _ = Building.objects.get_or_create(code=code, defaults={"name": name})
+            # Re-seeding has to un-archive what a demo archived, or nothing is
+            # schedulable or borrowable afterwards: every room query filters on
+            # building__is_active (scheduling.services.find_free_rooms,
+            # planner.candidate_rooms), so one archived building hides its whole
+            # floor plan. The term is reactivated the same way below.
+            if not building.is_active:
+                building.is_active = True
+                building.archived_at = None
+                building.save(update_fields=["is_active", "archived_at"])
             for rcode, rname, rtype, floor, cap in room_rows:
                 room, _ = Room.objects.get_or_create(
                     building=building, room_code=rcode,
                     defaults={"name": rname, "room_type": rtype, "floor": floor, "capacity": cap})
+                dept_code = BUILDING_DEPARTMENT.get(code)
+                if dept_code and room.department_id is None:
+                    room.department = Department.objects.filter(code=dept_code).first()
+                    room.save(update_fields=["department"])
+                if not room.is_active or room.status == Room.Status.INACTIVE:
+                    room.is_active = True
+                    room.archived_at = None
+                    room.status = Room.Status.AVAILABLE
+                    room.save(update_fields=["is_active", "archived_at", "status"])
                 rooms.append(room)
         GuardPost.objects.get_or_create(name="Main Gate")
         GuardPost.objects.get_or_create(name="CCS Lobby", defaults={
@@ -225,8 +288,9 @@ class Command(BaseCommand):
     def seed_schedule(self, rooms, borrowers, depts, admin):
         today = timezone.localdate()
         term, _ = Term.objects.get_or_create(
-            name="Demo Term", defaults={"start_date": today - timedelta(days=30),
-                                        "end_date": today + timedelta(days=120)})
+            academic_year="2025-2026", semester=Term.Semester.FIRST,
+            defaults={"start_date": today - timedelta(days=30),
+                      "end_date": today + timedelta(days=120)})
         if not term.is_active:
             term.is_active = True
             term.save(update_fields=["is_active"])
@@ -257,6 +321,67 @@ class Command(BaseCommand):
                 created_by=admin))
         ScheduleBlock.objects.bulk_create(blocks)
         return term
+
+    def seed_sections_and_offerings(self, term, borrowers, depts, admin):
+        """Sections (whole blocks plus split groups) and a FCFS offering queue.
+
+        The queue is left *unscheduled* on purpose: the point of the demo is to
+        open Auto-schedule, preview the run and watch first-come-first-served
+        fill the week. ``requested_at`` is staggered a minute apart so the queue
+        order is visible and stable rather than whatever order the rows got
+        their primary keys in.
+        """
+        if SubjectOffering.objects.filter(term=term).exists():
+            return
+
+        sections = {}
+        for program, year, block, groups, dept, size in SECTIONS:
+            whole = Section.objects.get_or_create(
+                program=program, year_level=year, block=block, group="",
+                defaults={"department": depts[dept], "student_count": size})[0]
+            sections[whole.code] = whole
+            for g in groups:
+                part = Section.objects.get_or_create(
+                    program=program, year_level=year, block=block, group=g,
+                    defaults={"department": depts[dept],
+                              "student_count": (size + 1) // 2})[0]
+                sections[part.code] = part
+
+        subjects = {s.code: s for s in Subject.objects.all()}
+        faculty = [b for b in borrowers if b.borrower_type == Borrower.BorrowerType.FACULTY]
+        if not faculty:
+            return
+        stamp = timezone.now() - timedelta(hours=2)
+        for i, (subject_code, section_code, meetings, minutes, room_type) in enumerate(OFFERINGS):
+            subject, section = subjects.get(subject_code), sections.get(section_code)
+            if subject is None or section is None:
+                continue
+            SubjectOffering.objects.get_or_create(
+                term=term, subject=subject, section=section,
+                defaults={
+                    "instructor": faculty[i % len(faculty)],
+                    "meetings_per_week": meetings,
+                    "minutes_per_meeting": minutes,
+                    "room_type": "" if room_type == "LECTURE_LAB" else room_type,
+                    "meeting_format": ("LECTURE_LAB" if room_type == "LECTURE_LAB"
+                                       else "STANDARD"),
+                    "requested_at": stamp + timedelta(minutes=i),
+                    "created_by": admin,
+                })
+
+    def seed_curriculum(self, depts, admin):
+        """A small curriculum per program. Idempotent: add_subjects skips what
+        is already in a slot, and a slot the admin emptied is left alone."""
+        for code, title, dept in CURRICULUM_SUBJECTS:
+            Subject.objects.get_or_create(
+                code=code, defaults={"title": title, "department": depts[dept]})
+        if CurriculumSubject.objects.exists():
+            return
+        subjects = {s.code: s for s in Subject.objects.all()}
+        for program, year, semester, codes in CURRICULUM:
+            add_subjects(program=program, year_level=year, semester=semester,
+                         subjects=[subjects[c] for c in codes if c in subjects],
+                         user=admin)
 
     def seed_history(self, keys, borrowers, users):
         if BorrowTransaction.objects.exists():

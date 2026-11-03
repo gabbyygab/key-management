@@ -107,14 +107,12 @@ class CategoryViewTests(TestCase):
             email="admin@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.guard = User.objects.create_user(
             username="guard_user",
             email="guard@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.building = Building.objects.create(code="BLDG1", name="Building 1")
         self.room = Room.objects.create(building=self.building, room_code="101")
@@ -141,25 +139,30 @@ class CategoryViewTests(TestCase):
         self.assertContains(response, "category-modal")
         self.assertContains(response, "category-deactivate-modal")
 
-    def test_category_list_filter_by_status_and_search(self):
+    def test_category_list_splits_live_from_archived(self):
+        """The live list never shows an archived category: it has its own page."""
         inactive_cat = KeyCategory.objects.create(
             name="Archived", description="Old tags", is_active=False
         )
 
-        # Search
+        # Live list: active only, even when the search matches the archived one.
         res = self.client.get(reverse("keys:category_list") + "?q=Archived")
-        self.assertIn(inactive_cat, res.context["categories"])
-        self.assertNotIn(self.category, res.context["categories"])
+        self.assertNotIn(inactive_cat, res.context["categories"])
+        self.assertFalse(res.context["archived"])
 
-        # Filter active
-        res_active = self.client.get(reverse("keys:category_list") + "?status=active")
-        self.assertIn(self.category, res_active.context["categories"])
-        self.assertNotIn(inactive_cat, res_active.context["categories"])
+        res_live = self.client.get(reverse("keys:category_list"))
+        self.assertIn(self.category, res_live.context["categories"])
+        self.assertNotIn(inactive_cat, res_live.context["categories"])
 
-        # Filter inactive
-        res_inactive = self.client.get(reverse("keys:category_list") + "?status=inactive")
-        self.assertIn(inactive_cat, res_inactive.context["categories"])
-        self.assertNotIn(self.category, res_inactive.context["categories"])
+        # Archived page: archived only, and the search still applies.
+        res_arch = self.client.get(reverse("keys:category_archived"))
+        self.assertIn(inactive_cat, res_arch.context["categories"])
+        self.assertNotIn(self.category, res_arch.context["categories"])
+        self.assertTrue(res_arch.context["archived"])
+        self.assertEqual(res_arch.context["archived_count"], 1)
+
+        res_arch_q = self.client.get(reverse("keys:category_archived") + "?q=nope")
+        self.assertNotIn(inactive_cat, res_arch_q.context["categories"])
 
     def test_category_create_full_page_and_modal_get(self):
         # Full-page GET
@@ -365,6 +368,19 @@ class KeyFormTests(TestCase):
         self.assertEqual(key.copy_number, 1)
         self.assertTrue(key.is_original)
 
+    def test_key_form_auto_generates_key_code_and_category(self):
+        form = KeyForm(
+            data={
+                "room": self.room.pk,
+                "status": Key.Status.AVAILABLE,
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        key = form.save()
+        self.assertEqual(key.key_code, "CCS-204-1")
+        self.assertEqual(key.copy_number, 1)
+        self.assertIsNotNone(key.category)
+
     def test_duplicate_copy_number_per_room_and_category_explains_constraint(self):
         Key.objects.create(
             key_code="CCS-204-1",
@@ -509,14 +525,12 @@ class KeyViewsTests(TestCase):
             email="admin@example.com",
             password="secret123",
             role=User.Role.ADMIN,
-            approval_status=User.Approval.APPROVED,
         )
         self.guard = User.objects.create_user(
             username="guard_user",
             email="guard@example.com",
             password="secret123",
             role=User.Role.GUARD,
-            approval_status=User.Approval.APPROVED,
         )
         self.b1 = Building.objects.create(code="CCS", name="Computer Studies")
         self.b2 = Building.objects.create(code="ENG", name="Engineering")
@@ -680,3 +694,102 @@ class KeyViewsTests(TestCase):
         self.assertEqual(post_res.status_code, 201)
         self.assertTrue(Key.objects.filter(key_code="CCS-101-3").exists())
         self.assertTrue(Key.objects.filter(key_code="CCS-101-4").exists())
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class KeyArchiveAndBulkTests(TestCase):
+    """Archiving a key is status=INACTIVE: transactions PROTECT the key row, so
+    it is never hard-deleted."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="admin-arch", email="arch@example.com", password="pw-Strong-12345",
+            role=User.Role.ADMIN)
+        self.client.force_login(self.admin)
+        self.building = Building.objects.create(code="CCS", name="Computing")
+        self.room = Room.objects.create(building=self.building, room_code="101")
+        self.category = KeyCategory.objects.create(name="Room")
+        self.k1 = Key.objects.create(key_code="K-1", room=self.room, category=self.category)
+        self.k2 = Key.objects.create(key_code="K-2", room=self.room, category=self.category,
+                                     copy_number=2)
+
+    def ajax(self, url, data):
+        return self.client.post(url, data, headers={"x-requested-with": "XMLHttpRequest"})
+
+    def test_single_key_archive_and_restore(self):
+        self.client.post(reverse("keys:key_archive", args=[self.k1.pk]))
+        self.k1.refresh_from_db()
+        self.assertEqual(self.k1.status, Key.Status.INACTIVE)
+        self.client.post(reverse("keys:key_archive", args=[self.k1.pk]))
+        self.k1.refresh_from_db()
+        self.assertEqual(self.k1.status, Key.Status.AVAILABLE)
+        self.assertEqual(Key.objects.count(), 2)
+
+    def test_key_pages_split_live_from_archived(self):
+        self.client.post(reverse("keys:key_archive", args=[self.k1.pk]))
+
+        res = self.client.get(reverse("keys:key_list"))
+        self.assertNotIn(self.k1, res.context["keys"])
+        self.assertIn(self.k2, res.context["keys"])
+        self.assertEqual(res.context["archived_count"], 1)
+        # The archived state is no longer reachable from the status filter.
+        self.assertNotIn(Key.Status.INACTIVE,
+                         [code for code, _ in res.context["statuses"]])
+
+        res = self.client.get(reverse("keys:key_list"),
+                              {"status": Key.Status.INACTIVE})
+        self.assertNotIn(self.k1, res.context["keys"])
+
+        res = self.client.get(reverse("keys:key_archived"))
+        self.assertIn(self.k1, res.context["keys"])
+        self.assertNotIn(self.k2, res.context["keys"])
+        self.assertTrue(res.context["archived"])
+
+    def test_restore_from_the_archived_page_comes_back_to_it(self):
+        self.client.post(reverse("keys:key_archive", args=[self.k1.pk]))
+        back = reverse("keys:key_archived")
+        res = self.client.post(reverse("keys:key_archive", args=[self.k1.pk]),
+                               {"next": back})
+        self.assertRedirects(res, back)
+        self.k1.refresh_from_db()
+        self.assertEqual(self.k1.status, Key.Status.AVAILABLE)
+
+    def test_archived_pages_are_admin_only(self):
+        guard = User.objects.create_user(username="g-arch", email="garch@example.com",
+                                         password="pw-Strong-12345", role=User.Role.GUARD)
+        self.client.force_login(guard)
+        for name in ("keys:key_archived", "keys:category_archived"):
+            self.assertEqual(self.client.get(reverse(name)).status_code, 403)
+
+    def test_bulk_archive_skips_a_key_that_is_out(self):
+        self.k2.status = Key.Status.BORROWED
+        self.k2.save(update_fields=["status"])
+        res = self.ajax(reverse("keys:key_bulk"),
+                        {"action": "archive", "ids": [self.k1.pk, self.k2.pk]})
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertIn("1 key(s) archived", body["message"])
+        self.assertEqual(len(body["blocked"]), 1)
+        self.k1.refresh_from_db(); self.k2.refresh_from_db()
+        self.assertEqual(self.k1.status, Key.Status.INACTIVE)
+        self.assertEqual(self.k2.status, Key.Status.BORROWED)
+
+    def test_bulk_archive_categories(self):
+        other = KeyCategory.objects.create(name="Cabinet")
+        res = self.ajax(reverse("keys:category_bulk"),
+                        {"action": "archive", "ids": [self.category.pk, other.pk]})
+        self.assertEqual(res.status_code, 200)
+        self.category.refresh_from_db(); other.refresh_from_db()
+        self.assertFalse(self.category.is_active)   # has keys, but none are out
+        self.assertFalse(other.is_active)
+        self.assertEqual(KeyCategory.objects.count(), 2)
+
+    def test_bulk_endpoints_reject_a_guard(self):
+        guard = User.objects.create_user(username="guard-arch", email="ga@example.com",
+                                         password="pw-Strong-12345", role=User.Role.GUARD)
+        self.client.force_login(guard)
+        for name in ("keys:key_bulk", "keys:category_bulk"):
+            res = self.client.post(reverse(name), {"action": "archive", "ids": [self.k1.pk]})
+            self.assertEqual(res.status_code, 403)
+        res = self.client.post(reverse("keys:key_archive", args=[self.k1.pk]))
+        self.assertEqual(res.status_code, 403)

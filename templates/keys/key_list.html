@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Key Inventory — KEYTRACK{% endblock %}
+{% block title %}{% if archived %}Archived keys{% else %}Key Inventory{% endif %} — KEYTRACK{% endblock %}
 
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Key Inventory</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Add, edit and track every physical key and duplicate copies.</p>
+    <h1 class="text-[22px] font-extrabold tracking-tight">{% if archived %}Archived keys{% else %}Key Inventory{% endif %}</h1>
+    <p class="text-[13px] text-stone-500 mt-0.5">{% if archived %}These keys are not offered at the POS or in the pickers. Restore one to bring it back{% if retention_days %} — after {{ retention_days }} days an archived key is deleted for good, with its borrow history{% endif %}.{% else %}Add, edit and track every physical key and duplicate copies.{% endif %}</p>
   </div>
   <div class="flex items-center gap-2 flex-wrap">
+    {% include "partials/archive_switch.html" %}
+    {% if not archived %}
     <a href="{% url 'keys:category_list' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50">
       Categories
     </a>
@@ -18,6 +20,7 @@
     <a href="{% url 'keys:key_create' %}" data-modal-form="key-modal" data-modal-refresh="#key-list-region" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm">
       <i data-lucide="plus" class="w-4 h-4"></i> Add key
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -47,6 +50,7 @@
     {% endfor %}
   </select>
 
+  {% if not archived %}
   <!-- Status filter -->
   <label for="key-status" class="sr-only">Filter by key status</label>
   <select id="key-status" name="status" class="rounded-lg border border-stone-300 bg-white text-[13px] px-2.5 py-2 text-stone-700 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
@@ -56,24 +60,33 @@
     {% endfor %}
   </select>
 
+  {% endif %}
+
   <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">
     Filter
   </button>
 
   {% if q or status or building_id or category_id %}
-    <a href="{% url 'keys:key_list' %}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0">
+    <a href="{{ request.path }}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0">
       Reset
     </a>
   {% endif %}
 </form>
 
 <!-- Table Region (Refreshed by modal-form.js on AJAX save) -->
-<div id="key-list-region">
+<div id="key-list-region" data-list-region
+     data-bulk-url="{% url 'keys:key_bulk' %}"
+     data-bulk-noun="key" data-bulk-noun-plural="keys">
+  {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
     <table class="min-w-full text-[13px]">
       <caption class="sr-only">Key inventory records</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/50">
+          <th scope="col" class="p-3 w-10">
+            <input type="checkbox" data-bulk-all class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   aria-label="Select every key on this page">
+          </th>
           <th scope="col" class="p-3 font-semibold">Key Code</th>
           <th scope="col" class="p-3 font-semibold">Room &amp; Building</th>
           <th scope="col" class="p-3 font-semibold">Category</th>
@@ -85,6 +98,12 @@
       <tbody class="divide-y divide-stone-100">
         {% for k in keys %}
         <tr class="hover:bg-stone-50/60 transition-colors">
+          <td class="p-3">
+            <input type="checkbox" data-bulk-item value="{{ k.pk }}" class="h-4 w-4 shrink-0 rounded border-stone-300 accent-[#1E6B4A] focus:ring-2 focus:ring-[#1E6B4A]"
+                   data-bulk-state="{% if k.status == 'INACTIVE' %}archived{% else %}active{% endif %}"
+                   data-bulk-label="{{ k.key_code }}"
+                   aria-label="Select key {{ k.key_code }}">
+          </td>
           <td class="p-3 font-mono font-bold text-stone-900">
             {{ k.key_code }}
             {% if k.description %}
@@ -112,34 +131,62 @@
             </div>
           </td>
           <td class="p-3">
-            {% include "partials/status_pill.html" with status=k.status %}
+            {% if k.status == "INACTIVE" %}{% include "partials/status_pill.html" with status=k.status label="Archived" %}{% else %}{% include "partials/status_pill.html" with status=k.status %}{% endif %}
           </td>
           <td class="p-3 text-right">
             <div class="inline-flex items-center justify-end gap-3">
+              {% if k.status != 'INACTIVE' %}
               <a href="{% url 'keys:key_bulk_create' %}?room={{ k.room.pk }}&category={{ k.category.pk }}" data-modal-form="key-bulk-modal" data-modal-refresh="#key-list-region" class="text-stone-500 hover:text-stone-800 font-medium inline-flex items-center gap-1 text-[12px]" title="Add more copies of this key">
                 <i data-lucide="copy" class="w-3.5 h-3.5" aria-hidden="true"></i> Copies
               </a>
+              {% endif %}
               <a href="{% url 'keys:key_update' k.pk %}" data-modal-form="key-modal" data-modal-refresh="#key-list-region" class="font-semibold hover:underline inline-flex items-center gap-1 text-[#1E6B4A]">
                 Edit <i data-lucide="arrow-up-right" class="w-3.5 h-3.5" aria-hidden="true"></i>
               </a>
+              {# Archive, not delete: transactions PROTECT the key row. A key that is out is refused. #}
+              <form method="post" action="{% url 'keys:key_archive' k.pk %}" class="inline"
+                    {% if k.status != 'INACTIVE' %}data-confirm="An archived key stops being offered at the POS and in the pickers. Nothing is deleted — its borrow history stays, and you can restore it at any time." data-confirm-title="Archive key" data-confirm-label="Archive" data-confirm-variant="danger" data-confirm-subject="{{ k.key_code }} · {{ k.room }}"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="{% if k.status == 'INACTIVE' %}Restoring…{% else %}Archiving…{% endif %}"
+                        class="inline-flex items-center gap-1 font-medium text-[12px] {% if k.status == 'INACTIVE' %}text-emerald-700 hover:text-emerald-900{% else %}text-stone-500 hover:text-red-700{% endif %} hover:underline">
+                  <i data-lucide="{% if k.status == 'INACTIVE' %}archive-restore{% else %}archive{% endif %}" class="w-3.5 h-3.5" aria-hidden="true"></i>{% if k.status == 'INACTIVE' %}Restore{% else %}Archive{% endif %}<span class="sr-only"> {{ k.key_code }}</span>
+                </button>
+              </form>
+              {% if k.status == 'INACTIVE' %}
+              {# The one hard delete in the UI (accounts/retention.py). #}
+              <form method="post" action="{% url 'keys:key_delete' k.pk %}" class="inline"
+                    data-confirm="This cannot be undone. {{ k.key_code }} is removed from the database along with every borrow transaction it was part of. Restore it instead if you only want it back at the POS."
+                    data-confirm-title="Delete key forever" data-confirm-label="Delete forever"
+                    data-confirm-variant="danger" data-confirm-subject="{{ k.key_code }} · {{ k.room }}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" data-loading-label="Deleting…"
+                        class="inline-flex items-center gap-1 font-medium text-[12px] text-red-700 hover:text-red-900 hover:underline">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5" aria-hidden="true"></i>Delete<span class="sr-only"> {{ k.key_code }} forever</span>
+                </button>
+              </form>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6" class="p-8 text-center text-stone-500">
+          <td colspan="7" class="p-8 text-center text-stone-500">
             <div class="w-10 h-10 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-stone-400 mb-2">
-              <i data-lucide="key" class="w-5 h-5"></i>
+              <i data-lucide="{% if archived %}archive{% else %}key{% endif %}" class="w-5 h-5"></i>
             </div>
-            <p class="font-semibold text-stone-700">No keys found.</p>
-            <p class="text-[12px] text-stone-400 mt-0.5">Try adjusting your search filters or add a new physical key.</p>
+            <p class="font-semibold text-stone-700">{% if archived %}Nothing archived.{% else %}No keys found.{% endif %}</p>
+            <p class="text-[12px] text-stone-400 mt-0.5">{% if archived %}Archived keys show up here. Nothing matches right now.{% else %}Try adjusting your search filters or add a new physical key.{% endif %}</p>
             <div class="mt-3 flex items-center justify-center gap-2">
+              {% if not archived %}
               <a href="{% url 'keys:key_create' %}" data-modal-form="key-modal" data-modal-refresh="#key-list-region" class="bg-[#14342A] text-white px-3 py-1.5 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1">
                 <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add key
               </a>
               <a href="{% url 'keys:key_bulk_create' %}" data-modal-form="key-bulk-modal" data-modal-refresh="#key-list-region" class="bg-white border border-stone-200 text-stone-700 px-3 py-1.5 rounded-lg text-[12px] font-medium inline-flex items-center gap-1">
                 <i data-lucide="layers" class="w-3.5 h-3.5"></i> Bulk add copies
               </a>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -155,7 +202,7 @@
 <div id="key-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="key-modal-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
   <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl max-w-lg">
-    <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
       <div class="flex min-w-0 items-center gap-3">
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
           <i data-lucide="key" class="w-5 h-5"></i>
@@ -169,7 +216,7 @@
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
-    <div data-modal-body class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden">
       {# Form partial injected here via AJAX GET ?modal=1 #}
     </div>
   </div>
@@ -179,7 +226,7 @@
 <div id="key-bulk-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="key-bulk-modal-title">
   <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
   <div class="relative flex w-full max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl max-w-lg">
-    <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
       <div class="flex min-w-0 items-center gap-3">
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-50 text-emerald-800">
           <i data-lucide="layers" class="w-5 h-5"></i>
@@ -193,7 +240,7 @@
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
-    <div data-modal-body class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div data-modal-body class="flex min-h-0 flex-1 flex-col overflow-hidden">
       {# Form partial injected here via AJAX GET ?modal=1 #}
     </div>
   </div>

@@ -1,5 +1,11 @@
 /* toast.js — transient notifications for AJAX actions (F1.4, F6.8).
  *
+ * Built on Toastify (static/js/.. loaded as the `Toastify` global in
+ * base.html, before this file). Toastify only positions/stacks/animates;
+ * the message box itself is a plain DOM node we build and style with the
+ * app's own design tokens, passed in via Toastify's `node` option, so it
+ * looks identical to the modal and inline UI (guide.md §5).
+ *
  * Django's {% messages %} block (partials/messages.html) still handles
  * non-AJAX page loads; this is the in-page equivalent for fetch() results.
  *
@@ -8,7 +14,7 @@
  *   KeyTrack.networkErrorToast(retryFn, "Search failed.");
  *   KeyTrack.sessionExpiredToast("/accounts/login/?next=...");
  *
- * Requires: csrf.js (window.KeyTrack, refreshIcons).
+ * Requires: csrf.js (window.KeyTrack, refreshIcons), Toastify.
  */
 (function () {
   "use strict";
@@ -18,76 +24,35 @@
   var AUTO_DISMISS_MS = 4000;
   var RETRY_DISMISS_MS = 10000;
 
-  /* Design tokens per §5 — do not invent new ones. */
+  /* Toastify's `stopOnFocus` clears the countdown on mouseover and only
+   * restarts it on mouseleave, so a toast under a resting cursor never goes
+   * away — easy to hit now that toasts are top-centre. Keep the pause (it
+   * lets you finish reading) but cap how long it can hold the toast open. */
+  var HOVER_GRACE_MS = 4000;
+
+  /* react-toastify's shape: one white card for every variant, the meaning
+   * carried by the icon and by the timer line that drains along the bottom.
+   * Only the accent colour changes per variant (source.css .kt-toast). */
   var VARIANTS = {
-    success: {
-      icon: "check-circle",
-      cls: "bg-green-50 border-green-200 text-green-800",
-      iconCls: "text-green-600",
-    },
-    error: {
-      icon: "alert-circle",
-      cls: "bg-red-50 border-red-200 text-red-800",
-      iconCls: "text-red-600",
-    },
-    warning: {
-      icon: "alert-triangle",
-      cls: "bg-amber-50 border-amber-200 text-amber-800",
-      iconCls: "text-amber-600",
-    },
-    info: {
-      icon: "info",
-      cls: "bg-white border-stone-200 text-stone-700",
-      iconCls: "text-stone-500",
-    },
+    success: { icon: "check-circle", iconCls: "text-[#1E6B4A]" },
+    error: { icon: "alert-circle", iconCls: "text-red-600" },
+    warning: { icon: "alert-triangle", iconCls: "text-amber-600" },
+    info: { icon: "info", iconCls: "text-stone-500" },
   };
 
-  var container = null;
-
-  function getContainer() {
-    if (container && document.body.contains(container)) return container;
-    container = document.getElementById("toast-host");
-    if (!container) {
-      container = document.createElement("div");
-      container.id = "toast-host";
-      container.className =
-        "fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[min(24rem,calc(100vw-2rem))]";
-      /* Polite, not assertive: a toast must not interrupt a screen reader
-       * mid-sentence. Errors that block the user belong inline, not here. */
-      container.setAttribute("aria-live", "polite");
-      container.setAttribute("aria-atomic", "false");
-      document.body.appendChild(container);
-    }
-    return container;
-  }
-
-  function dismiss(el) {
-    if (!el || el.dataset.leaving === "1") return;
-    el.dataset.leaving = "1";
-    el.classList.add("opacity-0", "translate-x-2");
-    window.setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 200);
-  }
-
   /* message is inserted as TEXT, never HTML — 422 bodies echo user input. */
-  function toast(message, variant, options) {
-    var opts = options || {};
-    var variantName = Object.prototype.hasOwnProperty.call(VARIANTS, variant)
-      ? variant
-      : "info";
+  function buildNode(message, variantName, opts) {
     var v = VARIANTS[variantName];
 
     var el = document.createElement("div");
     el.className =
-      "flex items-start gap-2.5 rounded-xl border px-4 py-2.5 shadow-sm text-[13px] " +
-      "transition duration-200 ease-out " +
-      v.cls;
+      "kt-toast kt-toast-" + variantName +
+      " flex items-start gap-3 px-5 py-3.5 text-[14px] leading-snug text-stone-700";
     el.setAttribute("role", variantName === "error" ? "alert" : "status");
 
     var icon = document.createElement("i");
     icon.setAttribute("data-lucide", v.icon);
-    icon.className = "w-4 h-4 mt-0.5 shrink-0 " + v.iconCls;
+    icon.className = "w-5 h-5 mt-px shrink-0 " + v.iconCls;
 
     var body = document.createElement("div");
     body.className = "flex-1 min-w-0";
@@ -106,7 +71,7 @@
       retryBtn.setAttribute("aria-label", opts.retryAriaLabel || "Retry failed request");
       retryBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        dismiss(el);
+        dismiss(el._ktToastInstance);
         opts.onRetry();
       });
       body.appendChild(retryBtn);
@@ -127,7 +92,7 @@
       actionEl.textContent = opts.action.label;
       if (opts.action.onClick) {
         actionEl.addEventListener("click", function (e) {
-          dismiss(el);
+          dismiss(el._ktToastInstance);
           opts.action.onClick(e);
         });
       }
@@ -136,58 +101,93 @@
 
     var close = document.createElement("button");
     close.type = "button";
-    close.className = "shrink-0 opacity-50 hover:opacity-100 rounded cursor-pointer";
+    close.className = "shrink-0 mt-px opacity-50 hover:opacity-100 rounded cursor-pointer";
     close.setAttribute("aria-label", "Dismiss notification");
     var closeIcon = document.createElement("i");
     closeIcon.setAttribute("data-lucide", "x");
-    closeIcon.className = "w-3.5 h-3.5 pointer-events-none";
+    closeIcon.className = "w-4 h-4 pointer-events-none";
     close.appendChild(closeIcon);
-    close.addEventListener("click", function () {
-      dismiss(el);
+    close.addEventListener("click", function (e) {
+      e.stopPropagation();
+      dismiss(el._ktToastInstance);
     });
 
     el.appendChild(icon);
     el.appendChild(body);
     el.appendChild(close);
-    getContainer().appendChild(el);
 
-    /* Freshly injected <i data-lucide> elements are inert until this runs. */
-    if (KeyTrack.refreshIcons) KeyTrack.refreshIcons(el);
+    /* The timer line. Purely CSS (transform: scaleX, so it composites) and
+     * paused on hover, which is exactly when Toastify's `stopOnFocus` pauses
+     * the countdown — the line and the real timer stay in step. A toast that
+     * never expires on its own (the session-expired one) gets no line. */
+    if (opts.duration !== 0 && opts.durationMs > 0) {
+      var bar = document.createElement("div");
+      bar.className = "kt-toast-bar";
+      bar.setAttribute("aria-hidden", "true");
+      bar.style.animationDuration = opts.durationMs + "ms";
+      el.appendChild(bar);
+    }
+    return el;
+  }
+
+  /* toast() returns the Toastify instance (has .hideToast()); pass it back
+   * to KeyTrack.dismissToast() to close it programmatically. */
+  function toast(message, variant, options) {
+    var opts = options || {};
+    var variantName = Object.prototype.hasOwnProperty.call(VARIANTS, variant)
+      ? variant
+      : "info";
 
     var defaultDuration = (typeof opts.onRetry === "function") ? RETRY_DISMISS_MS : AUTO_DISMISS_MS;
     var ms = opts.duration === undefined ? defaultDuration : opts.duration;
-    if (ms > 0) {
-      var remaining = ms;
-      var timer = null;
-      var startedAt = 0;
-      function resumeTimer() {
-        if (timer || el.dataset.leaving === "1") return;
-        startedAt = Date.now();
-        timer = window.setTimeout(function () {
-          timer = null;
-          dismiss(el);
-        }, remaining);
-      }
-      function pauseTimer() {
-        if (!timer) return;
-        window.clearTimeout(timer);
-        timer = null;
-        remaining = Math.max(0, remaining - (Date.now() - startedAt));
-      }
 
-      /* Pause while hovered or keyboard-focused so the close button remains usable. */
-      el.addEventListener("mouseenter", function () {
-        pauseTimer();
-      });
-      el.addEventListener("mouseleave", resumeTimer);
-      el.addEventListener("focusin", pauseTimer);
-      el.addEventListener("focusout", function (event) {
-        if (!el.contains(event.relatedTarget)) resumeTimer();
-      });
-      resumeTimer();
+    /* buildNode needs the resolved duration to time the progress line. */
+    opts.durationMs = ms;
+    var node = buildNode(message, variantName, opts);
+
+    var instance = window.Toastify({
+      node: node,
+      duration: ms > 0 ? ms : -1, /* Toastify treats a non-positive duration as persistent */
+      close: false, /* we draw our own close button, styled to match */
+      gravity: "top",
+      /* Top-centre: Toastify's `center` position centres each toast with
+       * `left:0; right:0; margin-inline:auto`, which composes with the
+       * vertical `offset` transform below (that only translates on Y). */
+      position: "center",
+      stopOnFocus: true,
+      /* Polite, not assertive: a toast must not interrupt a screen reader
+       * mid-sentence. Errors that block the user belong inline, not here. */
+      ariaLive: "polite",
+      /* Clears the sticky navbar (static/css/navbar.css .app-header, ~81px).
+       * A transform, so it composes with Toastify's own top-stacking offset
+       * instead of fighting it — see the .toastify comment in source.css. */
+      offset: { x: 0, y: 68 },
+      style: { background: "transparent", boxShadow: "none" },
+    });
+    instance.showToast();
+    node._ktToastInstance = instance;
+
+    /* Hard ceiling on the hover pause above. A persistent toast (ms <= 0,
+     * e.g. the session-expired one) is left alone: it closes on its action. */
+    if (ms > 0) {
+      instance._ktHardCap = window.setTimeout(function () {
+        dismiss(instance);
+      }, ms + HOVER_GRACE_MS);
     }
 
-    return el;
+    /* Freshly injected <i data-lucide> elements are inert until this runs. */
+    if (KeyTrack.refreshIcons) KeyTrack.refreshIcons(node);
+
+    return instance;
+  }
+
+  function dismiss(instance) {
+    if (!instance) return;
+    if (instance._ktHardCap) {
+      window.clearTimeout(instance._ktHardCap);
+      instance._ktHardCap = null;
+    }
+    if (typeof instance.hideToast === "function") instance.hideToast();
   }
 
   /* F6.8: Dedicated network failure toast with clickable retry option */
@@ -218,6 +218,66 @@
       }
     );
   }
+
+  /* Django messages rendered by partials/messages.html after a full page
+   * load (toggle, delete, bulk action, a no-JS form) are shown as toasts
+   * too. Errors and warnings stay up longer: they explain why nothing
+   * changed. */
+  function showFlashMessages() {
+    var list = document.getElementById("flash-messages");
+    if (!list) return;
+    var items = list.querySelectorAll("[data-flash-level]");
+    for (var i = 0; i < items.length; i++) {
+      var tags = (items[i].getAttribute("data-flash-level") || "").split(/\s+/);
+      var level = "info";
+      ["error", "warning", "success", "info"].some(function (name) {
+        if (tags.indexOf(name) !== -1) { level = name; return true; }
+        return false;
+      });
+      toast(items[i].textContent.trim(), level,
+            level === "error" || level === "warning" ? { duration: 8000 } : {});
+    }
+    list.parentNode.removeChild(list);
+  }
+
+  /* A toast fired just before window.location.reload() is wiped by the
+   * reload. reloadWithToast() parks it in sessionStorage and the next page
+   * shows it. */
+  var PENDING_KEY = "keytrack-pending-toast";
+
+  function reloadWithToast(message, variant) {
+    try {
+      window.sessionStorage.setItem(PENDING_KEY, JSON.stringify({ m: message, v: variant || "success" }));
+    } catch (e) {
+      toast(message, variant); /* storage blocked: at least flash it */
+    }
+    window.location.reload();
+  }
+
+  function showPendingToast() {
+    var raw = null;
+    try {
+      raw = window.sessionStorage.getItem(PENDING_KEY);
+      window.sessionStorage.removeItem(PENDING_KEY);
+    } catch (e) { return; }
+    if (!raw) return;
+    try {
+      var p = JSON.parse(raw);
+      if (p && p.m) toast(p.m, p.v);
+    } catch (e) { /* ignore a corrupt entry */ }
+  }
+
+  function onLoad() {
+    showPendingToast();
+    showFlashMessages();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", onLoad);
+  } else {
+    onLoad();
+  }
+
+  KeyTrack.reloadWithToast = reloadWithToast;
 
   KeyTrack.toast = toast;
   KeyTrack.dismissToast = dismiss;
