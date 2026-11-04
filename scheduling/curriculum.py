@@ -206,6 +206,28 @@ def offerable_subjects(*, section, term, keep_subject_id=None):
     return result
 
 
+def section_completion(term, sections=None):
+    """``[(section, complete)]`` for the offering form's Section picker.
+
+    ``complete`` is True when the section's curriculum slot for ``term`` exists
+    and every subject in it is already offered, so there is nothing left to
+    schedule. Sections that still have subjects come first (code order), the
+    completed ones after them.
+    """
+    if sections is None:
+        sections = Section.objects.filter(is_active=True)
+    sections = sorted(sections, key=lambda s: s.code)
+    rows = []
+    for section in sections:
+        done = False
+        if term is not None:
+            offer = offerable_subjects(section=section, term=term)
+            done = offer.restricted and not offer.subjects
+        rows.append((section, done))
+    rows.sort(key=lambda r: r[1])  # stable: pending first, code order kept
+    return rows
+
+
 def subject_allowed(*, section, term, subject):
     """None if ``subject`` belongs to the curriculum of ``section`` in ``term``
     (or that slot has no curriculum), else the reason it does not."""

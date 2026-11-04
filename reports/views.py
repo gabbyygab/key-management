@@ -1,14 +1,15 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import render
+from django.urls import reverse
 
 from accounts.cache_utils import remember
 from accounts.decorators import role_required
 from .services import (
+    VALID_EXPORTS,
     export_report,
-    export_report_to_csv,
-    export_report_to_excel,
-    export_report_to_pdf,
     get_borrower_frequency_report,
     get_guard_activity_report,
     get_key_utilisation_report,
@@ -18,27 +19,33 @@ from .services import (
     parse_date_range,
 )
 
+# (key, label, lucide icon). The first is the landing tab; the rest are the
+# report types, one tab each.
+TABS = [
+    ("overview", "Overview", "layout-dashboard"),
+    ("key_utilisation", "Key Utilisation", "key-round"),
+    ("overdue", "Overdue", "clock-alert"),
+    ("guard_activity", "Guard Activity", "shield-check"),
+    ("room_usage", "Room Usage", "door-open"),
+    ("borrower_frequency", "Borrower Frequency", "users"),
+]
+TAB_KEYS = [t[0] for t in TABS]
+
 
 @role_required("ADMIN")
 def reports_index(request):
     """
-    Main Reports Page for Key Management System.
-    Accessible only to administrators (and superusers).
-    Supports:
-    - Date range filtering (start_date, end_date)
-    - 5 report sections:
-        1. Key Utilisation
-        2. Overdue Report
-        3. Per-Guard Activity
-        4. Per-Room Usage
-        5. Borrower Frequency
-    - High-level summary metric cards
-    - Exporting in Excel (.xlsx), PDF (.pdf), and CSV formats
+    Reports page for administrators.
+
+    One tab per report (``?section=``): Overview, Key Utilisation, Overdue,
+    Guard Activity, Room Usage and Borrower Frequency. Every report honours the
+    ``start_date``/``end_date`` range, and every tab exports as PDF.
     """
     start_date_param = request.GET.get("start_date", "")
     end_date_param = request.GET.get("end_date", "")
-    active_section = request.GET.get("section", "all")
-    export_param = request.GET.get("export", "").strip()
+    active_section = request.GET.get("section", "overview")
+    if active_section not in TAB_KEYS:
+        active_section = "overview"
 
     date_filter = parse_date_range(start_date_param, end_date_param)
 
@@ -47,29 +54,6 @@ def reports_index(request):
 
     start_dt = date_filter["start_dt"]
     end_dt = date_filter["end_dt"]
-
-    # If export requested via query parameter (e.g. ?export=key_utilisation&format=xlsx)
-    if export_param:
-        valid_exports = [
-            "key_utilisation",
-            "overdue",
-            "guard_activity",
-            "room_usage",
-            "borrower_frequency",
-            "all",
-            "summary",
-        ]
-        if export_param in valid_exports:
-            export_format = request.GET.get("format", "csv").lower().strip()
-            return export_report(
-                report_type=export_param,
-                export_format=export_format,
-                start_dt=start_dt,
-                end_dt=end_dt,
-                start_date_str=date_filter["start_date_str"],
-                end_date_str=date_filter["end_date_str"],
-            )
-        return HttpResponseBadRequest(f"Invalid export type: {export_param}")
 
     # Fetch data for all reports (cached; dropped when transactions, keys or
     # rooms change).
@@ -85,73 +69,81 @@ def reports_index(request):
 
     data = remember("reports", ["inventory", "txn", "shift"], build,
                     parts=[date_filter["start_date_str"], date_filter["end_date_str"]])
-    summary = data["summary"]
-    key_utilisation = data["key_utilisation"]
-    overdue_list = data["overdue_list"]
-    guard_activity = data["guard_activity"]
-    room_usage = data["room_usage"]
-    borrower_frequency = data["borrower_frequency"]
+
+    counts = {
+        "key_utilisation": len(data["key_utilisation"]),
+        "overdue": len(data["overdue_list"]),
+        "guard_activity": len(data["guard_activity"]),
+        "room_usage": len(data["room_usage"]),
+        "borrower_frequency": len(data["borrower_frequency"]),
+    }
+
+    start_date = date_filter["start_date_str"] or start_date_param
+    end_date = date_filter["end_date_str"] or end_date_param
+    # Tab links keep the date range, so switching tabs never drops the filter.
+    carry = {k: v for k, v in (("start_date", start_date), ("end_date", end_date)) if v}
+    index_url = reverse("reports:index")
+    tabs = [{
+        "key": key,
+        "label": label,
+        "icon": icon,
+        "count": counts.get(key),
+        "active": key == active_section,
+        "url": f"{index_url}?{urlencode({'section': key, **carry})}",
+    } for key, label, icon in TABS]
 
     context = {
         "title": "Reports",
         "subtitle": "University key utilisation, overdue tracking, guard audit, and borrower analytics.",
-        "start_date": date_filter["start_date_str"] or start_date_param,
-        "end_date": date_filter["end_date_str"] or end_date_param,
+        "start_date": start_date,
+        "end_date": end_date,
         "is_filtered": date_filter["is_filtered"],
         "date_error": date_filter["error"],
         "active_section": active_section,
-        # Metric cards
-        "summary": summary,
-        # Reports
-        "key_utilisation": key_utilisation,
-        "overdue_list": overdue_list,
-        "guard_activity": guard_activity,
-        "room_usage": room_usage,
-        "borrower_frequency": borrower_frequency,
-        # Counts for tabs
-        "key_count": len(key_utilisation),
-        "overdue_count": len(overdue_list),
-        "guard_count": len(guard_activity),
-        "room_count": len(room_usage),
-        "borrower_count": len(borrower_frequency),
+        "tabs": tabs,
+        "summary": data["summary"],
+        "key_utilisation": data["key_utilisation"],
+        "overdue_list": data["overdue_list"],
+        "guard_activity": data["guard_activity"],
+        "room_usage": data["room_usage"],
+        "borrower_frequency": data["borrower_frequency"],
+        "key_count": counts["key_utilisation"],
+        "overdue_count": counts["overdue"],
+        "guard_count": counts["guard_activity"],
+        "room_count": counts["room_usage"],
+        "borrower_count": counts["borrower_frequency"],
+        # PDF for the open tab ("all" on Overview) and for the whole suite.
+        "export_type": "all" if active_section == "overview" else active_section,
+        "export_query": urlencode(carry),
     }
 
     return render(request, "reports/index.html", context)
 
 
 @role_required("ADMIN")
-def report_export(request, report_type, export_format=None):
+def report_export(request, report_type):
     """
-    Dedicated report export endpoint supporting Excel (.xlsx), PDF (.pdf), and CSV.
-    Example usages:
-      /reports/export/key_utilisation/?format=xlsx&start_date=2026-10-01&end_date=2026-10-20
-      /reports/export/key_utilisation/pdf/?start_date=2026-10-01
-      /reports/export/all/?format=xlsx
+    PDF export endpoint, one report or the whole suite:
+      /reports/export/key_utilisation/?start_date=2026-10-01&end_date=2026-10-20
+      /reports/export/all/
+    PDF is the only format; asking for another one is a 400, not a silent swap.
     """
-    valid_exports = [
-        "key_utilisation",
-        "overdue",
-        "guard_activity",
-        "room_usage",
-        "borrower_frequency",
-        "all",
-        "summary",
-    ]
-    if report_type not in valid_exports:
+    if report_type not in VALID_EXPORTS:
         raise Http404(f"Report type '{report_type}' does not exist.")
 
-    format_param = export_format or request.GET.get("format", "csv").lower().strip()
-    start_date_param = request.GET.get("start_date", "")
-    end_date_param = request.GET.get("end_date", "")
+    export_format = request.GET.get("format", "pdf").lower().strip()
+    if export_format != "pdf":
+        return HttpResponseBadRequest("Reports are exported as PDF only.")
 
-    date_filter = parse_date_range(start_date_param, end_date_param)
+    date_filter = parse_date_range(request.GET.get("start_date", ""),
+                                   request.GET.get("end_date", ""))
+    if date_filter["error"]:
+        return HttpResponseBadRequest(date_filter["error"])
 
     return export_report(
-        report_type=report_type,
-        export_format=format_param,
+        report_type,
         start_dt=date_filter["start_dt"],
         end_dt=date_filter["end_dt"],
         start_date_str=date_filter["start_date_str"],
         end_date_str=date_filter["end_date_str"],
     )
-

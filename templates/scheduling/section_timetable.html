@@ -23,11 +23,23 @@
        class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
       <i data-lucide="wand-2" class="h-4 w-4 text-stone-500"></i><span>Auto-schedule</span>
     </a>
-    <a href="{% url 'scheduling:section_export' %}?{{ export_qs }}"
-       class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]"
-       {% if not selected_section or not selected_term %}aria-disabled="true"{% endif %}>
-      <i data-lucide="download" class="h-4 w-4"></i><span>Export CSV</span>
-    </a>
+    {# Export: the image and the PDF are one landscape sheet each #}
+    <div class="inline-flex items-center overflow-hidden rounded-lg border border-[#14342A] shadow-sm" role="group" aria-label="Export timetable"
+         {% if not selected_section or not selected_term %}aria-disabled="true"{% endif %}>
+      <span class="inline-flex items-center gap-1.5 bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white">
+        <i data-lucide="download" class="h-4 w-4"></i>Export
+      </span>
+      <a href="{% url 'scheduling:section_export' %}?{{ export_qs }}&amp;format=png" download
+         class="inline-flex items-center gap-1.5 border-l border-stone-200 bg-white px-3 py-2 text-[13px] font-semibold text-stone-800 hover:bg-stone-50"
+         title="One landscape image of this timetable">
+        <i data-lucide="image" class="h-4 w-4 text-[#1E6B4A]"></i>Image
+      </a>
+      <a href="{% url 'scheduling:section_export' %}?{{ export_qs }}&amp;format=pdf"
+         class="inline-flex items-center gap-1.5 border-l border-stone-200 bg-white px-3 py-2 text-[13px] font-semibold text-stone-800 hover:bg-stone-50"
+         title="One landscape PDF page of this timetable">
+        <i data-lucide="file-text" class="h-4 w-4 text-[#1E6B4A]"></i>PDF
+      </a>
+    </div>
   </div>
 </div>
 
@@ -143,11 +155,11 @@
 </div>
 
 {% if selected_section and selected_term %}
-{# A readable list under the grid: this is what the CSV export contains. #}
+{# A readable list under the grid: the same classes as the grid. #}
 <div class="mt-4 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
   <div class="border-b border-stone-200 bg-stone-50/60 px-4 py-3">
     <h2 class="text-[15px] font-bold text-stone-900">{{ selected_section.code }} · {{ selected_term.name }}</h2>
-    <p class="mt-0.5 text-[12px] text-stone-500">Exactly the rows the CSV export contains.</p>
+    <p class="mt-0.5 text-[12px] text-stone-500">Every class in the grid above, in reading order.</p>
   </div>
   <div class="overflow-x-auto">
     <table data-sticky-actions class="min-w-full text-[13px]">

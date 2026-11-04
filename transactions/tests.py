@@ -587,7 +587,7 @@ class TransactionHistoryUpgradeTests(TestCase):
             borrower_type=Borrower.BorrowerType.FACULTY, department=self.dept)
 
         self.url = reverse("transactions:history")
-        self.export_url = reverse("transactions:export_csv")
+        self.export_url = reverse("transactions:export_pdf")
 
         now = timezone.now()
         self.txn_active = BorrowTransaction.objects.create(
@@ -641,21 +641,22 @@ class TransactionHistoryUpgradeTests(TestCase):
         self.assertEqual(res.status_code, 302)
         self.assertIn(reverse("accounts:login"), res.url)
 
-    def test_guard_can_view_history_without_csv_export(self):
+    def test_guard_can_view_history_without_pdf_export(self):
         self.client.force_login(self.guard1)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
-        self.assertContains(res, "Reports &amp; History")
+        self.assertContains(res, ">Transactions</h1>")
         self.assertContains(res, "TXN-20261023-0001")
-        self.assertNotContains(res, "Export CSV")
+        self.assertNotContains(res, "Export PDF")
 
-    def test_admin_can_view_history_with_csv_export(self):
+    def test_admin_can_view_history_with_pdf_export(self):
         self.client.force_login(self.admin)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
-        self.assertContains(res, "Reports &amp; History")
-        self.assertContains(res, "Export CSV")
-        self.assertContains(res, reverse("transactions:export_csv"))
+        self.assertContains(res, ">Transactions</h1>")
+        self.assertContains(res, "Export PDF")
+        self.assertNotContains(res, "Export CSV")
+        self.assertContains(res, reverse("transactions:export_pdf"))
 
     def test_search_filter(self):
         self.client.force_login(self.guard1)
@@ -799,34 +800,29 @@ class TransactionHistoryUpgradeTests(TestCase):
         self.assertEqual(self.txn_overdue.override_reason,
                          "Dean approved emergency weekend room access")
 
-    def test_csv_export_guard_forbidden(self):
+    def test_pdf_export_guard_forbidden(self):
         self.client.force_login(self.guard1)
         res = self.client.get(self.export_url)
         self.assertEqual(res.status_code, 403)
 
-    def test_csv_export_admin_allowed_and_filters(self):
+    def test_pdf_export_admin_allowed(self):
         self.client.force_login(self.admin)
         res = self.client.get(self.export_url, {"status": "RETURNED"})
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res["Content-Type"], "text/csv; charset=utf-8")
+        self.assertEqual(res["Content-Type"], "application/pdf")
         self.assertIn("attachment; filename=", res["Content-Disposition"])
+        self.assertIn(".pdf", res["Content-Disposition"])
+        self.assertTrue(res.content.startswith(b"%PDF-"))
 
-        content = res.content.decode("utf-8")
-        lines = content.strip().splitlines()
-        # Header + 1 returned txn
-        self.assertEqual(len(lines), 2)
-        header = lines[0]
-        self.assertIn("Transaction No", header)
-        self.assertIn("Status", header)
-        self.assertIn("Released By", header)
-        self.assertIn("Received By", header)
-        self.assertIn("Guard Shift Post", header)
-        self.assertIn("Override Reason", header)
-
-        data_row = lines[1]
-        self.assertIn("TXN-20261023-0002", data_row)
-        self.assertIn("RETURNED", data_row)
-        self.assertIn("CCS-202-1", data_row)
-        self.assertIn("Bob Jones", data_row)
-        self.assertIn("Beta Guard", data_row)
-        self.assertIn("Key returned in good condition", data_row)
+    def test_pdf_rows_follow_the_filters(self):
+        from transactions.views import get_filtered_transactions, transaction_pdf_rows
+        from django.test import RequestFactory
+        req = RequestFactory().get(self.export_url, {"status": "RETURNED"})
+        rows = transaction_pdf_rows(get_filtered_transactions(req))
+        self.assertEqual(len(rows), 1)
+        text = " | ".join(rows[0])
+        self.assertIn("TXN-20261023-0002", text)
+        self.assertIn("Returned", text)
+        self.assertIn("CCS-202-1", text)
+        self.assertIn("Bob Jones", text)
+        self.assertIn("Key returned in good condition", text)

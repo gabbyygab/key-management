@@ -4,7 +4,8 @@ from django.core.exceptions import ValidationError
 
 from accounts.models import Borrower, Department
 from facilities.models import Building, Room
-from .curriculum import MAX_YEAR_LEVEL, normalise_program, offerable_subjects, subject_allowed
+from .curriculum import (MAX_YEAR_LEVEL, normalise_program, offerable_subjects,
+                         section_completion, subject_allowed)
 from .models import (DEFAULT_PRIORITY, PRIORITY_CHOICES, ScheduleBlock, ScheduleException, ScheduleSettings, Section, Subject,
                      SubjectOffering, Term, year_level_label)
 from .services import ScheduleConflictError, find_conflicts, validate_block
@@ -243,6 +244,7 @@ class SubjectOfferingForm(forms.ModelForm):
         self.fields["requested_at"].required = False
         self.fields["requested_at"].help_text = (
             "First-come-first-served stamp. Leave as-is unless you are entering a backlog.")
+        self._order_sections()
         self._narrow_subjects()
         from .planner import sharing_info
         self.sharing = sharing_info(self._picked("section", Section))
@@ -260,6 +262,20 @@ class SubjectOfferingForm(forms.ModelForm):
         if raw and str(raw).isdigit():
             return model.objects.filter(pk=int(raw)).first()
         return None
+
+    def _order_sections(self):
+        """Render the Section options for the picked term: pending first, and
+        sections whose curriculum is fully offered flagged ``data-complete``
+        (greyed by searchable-select.js). Only the rendered options change; the
+        field's queryset still accepts every live section."""
+        field = self.fields["section"]
+        rows = section_completion(self._picked("term", Term))
+        self.section_complete = {s.pk: done for s, done in rows}
+        field.widget.choices = [("", "---------")] + [
+            (s.pk, s.code + (" (all subjects scheduled)" if done else ""))
+            for s, done in rows]
+        field.widget.attrs["data-complete-ids"] = ",".join(
+            str(pk) for pk, done in self.section_complete.items() if done)
 
     def _narrow_subjects(self):
         """Offer only the section's curriculum subjects for the term's semester,

@@ -71,7 +71,6 @@ urlpatterns = [
     # Section timetable, swapping and export
     path("scheduling/section-timetable/", views.section_timetable, name="section_timetable"),
     path("scheduling/section-timetable/export/", views.section_export, name="section_export"),
-    path("scheduling/timetable/export/", views.room_export, name="room_export"),
     path("scheduling/blocks/swap/", views.block_swap, name="block_swap"),
 
     path("api/scheduling/free-rooms/", views.free_rooms_api, name="free_rooms_api"),

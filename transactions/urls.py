@@ -9,7 +9,7 @@ urlpatterns = [
     path("return/<int:pk>/", views.return_confirm, name="return_confirm"),
     path("shifts/", views.shift_history, name="shift_history"),
     path("history/", views.transaction_history, name="history"),
-    path("history/export/", views.export_transactions_csv, name="export_csv"),
+    path("history/export/", views.export_transactions_pdf, name="export_pdf"),
     path("<int:pk>/", views.transaction_detail, name="detail"),
     path("<int:pk>/correct/", views.transaction_correct, name="correct"),
 ]

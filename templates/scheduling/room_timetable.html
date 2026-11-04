@@ -146,12 +146,6 @@
 
     <!-- Room Metadata Pills -->
     <div class="flex items-center gap-2 flex-wrap border-t md:border-t-0 pt-3 md:pt-0 border-stone-100 text-[12px]">
-      {% if selected_room and selected_term %}
-      <a href="{% url 'scheduling:room_export' %}?room={{ selected_room.pk }}&amp;term={{ selected_term.pk }}"
-         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-700 font-medium hover:bg-stone-50">
-        <i data-lucide="download" class="w-3.5 h-3.5" aria-hidden="true"></i>Export CSV
-      </a>
-      {% endif %}
       {% if selected_room %}
       <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-700">
         <i data-lucide="building-2" class="w-3.5 h-3.5 text-stone-500"></i>

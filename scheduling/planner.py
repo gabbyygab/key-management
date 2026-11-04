@@ -30,7 +30,6 @@ Rules live here; views only translate HTTP.
 """
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import dataclass, field
 from datetime import time as dtime
@@ -1161,75 +1160,3 @@ def get_section_timetable(section, term, *, include_groups=True):
         "total_hours": round(total_minutes / 60, 1),
         "days_used": len(lanes_by_day),
     }
-
-
-def export_room_timetable_csv(room, term):
-    """CSV of one room's week, the room-side twin of the section export."""
-    from reports.services import sanitize_csv_cell
-
-    label = f"{room.building.code}-{room.room_code}".replace(" ", "_")
-    term_label = str(term).replace(" ", "_")
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = (
-        f'attachment; filename="timetable_{label}_{term_label}.csv"')
-    writer = csv.writer(response, quoting=csv.QUOTE_MINIMAL)
-    writer.writerow([sanitize_csv_cell(h) for h in ROOM_EXPORT_HEADERS])
-    blocks = (ScheduleBlock.objects
-              .filter(room=room, term=term, is_active=True)
-              .select_related("subject", "instructor", "section")
-              .order_by("day_of_week", "start_time"))
-    for b in blocks:
-        row = [
-            room.room_code, room.building.code, b.get_day_of_week_display(),
-            f"{b.start_time:%H:%M}", f"{b.end_time:%H:%M}",
-            b.subject.code if b.subject_id else "",
-            b.subject.title if b.subject_id else b.title,
-            b.section.code if b.section_id else "",
-            b.instructor.full_name if b.instructor_id else "",
-            str(term),
-        ]
-        writer.writerow([sanitize_csv_cell(c) for c in row])
-    return response
-
-
-ROOM_EXPORT_HEADERS = ["Room", "Building", "Day", "Start", "End", "Subject Code",
-                       "Subject", "Section", "Professor", "Term"]
-
-EXPORT_HEADERS = ["Section", "Day", "Start", "End", "Subject Code", "Subject",
-                  "Professor", "Room", "Building", "Term"]
-
-
-def section_export_rows(section, term, *, include_groups=True):
-    rows = []
-    for block in section_blocks(section, term, include_groups=include_groups):
-        rows.append([
-            block.section.code if block.section_id else "",
-            block.get_day_of_week_display(),
-            f"{block.start_time:%H:%M}",
-            f"{block.end_time:%H:%M}",
-            block.subject.code if block.subject_id else "",
-            block.subject.title if block.subject_id else block.title,
-            block.instructor.full_name if block.instructor_id else "",
-            block.room.room_code if block.room_id else "",
-            block.room.building.code if block.room_id else "",
-            str(block.term),
-        ])
-    return rows
-
-
-def export_section_timetable_csv(section, term, *, include_groups=True):
-    """CSV of one section's week. Cells go through the reports sanitiser, so a
-    subject title starting with ``=`` cannot become a spreadsheet formula."""
-    from reports.services import sanitize_csv_cell
-
-    label = (section.code if section else "timetable").replace(" ", "_")
-    term_label = (str(term) if term else "").replace(" ", "_")
-    filename = f"timetable_{label}{'_' + term_label if term_label else ''}.csv"
-
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    writer = csv.writer(response, quoting=csv.QUOTE_MINIMAL)
-    writer.writerow([sanitize_csv_cell(h) for h in EXPORT_HEADERS])
-    for row in section_export_rows(section, term, include_groups=include_groups):
-        writer.writerow([sanitize_csv_cell(cell) for cell in row])
-    return response

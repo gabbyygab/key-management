@@ -3,7 +3,6 @@ click==8.5.0
 Django==6.1.2
 django-click==2.5.0
 django-tailwind-cli==4.8.1
-openpyxl==3.1.5
 pillow==12.3.0
 python-decouple==3.8
 reportlab==5.0.1

@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
@@ -224,7 +222,7 @@ class ReportsDataAndCalculationsTests(TestCase):
         summary = response.context["summary"]
 
         self.assertEqual(summary["total_borrowings"], 3)
-        self.assertEqual(summary["currently_borrowed"], 1)  # t2 is ACTIVE
+        self.assertEqual(summary["currently_borrowed"], 2)  # t2 ACTIVE + t3 OVERDUE are both still out
         self.assertEqual(summary["overdue_count"], 1)  # t3 is OVERDUE
         self.assertEqual(summary["returned_count"], 1)  # t1 is RETURNED
         self.assertEqual(summary["active_borrowers"], 2)  # Alice and Bob
@@ -282,7 +280,7 @@ class ReportsDataAndCalculationsTests(TestCase):
 
         # room2 has t3
         self.assertEqual(room2_data["total_borrowings"], 1)
-        self.assertEqual(room2_data["currently_borrowed"], 0)
+        self.assertEqual(room2_data["currently_borrowed"], 1)  # t3 is overdue, so still out
 
     def test_borrower_frequency_report(self):
         """Borrower report must identify frequent borrowers."""
@@ -301,8 +299,10 @@ class ReportsDataAndCalculationsTests(TestCase):
     def test_date_range_filtering(self):
         """Filtering by date range restricts transactions to the specified interval."""
         # Filter for the last 2 days only (should include t2 only)
-        start_str = (self.now - timedelta(days=2)).strftime("%Y-%m-%d")
-        end_str = self.now.strftime("%Y-%m-%d")
+        # Local dates: the filter reads them in the project timezone.
+        local_now = timezone.localtime(self.now)
+        start_str = (local_now - timedelta(days=2)).strftime("%Y-%m-%d")
+        end_str = local_now.strftime("%Y-%m-%d")
 
         response = self.client.get(
             reverse("reports:index") + f"?start_date={start_str}&end_date={end_str}"
@@ -322,8 +322,8 @@ class ReportsDataAndCalculationsTests(TestCase):
         self.assertIn("Start date cannot be later than end date", response.context["date_error"])
 
 
-class ReportsCSVExportTests(TestCase):
-    """Verifies CSV exports, headers, data consistency, and formula injection security."""
+class ReportsPdfExportTests(TestCase):
+    """Reports export as PDF only."""
 
     def setUp(self):
         self.client = Client()
@@ -371,177 +371,84 @@ class ReportsCSVExportTests(TestCase):
             status=BorrowTransaction.Status.OVERDUE,
         )
 
-    def test_key_utilisation_csv_export(self):
-        """Key utilisation CSV download generates correct content type and filename."""
-        response = self.client.get(reverse("reports:export", args=["key_utilisation"]))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("key_utilisation_report", response["Content-Disposition"])
+    def test_every_report_exports_as_pdf(self):
+        for report in ("key_utilisation", "overdue", "guard_activity", "room_usage",
+                       "borrower_frequency", "all"):
+            response = self.client.get(reverse("reports:export", args=[report]))
+            self.assertEqual(response.status_code, 200, report)
+            self.assertEqual(response["Content-Type"], "application/pdf", report)
+            self.assertIn(".pdf", response["Content-Disposition"], report)
+            self.assertTrue(response.content.startswith(b"%PDF-"), report)
 
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-        self.assertGreaterEqual(len(rows), 2)  # header + data
-        header = rows[0]
-        self.assertIn("Key Code", header)
-        self.assertIn("Total Borrowings", header)
-
-    def test_overdue_csv_export(self):
-        """Overdue CSV export contains overdue record details."""
+    def test_pdf_filename_names_the_report(self):
         response = self.client.get(reverse("reports:export", args=["overdue"]))
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-        self.assertGreaterEqual(len(rows), 2)
-        header = rows[0]
-        self.assertIn("Transaction No", header)
-        self.assertIn("Overdue Duration", header)
-
-    def test_guard_activity_csv_export(self):
-        """Guard activity CSV export contains guard names and metrics."""
-        response = self.client.get(reverse("reports:export", args=["guard_activity"]))
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-        self.assertGreaterEqual(len(rows), 2)
-        header = rows[0]
-        self.assertIn("Guard Name", header)
-        self.assertIn("Keys Released", header)
-
-    def test_room_usage_csv_export(self):
-        """Room usage CSV export contains rooms and borrowing counts."""
-        response = self.client.get(reverse("reports:export", args=["room_usage"]))
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-        self.assertGreaterEqual(len(rows), 2)
-        header = rows[0]
-        self.assertIn("Room", header)
-        self.assertIn("Total Borrowings", header)
-
-    def test_borrower_frequency_csv_export(self):
-        """Borrower frequency CSV export contains borrower metrics."""
-        response = self.client.get(reverse("reports:export", args=["borrower_frequency"]))
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-        self.assertGreaterEqual(len(rows), 2)
-        header = rows[0]
-        self.assertIn("Borrower Name", header)
-        self.assertIn("Total Borrowings", header)
-
-    def test_csv_formula_injection_defense(self):
-        """Cells beginning with formula characters (=, +, -, @) must be sanitized with a leading single quote."""
-        response = self.client.get(reverse("reports:export", args=["key_utilisation"]))
-        content = response.content.decode("utf-8")
-        reader = csv.reader(io.StringIO(content))
-        rows = list(reader)
-
-        # Check key_code row
-        key_code_found = False
-        for row in rows[1:]:
-            if "=SUM(1,2)" in row[0]:
-                key_code_found = True
-                # Must be prefixed with a single quote "'"
-                self.assertTrue(
-                    row[0].startswith("'="),
-                    f"Formula character not neutralized: {row[0]}",
-                )
-        self.assertTrue(key_code_found, "Key code not found in export")
-
-        # Check borrower frequency export for sanitized borrower names
-        b_resp = self.client.get(reverse("reports:export", args=["borrower_frequency"]))
-        b_content = b_resp.content.decode("utf-8")
-        b_reader = csv.reader(io.StringIO(b_content))
-        b_rows = list(b_reader)
-        for row in b_rows[1:]:
-            # First name starts with +, last name starts with -
-            if "+Malicious" in row[0]:
-                self.assertTrue(
-                    row[0].startswith("'+"),
-                    f"Formula character + not neutralized: {row[0]}",
-                )
-            if "@ID-9999" in row[1]:
-                self.assertTrue(
-                    row[1].startswith("'@"),
-                    f"Formula character @ not neutralized: {row[1]}",
-                )
-
-    def test_export_via_query_param(self):
-        """Exporting via ?export=<report_type> on the index view works as expected."""
-        response = self.client.get(reverse("reports:index") + "?export=overdue")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn("overdue_report", response["Content-Disposition"])
 
-    def test_excel_export_format(self):
-        """Excel export generates valid .xlsx workbook with correct MIME type and openpyxl structure."""
-        import openpyxl
-        response = self.client.get(reverse("reports:export", args=["key_utilisation"]) + "?format=xlsx")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response["Content-Type"],
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        self.assertIn("key_utilisation_report", response["Content-Disposition"])
-        self.assertIn(".xlsx", response["Content-Disposition"])
+    def test_excel_and_csv_are_refused(self):
+        for fmt in ("xlsx", "csv", "excel"):
+            response = self.client.get(reverse("reports:export", args=["overdue"]) + f"?format={fmt}")
+            self.assertEqual(response.status_code, 400, fmt)
 
-        # Load workbook and verify sheets and cells
-        wb = openpyxl.load_workbook(io.BytesIO(response.content))
-        self.assertIn("Key Utilisation", wb.sheetnames)
-        ws = wb["Key Utilisation"]
-        self.assertEqual(ws["A1"].value, "KEYTRACK — UNIVERSITY KEY MANAGEMENT SYSTEM")
-        # Header row at row 7
-        self.assertEqual(ws["A7"].value, "Key Code")
+    def test_unknown_report_is_404(self):
+        self.assertEqual(self.client.get(reverse("reports:export", args=["nope"])).status_code, 404)
 
-    def test_pdf_export_format(self):
-        """PDF export generates valid .pdf document with correct MIME type and PDF header bytes."""
-        response = self.client.get(reverse("reports:export", args=["key_utilisation"]) + "?format=pdf")
+    def test_bad_date_range_is_400(self):
+        url = reverse("reports:export", args=["all"]) + "?start_date=2026-10-25&end_date=2026-10-10"
+        self.assertEqual(self.client.get(url).status_code, 400)
+
+    def test_markup_characters_in_data_do_not_break_the_pdf(self):
+        """A name such as "R&D <Lab>" used to crash reportlab's paragraph parser."""
+        self.borrower.first_name = "R&D <b>Lab"
+        self.borrower.save()
+        response = self.client.get(reverse("reports:export", args=["overdue"]))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "application/pdf")
-        self.assertIn("key_utilisation_report", response["Content-Disposition"])
-        self.assertIn(".pdf", response["Content-Disposition"])
-        # Standard PDF magic header
         self.assertTrue(response.content.startswith(b"%PDF-"))
 
-    def test_complete_all_reports_excel_export(self):
-        """Complete all-reports Excel export contains Executive Summary and all 5 report sheets."""
-        import openpyxl
-        response = self.client.get(reverse("reports:export", args=["all"]) + "?format=xlsx")
-        self.assertEqual(response.status_code, 200)
-        wb = openpyxl.load_workbook(io.BytesIO(response.content))
-        expected_sheets = [
-            "Executive Summary",
-            "Key Utilisation",
-            "Overdue Keys",
-            "Guard Activity",
-            "Room Usage",
-            "Borrower Frequency",
-        ]
-        for sheet_name in expected_sheets:
-            self.assertIn(sheet_name, wb.sheetnames)
+    def test_guard_cannot_export(self):
+        self.client.force_login(self.guard)
+        self.assertEqual(self.client.get(reverse("reports:export", args=["all"])).status_code, 403)
 
-    def test_complete_all_reports_pdf_export(self):
-        """Complete all-reports PDF export produces valid multi-section PDF document."""
-        response = self.client.get(reverse("reports:export", args=["all"]) + "?format=pdf")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "application/pdf")
-        self.assertTrue(response.content.startswith(b"%PDF-"))
-        self.assertGreater(len(response.content), 2000)
 
-    def test_export_with_format_url_path(self):
-        """URL path export_format (/reports/export/<type>/<format>/) functions identically."""
-        resp_xlsx = self.client.get(reverse("reports:export_format", args=["room_usage", "xlsx"]))
-        self.assertEqual(resp_xlsx.status_code, 200)
-        self.assertEqual(
-            resp_xlsx["Content-Type"],
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+class ReportsTabsTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="tabs_admin", role=User.Role.ADMIN)
+        self.client.force_login(self.admin)
 
-        resp_pdf = self.client.get(reverse("reports:export_format", args=["room_usage", "pdf"]))
-        self.assertEqual(resp_pdf.status_code, 200)
-        self.assertEqual(resp_pdf["Content-Type"], "application/pdf")
+    def test_overview_is_the_default_active_tab(self):
+        res = self.client.get(reverse("reports:index"))
+        self.assertEqual(res.context["active_section"], "overview")
+        active = [t["key"] for t in res.context["tabs"] if t["active"]]
+        self.assertEqual(active, ["overview"])
+        self.assertContains(res, 'aria-selected="true"', count=1)
+        self.assertContains(res, "summary-cards")
+
+    def test_each_tab_shows_only_its_report(self):
+        marks = {
+            "key_utilisation": "section-key-utilisation",
+            "overdue": "section-overdue",
+            "guard_activity": "section-guard-activity",
+            "room_usage": "section-room-usage",
+            "borrower_frequency": "section-borrower-frequency",
+        }
+        for key, mark in marks.items():
+            res = self.client.get(reverse("reports:index") + f"?section={key}")
+            self.assertEqual([t["key"] for t in res.context["tabs"] if t["active"]], [key])
+            self.assertContains(res, f'id="{mark}"')
+            for other in set(marks.values()) - {mark}:
+                self.assertNotContains(res, f'id="{other}"')
+
+    def test_unknown_tab_falls_back_to_overview(self):
+        res = self.client.get(reverse("reports:index") + "?section=bogus")
+        self.assertEqual(res.context["active_section"], "overview")
+
+    def test_tab_links_keep_the_date_range(self):
+        res = self.client.get(reverse("reports:index") + "?start_date=2026-10-01&end_date=2026-10-20")
+        for tab in res.context["tabs"]:
+            self.assertIn("start_date=2026-10-01", tab["url"])
+            self.assertIn("end_date=2026-10-20", tab["url"])
+
+    def test_page_offers_pdf_only(self):
+        res = self.client.get(reverse("reports:index") + "?section=overdue")
+        self.assertNotContains(res, "xlsx")
+        self.assertNotContains(res, "Excel")
+        self.assertContains(res, "Export PDF")

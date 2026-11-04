@@ -105,6 +105,11 @@
         li.textContent = label(opt);
         li.dataset.text = label(opt).toLowerCase();
         if (opt.value === "") li.classList.add("text-stone-500");
+        /* data-complete: shown but de-prioritised (e.g. a section with nothing left). */
+        if (opt.dataset.complete === "1") {
+          li.classList.remove("text-stone-800");
+          li.classList.add("text-stone-400", "italic");
+        }
         li.addEventListener("mousedown", function (e) { e.preventDefault(); });
         li.addEventListener("click", function () { choose(opt); });
         li.addEventListener("mousemove", function () { setActive(items.indexOf(item)); });
@@ -232,6 +237,7 @@
 
     /* Other scripts (and a reset) change select.value directly. */
     select.addEventListener("change", syncTrigger);
+    select.addEventListener("ss-sync", syncTrigger);
     if (select.form) select.form.addEventListener("reset", function () { setTimeout(syncTrigger, 0); });
 
     syncTrigger();

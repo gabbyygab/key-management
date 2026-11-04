@@ -1,4 +1,3 @@
-import csv
 import datetime
 from urllib.parse import urlencode
 
@@ -488,68 +487,88 @@ def transaction_history(request):
     })
 
 
-@admin_required
-def export_transactions_csv(request):
-    """Export filtered transaction history as a CSV file (Admin only, TASK F6.2)."""
-    txns = get_filtered_transactions(request)
+def _fmt_local(value):
+    return timezone.localtime(value).strftime("%Y-%m-%d %H:%M") if value else ""
 
-    timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"keytrack_transactions_{timestamp}.csv"
 
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+def _person(user):
+    return (user.get_full_name() or user.username) if user else ""
 
-    writer = csv.writer(response)
-    writer.writerow([
-        "Transaction No",
-        "Status",
-        "Key Code",
-        "Key Category",
-        "Building",
-        "Room",
-        "Borrower Name",
-        "Borrower ID",
-        "Borrower Type",
-        "Department",
-        "Purpose",
-        "Borrowed At",
-        "Expected Return At",
-        "Released By",
-        "Guard Shift Post",
-        "Returned At",
-        "Received By",
-        "Return Confirmed",
-        "Remarks",
-        "Override Reason",
-    ])
 
+NL = chr(10)  # a line break inside a PDF cell
+
+
+def transaction_pdf_rows(txns):
+    """Rows for the history PDF, one per transaction, laid out for a landscape page."""
+    rows = []
     for t in txns:
-        room_bldg = t.room.building.code if (t.room and t.room.building) else ""
-        room_code = t.room.room_code if t.room else ""
-        writer.writerow([
+        room = f"{t.room.building.code}-{t.room.room_code}" if t.room else ""
+        borrower = ""
+        if t.borrower:
+            dept = t.borrower.department.code if t.borrower.department else ""
+            kind = " · ".join(x for x in (t.borrower.get_borrower_type_display(), dept) if x)
+            borrower = f"{t.borrower.full_name}{NL}ID {t.borrower.id_number} · {kind}"
+        returned = _fmt_local(t.returned_at) or "Not returned"
+        if t.received_by:
+            returned += f"{NL}by {_person(t.received_by)}"
+        override = t.override_reason
+        notes = NL.join(x for x in (
+            t.remarks.strip(),
+            f"Override: {override}" if override and override not in (t.remarks or "") else "",
+        ) if x)
+        borrowed = _fmt_local(t.borrowed_at)
+        if t.released_by:
+            borrowed += f"{NL}by {_person(t.released_by)}"
+        rows.append([
             t.transaction_no,
-            t.status,
-            t.key.key_code if t.key else "",
-            t.key.category.name if (t.key and t.key.category) else "",
-            room_bldg,
-            room_code,
-            t.borrower.full_name if t.borrower else "",
-            t.borrower.id_number if t.borrower else "",
-            t.borrower.get_borrower_type_display() if t.borrower else "",
-            t.borrower.department.code if (t.borrower and t.borrower.department) else "",
-            t.purpose,
-            timezone.localtime(t.borrowed_at).strftime("%Y-%m-%d %H:%M:%S") if t.borrowed_at else "",
-            timezone.localtime(t.expected_return_at).strftime("%Y-%m-%d %H:%M:%S") if t.expected_return_at else "",
-            t.released_by.get_full_name() or t.released_by.username if t.released_by else "",
-            t.guard_shift.post if t.guard_shift else "",
-            timezone.localtime(t.returned_at).strftime("%Y-%m-%d %H:%M:%S") if t.returned_at else "",
-            t.received_by.get_full_name() or t.received_by.username if t.received_by else "",
-            "Yes" if t.return_confirmed else "No",
-            t.remarks,
-            t.override_reason,
+            t.get_status_display(),
+            f"{t.key.key_code}{NL}{room}" if t.key else room,
+            borrower,
+            t.purpose or "",
+            borrowed,
+            _fmt_local(t.expected_return_at) or "—",
+            returned,
+            notes or "—",
         ])
+    return rows
 
-    return response
+
+@admin_required
+def export_transactions_pdf(request):
+    """Export the filtered transaction history as a landscape PDF (Admin only).
+
+    Honours the same search, status, building, guard and date filters as the list."""
+    from reports.services import export_table_pdf
+
+    txns = (get_filtered_transactions(request)
+            .select_related("key__category", "room__building", "borrower__department",
+                            "released_by", "received_by", "guard_shift"))
+    filters = []
+    for label, key in (("Search", "q"), ("Status", "status"), ("Building", "building"),
+                       ("Guard", "guard")):
+        val = request.GET.get(key, "").strip()
+        if val:
+            filters.append(f"{label}: {val}")
+    start = (request.GET.get("start_date") or request.GET.get("date_from") or "").strip()
+    end = (request.GET.get("end_date") or request.GET.get("date_to") or "").strip()
+    if start or end:
+        filters.append(f"Dates: {start or '…'} to {end or '…'}")
+    if request.GET.get("off_schedule"):
+        filters.append("Off-schedule only")
+
+    timestamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
+    return export_table_pdf(
+        filename=f"keytrack_transactions_{timestamp}.pdf",
+        title="Key Transaction History",
+        headers=["Transaction", "Status", "Key / Room", "Borrower", "Purpose",
+                 "Borrowed", "Expected Return", "Returned", "Remarks"],
+        rows=transaction_pdf_rows(txns),
+        weights=[85, 50, 65, 135, 85, 85, 75, 85, 110],
+        center=(1, 5, 6, 7),
+        date_label="; ".join(filters) or "None (all records)",
+        note="Times are shown in local time. Status Overdue means the key was not returned by "
+             "its expected return time.",
+    )
 def _transaction_detail_context(txn):
     """Everything the detail modal shows beyond the row itself."""
     timeline = (

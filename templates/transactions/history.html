@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Reports & History — KEYTRACK{% endblock %}
+{% block title %}Transactions — KEYTRACK{% endblock %}
 
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
-    <h1 class="text-[22px] font-extrabold tracking-tight">Reports &amp; History</h1>
+    <h1 class="text-[22px] font-extrabold tracking-tight">Transactions</h1>
     <p class="text-[13px] text-stone-500 mt-0.5">Every key checkout and return with full audit timeline.</p>
   </div>
   {% if user.role == "ADMIN" or user.is_superuser %}
   <div class="flex items-center gap-2">
-    <a href="{% url 'transactions:export_csv' %}{% if querystring %}?{{ querystring }}{% endif %}"
+    <a href="{% url 'transactions:export_pdf' %}{% if querystring %}?{{ querystring }}{% endif %}"
        class="inline-flex items-center gap-1.5 bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-stone-700 hover:bg-stone-50 shadow-sm transition-colors"
-       title="Export filtered records to CSV">
-      <i data-lucide="download" class="w-4 h-4 text-stone-500"></i>
-      <span>Export CSV</span>
+       title="Export filtered records to PDF">
+      <i data-lucide="file-text" class="w-4 h-4 text-stone-500"></i>
+      <span>Export PDF</span>
     </a>
   </div>
   {% endif %}

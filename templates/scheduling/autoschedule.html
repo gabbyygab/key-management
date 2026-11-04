@@ -151,12 +151,12 @@
     <div id="queue-region" data-list-region class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
       <div class="border-b border-stone-200 bg-stone-50/60 px-4 py-3">
         <h2 class="text-[15px] font-bold text-stone-900">The queue for {{ selected_term|default:"this term" }}</h2>
-        <p class="mt-0.5 text-[12px] text-stone-500">Served top to bottom: highest priority (5) first, then the request time.</p>
+        <p class="mt-0.5 text-[12px] text-stone-500">Newest additions first — the badge is the offering's place in the first-come-first-served list the scheduler follows.</p>
       </div>
       <ol class="divide-y divide-stone-100">
         {% for o in queue %}
         <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
-          <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700">{{ page_obj.start_index|add:forloop.counter0 }}</span>
+          <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700" title="Queue position {{ o.queue_position }} — the scheduler serves 1 first">{{ o.queue_position }}</span>
           <span class="font-mono font-semibold text-stone-900">{{ o.subject.code }}</span>
           <span class="font-mono text-stone-700">{{ o.section.code }}</span>
           <span class="text-stone-500">{{ o.instructor.full_name|default:"Unassigned" }}</span>

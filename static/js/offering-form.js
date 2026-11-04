@@ -83,6 +83,39 @@
     select.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  /* Section picker: sections with subjects left first, fully scheduled ones
+   * greyed after them. Rebuilt from the server whenever the term changes. */
+  function markComplete(form) {
+    var sel = form.querySelector('[name="section"]');
+    if (!sel) return;
+    var ids = (sel.getAttribute("data-complete-ids") || "").split(",");
+    Array.prototype.forEach.call(sel.options, function (o) {
+      if (ids.indexOf(o.value) !== -1 && o.value) o.dataset.complete = "1";
+    });
+  }
+
+  function setSections(form, items) {
+    var sel = form.querySelector('[name="section"]');
+    if (!sel || !items) return;
+    var keep = sel.value;
+    sel.textContent = "";
+    var first = document.createElement("option");
+    first.value = "";
+    first.textContent = "---------";
+    sel.appendChild(first);
+    items.forEach(function (it) {
+      var opt = document.createElement("option");
+      opt.value = String(it.id);
+      opt.textContent = it.label + (it.complete ? " (all subjects scheduled)" : "");
+      if (it.complete) opt.dataset.complete = "1";
+      sel.appendChild(opt);
+    });
+    sel.value = keep;
+    if (sel.value !== keep) sel.value = "";
+    /* update the trigger label only; a "change" would refetch the subjects */
+    sel.dispatchEvent(new CustomEvent("ss-sync"));
+  }
+
   function refreshSubjects(form) {
     var url = form.getAttribute("data-offerable-url");
     var section = form.querySelector('[name="section"]');
@@ -131,17 +164,35 @@
       });
   }
 
+  var secSeq = 0;
+  function refreshSections(form) {
+    var url = form.getAttribute("data-offerable-url");
+    var term = form.querySelector('[name="term"]');
+    if (!url || !term) return;
+    var mine = ++secSeq;
+    fetch(url + "?" + new URLSearchParams({ term: term.value || "" }).toString(), {
+      headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
+      credentials: "same-origin",
+    })
+      .then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+      .then(function (data) { if (mine === secSeq) setSections(form, data.sections); })
+      .catch(function () { /* the server-rendered list stays */ });
+  }
+
   document.addEventListener("change", function (e) {
     var name = e.target && e.target.name;
     if (name !== "section" && name !== "term") return;
     var f = e.target.closest("[data-offering-form]");
-    if (f) refreshSubjects(f);
+    if (!f) return;
+    if (name === "term") refreshSections(f);
+    refreshSubjects(f);
   });
 
   /* A freshly opened create form has no section yet: lock the subject until
    * one is picked. An edit form (or a 422 re-render) was already narrowed by
    * the server, so it is left as rendered. */
   function primeSubjects(form) {
+    markComplete(form);
     var section = form.querySelector('[name="section"]');
     if (section && !section.value) refreshSubjects(form);
   }

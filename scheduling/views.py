@@ -28,7 +28,7 @@ from .forms import (AutoScheduleForm, BlockSwapForm, CurriculumAddForm, Departme
 from .models import (CurriculumSubject, ScheduleBlock, ScheduleException, Section, Subject,
                      SubjectOffering, Term)
 from .planner import (PlaceError, SwapError, auto_schedule, clear_term_schedule,
-                      export_section_timetable_csv, file_offering,
+                      file_offering,
                       get_section_timetable, group_labels, move_block,
                       offering_queue, placeable_subjects, place_class,
                       restore_blocker, section_scope_ids,
@@ -505,7 +505,7 @@ def room_today_schedule_api(request, pk):
 #                   first come first served (offering_list).
 #   4. Auto-run   - planner.auto_schedule turns the queue into ScheduleBlocks,
 #                   earliest free slot first (autoschedule).
-#   5. Timetable  - per-section grid, with swap and CSV export
+#   5. Timetable  - per-section grid, with swap and image/PDF export
 #                   (section_timetable, block_swap, section_export).
 #
 # Every rule lives in scheduling/planner.py; these views only translate HTTP.
@@ -1259,9 +1259,16 @@ def autoschedule(request):
         else:
             messages.error(request, "Check the auto-schedule options.")
 
-    # The queue list is long, so it pages like every other list. The queue is
-    # already in service order, which is a total order, so it pages as it is.
-    queue_page = paginate(request, offering_queue(term, only_unscheduled=False) if term else [])
+    # The queue list is long, so it pages like every other list. It is shown
+    # newest first, so an offering that was just added is always on page 1;
+    # each row still carries its real place in the first-come-first-served
+    # service order (the scheduler itself keeps walking ``QUEUE_ORDER``).
+    queue = offering_queue(term, only_unscheduled=False) if term else []
+    positions = {o.pk: i + 1 for i, o in enumerate(queue)}
+    queue.sort(key=lambda o: (o.created_at, o.pk), reverse=True)
+    queue_page = paginate(request, queue)
+    for offering in queue_page:
+        offering.queue_position = positions.get(offering.pk)
 
     return render(request, "scheduling/autoschedule.html", {
         "form": form, "terms": terms, "selected_term": term, "run": run,
@@ -1429,6 +1436,8 @@ def offerable_subjects_api(request):
         "curriculum_url": curriculum_url,
         "subjects": [{"id": s.pk, "label": str(s)} for s in offer.subjects],
         "sharing": sharing_info(section),
+        "sections": [{"id": s.pk, "label": s.code, "complete": done}
+                     for s, done in curriculum_rules.section_completion(term)],
     })
 
 
@@ -1511,7 +1520,8 @@ def section_timetable(request):
 
 @admin_required
 def section_export(request):
-    """CSV of one section's timetable (``?section=&term=&groups=1``)."""
+    """One section's timetable as one landscape sheet
+    (``?section=&term=&groups=1&format=png|pdf``, PDF by default)."""
     _, term = _selected_term(request)
     _, section = _selected_section(request)
     if section is None or term is None:
@@ -1520,21 +1530,9 @@ def section_export(request):
     # No audit row: ActivityLog has no VIEW/EXPORT action, and reading a
     # timetable is not a change. The reports exports behave the same way.
     include_groups = request.GET.get("groups", "1") != "0"
-    return export_section_timetable_csv(section, term, include_groups=include_groups)
-
-
-@admin_required
-def room_export(request):
-    """CSV of one room's timetable (``?room=&term=``)."""
-    from .planner import export_room_timetable_csv
-    room = Room.objects.select_related("building").filter(
-        pk=request.GET.get("room", "").strip() or 0).first()
-    term = Term.objects.filter(is_active=True,
-                               pk=request.GET.get("term", "").strip() or 0).first()
-    if room is None or term is None:
-        messages.error(request, "Pick a room and a term to export.")
-        return redirect("scheduling:room_timetable")
-    return export_room_timetable_csv(room, term)
+    fmt = "png" if request.GET.get("format", "pdf").lower().strip() == "png" else "pdf"
+    from .timetable_export import export_section_timetable
+    return export_section_timetable(section, term, fmt, include_groups=include_groups)
 
 
 @admin_required

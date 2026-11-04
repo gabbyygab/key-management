@@ -1,6 +1,5 @@
 """Tests for the section-aware FCFS planner (scheduling/planner.py)."""
-import csv
-import io
+import re
 from datetime import date, time, timedelta
 
 from django.test import TestCase
@@ -407,24 +406,6 @@ class SectionTimetableAndExportTests(TestCase):
         self.assertEqual(monday["span"], 3)        # 90 minutes
         self.assertEqual(monday["col"], 2)         # Monday column
 
-    def test_csv_export_lists_the_section_week(self):
-        response = planner.export_section_timetable_csv(self.g1, self.term)
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("BSIT-4DG1", response["Content-Disposition"])
-        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8"))))
-        self.assertEqual(rows[0], planner.EXPORT_HEADERS)
-        body = [r for r in rows[1:] if r]
-        self.assertEqual(len(body), 2)                    # block-wide + G1
-        self.assertEqual({r[0] for r in body}, {"BSIT-4D", "BSIT-4DG1"})
-        self.assertEqual(body[0][1], "Monday")
-
-    def test_csv_export_sanitises_a_formula_looking_title(self):
-        self.subj.title = "=cmd|' /c calc'!A0"
-        self.subj.save(update_fields=["title"])
-        response = planner.export_section_timetable_csv(self.whole, self.term)
-        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8"))))
-        self.assertFalse(rows[1][5].startswith("="))
-
 
 class SchedulingPageTests(TestCase):
     """The new pages: admin-only, and the guard gets 403 rather than a redirect."""
@@ -510,19 +491,73 @@ class SchedulingPageTests(TestCase):
         expected_url = f"{reverse('scheduling:offering_list')}?term={self.term.pk}&amp;add=1"
         self.assertContains(response, f'href="{expected_url}"')
 
-    def test_export_returns_csv(self):
+    def test_autoschedule_queue_shows_newest_offerings_on_page_one(self):
         self.client.force_login(self.admin)
-        ScheduleBlock.objects.create(
-            term=self.term, room=self.room, section=self.section, subject=self.subject,
-            title="IT401", instructor=self.prof, day_of_week=0,
-            start_time=time(8, 0), end_time=time(9, 30))
+        offerings = []
+        for i in range(11):
+            subject = Subject.objects.create(code=f"IT5{i:02d}", title=f"Subject {i}")
+            offerings.append(SubjectOffering.objects.create(
+                term=self.term, subject=subject, section=self.section,
+                instructor=self.prof, meetings_per_week=2, minutes_per_meeting=90))
+        response = self.client.get(
+            reverse("scheduling:autoschedule") + f"?term={self.term.pk}")
+        rows = list(response.context["queue"])
+        # Newest-first display: the last offering filed is on page 1, the
+        # oldest has slipped to page 2.
+        self.assertIn(offerings[-1], rows)
+        self.assertNotIn(offerings[0], rows)
+        # Its badge still shows the real first-come-first-served position.
+        newest = next(o for o in rows if o.pk == offerings[-1].pk)
+        self.assertEqual(newest.queue_position, 11)
+
+    def _two_classes(self):
+        for day, start, end in ((0, time(8, 0), time(9, 30)), (2, time(13, 0), time(16, 0))):
+            ScheduleBlock.objects.create(
+                term=self.term, room=self.room, section=self.section, subject=self.subject,
+                title="IT401", instructor=self.prof, day_of_week=day,
+                start_time=start, end_time=end)
+
+    def test_export_png_is_one_landscape_image(self):
+        import struct
+        self.client.force_login(self.admin)
+        self._two_classes()
         response = self.client.get(
             reverse("scheduling:section_export"),
-            {"section": self.section.pk, "term": self.term.pk})
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("attachment", response["Content-Disposition"])
+            {"section": self.section.pk, "term": self.term.pk, "format": "png"})
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertIn(".png", response["Content-Disposition"])
+        data = response.content
+        self.assertEqual(data[1:4], b"PNG")
+        width, height = struct.unpack(">II", data[16:24])
+        self.assertGreater(width, height)  # landscape
 
-    def test_room_timetable_shows_the_section_and_exports_csv(self):
+    def test_export_pdf_is_one_landscape_page(self):
+        self.client.force_login(self.admin)
+        self._two_classes()
+        response = self.client.get(
+            reverse("scheduling:section_export"),
+            {"section": self.section.pk, "term": self.term.pk, "format": "pdf"})
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF-"))
+        self.assertEqual(len(re.findall(rb"/Type\s*/Page(?![s\w])", response.content)), 1)
+        self.assertIn(b"792", response.content)  # landscape letter MediaBox
+
+    def test_image_and_pdf_export_an_empty_timetable(self):
+        self.client.force_login(self.admin)
+        for fmt in ("png", "pdf"):
+            response = self.client.get(
+                reverse("scheduling:section_export"),
+                {"section": self.section.pk, "term": self.term.pk, "format": fmt})
+            self.assertEqual(response.status_code, 200, fmt)
+
+    def test_image_export_is_admin_only(self):
+        self.client.force_login(self.guard)
+        response = self.client.get(
+            reverse("scheduling:section_export"),
+            {"section": self.section.pk, "term": self.term.pk, "format": "png"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_room_timetable_shows_the_section(self):
         self.client.force_login(self.admin)
         ScheduleBlock.objects.create(
             term=self.term, room=self.room, section=self.section, subject=self.subject,
@@ -532,19 +567,6 @@ class SchedulingPageTests(TestCase):
                                {"room": self.room.pk, "term": self.term.pk})
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "BSIT-4D")
-
-        response = self.client.get(reverse("scheduling:room_export"),
-                                   {"room": self.room.pk, "term": self.term.pk})
-        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        rows = list(csv.reader(io.StringIO(response.content.decode())))
-        self.assertEqual(rows[0][:3], ["Room", "Building", "Day"])
-        self.assertEqual(rows[1][:5], ["101", "SCI", "Tuesday", "10:00", "11:30"])
-        self.assertEqual(rows[1][7], "BSIT-4D")
-
-        self.client.force_login(self.guard)
-        self.assertEqual(self.client.get(reverse("scheduling:room_export"),
-                                         {"room": self.room.pk, "term": self.term.pk}
-                                         ).status_code, 403)
 
     def test_swap_endpoint_swaps_two_blocks(self):
         self.client.force_login(self.admin)
