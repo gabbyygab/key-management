@@ -3,7 +3,7 @@
  *   - The term picker submits itself on change.
  *   - The add form's subject checklist: a text filter, a live "n selected"
  *     count, and "Already added" re-checked whenever the program, year or
- *     semester changes. Each row carries data-slots="BSIT|4|1ST ...", the
+ *     semester changes. Each row carries data-slots="BSIT|4|<term id> ...", the
  *     slots that subject is already in, so no request is needed.
  *
  * The form arrives by AJAX (modal-form.js), so everything is delegated.
@@ -20,7 +20,7 @@
       var el = form.querySelector('[data-curriculum-slot="' + name + '"]');
       return el ? String(el.value || "").trim() : "";
     }
-    return val("program").toUpperCase() + "|" + val("year_level") + "|" + val("semester");
+    return val("program").toUpperCase() + "|" + val("year_level") + "|" + val("term");
   }
 
   function count(form) {

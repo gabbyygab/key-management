@@ -10,7 +10,7 @@
       {% if archived %}Archived offerings are out of the queue and have nothing placed. Restore one to queue it again.{% else %}The scheduling queue. Each row is one subject taught to one section by one professor; the <span class="font-semibold text-stone-700">#</span> column is the order the auto-scheduler will serve them in.{% endif %}
     </p>
   </div>
-  <div class="flex items-center gap-2">
+  <div id="offering-actions" data-list-sync class="flex items-center gap-2">
     <a href="{% if archived %}{% url 'scheduling:offering_list' %}{% else %}{% url 'scheduling:offering_archived' %}{% endif %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}"
        class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
       <i data-lucide="{% if archived %}list{% else %}archive{% endif %}" class="h-4 w-4 text-stone-500"></i>
@@ -30,13 +30,13 @@
   </div>
 </div>
 
-<div class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+<div id="offering-stats" data-list-sync class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
   {% include "partials/stat_card.html" with label="In the queue" value=queue_total icon="list-ordered" %}
   {% include "partials/stat_card.html" with label="Still unplaced" value=pending_count icon="clock" %}
   {% include "partials/stat_card.html" with label="Term" value=selected_term icon="calendar-range" %}
 </div>
 
-<form method="get" data-list-region-form="#offering-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter offerings">
+<form data-auto-filter method="get" data-list-region-form="#offering-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter offerings">
   <label for="off-q" class="sr-only">Search subject, section or professor</label>
   <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
@@ -61,7 +61,6 @@
     <option value="pending" {% if state == "pending" %}selected{% endif %}>Not fully placed</option>
     <option value="scheduled" {% if state == "scheduled" %}selected{% endif %}>Fully placed</option>
   </select>
-  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
   {% if q or section or state %}
   <a href="{{ request.path }}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
   {% endif %}
@@ -72,7 +71,7 @@
      data-bulk-noun="offering" data-bulk-noun-plural="offerings">
   {% include "partials/bulk_bar.html" %}
   <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Subject offerings in first-come-first-served order</caption>
       <thead>
         <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">

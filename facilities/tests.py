@@ -121,3 +121,28 @@ class RoomDetailViewTests(TestCase):
         self.client.force_login(self.admin)
         response = self.client.get(reverse("facilities:room_detail", args=[99999]))
         self.assertEqual(response.status_code, 404)
+
+
+class RoomOccupiedStatusTests(TestCase):
+    def setUp(self):
+        from keys.models import Key
+        self.Key = Key
+        self.client.force_login(User.objects.create_user(
+            username="adm", password="secret123", role=User.Role.ADMIN))
+        b = Building.objects.create(code="OCC", name="Occ")
+        self.room = Room.objects.create(building=b, room_code="O1")
+        from keys.models import KeyCategory
+        self.key = Key.objects.create(room=self.room, key_code="O1-1",
+                                      category=KeyCategory.objects.create(name="Room"))
+
+    def _pill(self, **params):
+        return self.client.get(reverse("facilities:room_list"), params)
+
+    def test_borrowed_key_makes_room_occupied(self):
+        self.assertContains(self._pill(), "Available")
+        self.Key.objects.filter(pk=self.key.pk).update(status=self.Key.Status.BORROWED)
+        self.assertContains(self._pill(), "Occupied")
+        self.assertEqual(len(self._pill(status="OCCUPIED").context["rooms"]), 1)
+        self.assertEqual(len(self._pill(status="AVAILABLE").context["rooms"]), 0)
+        self.Key.objects.filter(pk=self.key.pk).update(status=self.Key.Status.AVAILABLE)
+        self.assertEqual(len(self._pill(status="AVAILABLE").context["rooms"]), 1)

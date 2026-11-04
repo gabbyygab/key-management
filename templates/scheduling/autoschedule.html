@@ -148,7 +148,7 @@
     {% endif %}
 
     {# The queue, so the admin can see the order before running anything. #}
-    <div class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+    <div id="queue-region" data-list-region class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
       <div class="border-b border-stone-200 bg-stone-50/60 px-4 py-3">
         <h2 class="text-[15px] font-bold text-stone-900">The queue for {{ selected_term|default:"this term" }}</h2>
         <p class="mt-0.5 text-[12px] text-stone-500">Served top to bottom: highest priority (5) first, then the request time.</p>
@@ -156,7 +156,7 @@
       <ol class="divide-y divide-stone-100">
         {% for o in queue %}
         <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
-          <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700">{{ forloop.counter }}</span>
+          <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 font-mono text-[12px] font-bold text-stone-700">{{ page_obj.start_index|add:forloop.counter0 }}</span>
           <span class="font-mono font-semibold text-stone-900">{{ o.subject.code }}</span>
           <span class="font-mono text-stone-700">{{ o.section.code }}</span>
           <span class="text-stone-500">{{ o.instructor.full_name|default:"Unassigned" }}</span>
@@ -173,7 +173,100 @@
         {% include "partials/empty_state.html" with icon="list-ordered" title="Nothing queued" message="Add offerings first — the scheduler has nothing to place." action_url=offering_create_url action_label="Add offering" action_icon="plus" compact=True %}
         {% endfor %}
       </ol>
+      {% include "partials/pagination.html" with item_label="offerings" %}
     </div>
   </div>
 </div>
+
+{# Blocking "scheduling in progress" modal. Opened by the script below when the run form posts; the page navigates away when the server answers. #}
+<div id="autoschedule-loading" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4"
+     role="dialog" aria-modal="true" aria-labelledby="autoschedule-loading-title" data-modal-no-escape>
+  <div class="relative w-full max-w-[380px] rounded-2xl bg-white p-6 text-center shadow-xl">
+    <svg viewBox="0 0 280 160" class="mx-auto h-auto w-full max-w-[300px]" role="img" aria-label="Classes dropping into a weekly timetable" focusable="false">
+      <defs>
+        <linearGradient id="kt-sched-scan-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#1E6B4A" stop-opacity="0"/>
+          <stop offset="1" stop-color="#1E6B4A" stop-opacity="0.28"/>
+        </linearGradient>
+      </defs>
+      <g font-family="ui-monospace, monospace" font-size="9" font-weight="700" fill="#78716c" text-anchor="middle">
+        <text x="60" y="14">MON</text><text x="108" y="14">TUE</text><text x="156" y="14">WED</text><text x="204" y="14">THU</text><text x="252" y="14">FRI</text>
+      </g>
+      <g stroke="#e7e5e4" stroke-width="1" fill="none">
+        <rect x="36" y="22" width="240" height="128" rx="6" fill="#FAF7F0"/>
+        <path d="M84 22V150M132 22V150M180 22V150M228 22V150M36 54H276M36 86H276M36 118H276"/>
+      </g>
+      <g>
+        <rect class="kt-sched-block" style="--d:0s"    x="40"  y="25"  width="40" height="26" rx="4" fill="#1E6B4A"/>
+        <rect class="kt-sched-block" style="--d:.3s"   x="136" y="25"  width="40" height="26" rx="4" fill="#14342A"/>
+        <rect class="kt-sched-block" style="--d:.6s"   x="232" y="25"  width="40" height="58" rx="4" fill="#7DB59A"/>
+        <rect class="kt-sched-block" style="--d:.9s"   x="88"  y="57"  width="40" height="26" rx="4" fill="#7DB59A"/>
+        <rect class="kt-sched-block" style="--d:1.2s"  x="184" y="57"  width="40" height="58" rx="4" fill="#1E6B4A"/>
+        <rect class="kt-sched-block" style="--d:1.5s"  x="40"  y="89"  width="40" height="58" rx="4" fill="#14342A"/>
+        <rect class="kt-sched-block" style="--d:1.8s"  x="136" y="89"  width="40" height="26" rx="4" fill="#1E6B4A"/>
+        <rect class="kt-sched-block" style="--d:2.1s"  x="232" y="121" width="40" height="26" rx="4" fill="#14342A"/>
+        <rect class="kt-sched-block" style="--d:2.4s"  x="88"  y="121" width="40" height="26" rx="4" fill="#7DB59A"/>
+      </g>
+      <rect class="kt-sched-scan" x="-28" y="22" width="28" height="128" fill="url(#kt-sched-scan-grad)"/>
+    </svg>
+
+    <h2 id="autoschedule-loading-title" class="mt-4 text-[15px] font-bold text-stone-900" data-sched-title>Scheduling the queue…</h2>
+    <p class="mt-1 min-h-[1.25rem] text-[13px] text-stone-500" role="status" aria-live="polite" data-sched-status>Reading the offering queue</p>
+
+    <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-stone-100" aria-hidden="true">
+      <div class="kt-sched-bar h-full w-1/3 rounded-full bg-[#1E6B4A]"></div>
+    </div>
+    <p class="mt-3 text-[12px] text-stone-400">Please keep this page open. It can take a moment for a long queue.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Block the page behind a loading modal while a run is posted.
+  (function () {
+    var form = document.querySelector('form[method="post"]');
+    var modal = document.getElementById('autoschedule-loading');
+    if (!form || !modal) return;
+    var title = modal.querySelector('[data-sched-title]');
+    var status = modal.querySelector('[data-sched-status]');
+    var steps = ['Reading the offering queue', 'Checking rooms and professors', 'Avoiding section clashes', 'Placing classes first come, first served'];
+    var timer = null;
+
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+    form.addEventListener('submit', function (e) {
+      // confirm.js cancels the first pass of "Run and save"; only the real submit gets here.
+      if (e.defaultPrevented) return;
+      var saving = e.submitter && e.submitter.name === 'apply';
+      title.textContent = saving ? 'Scheduling the queue…' : 'Previewing the run…';
+      var i = 0;
+      status.textContent = steps[0];
+      stop();
+      timer = setInterval(function () { i = (i + 1) % steps.length; status.textContent = steps[i]; }, 2200);
+      if (window.KeyTrackModal) window.KeyTrackModal.open('autoschedule-loading');
+      else modal.classList.remove('hidden');
+    });
+
+    // Back from bfcache: the page is restored with the modal still open.
+    window.addEventListener('pageshow', function (e) {
+      if (!e.persisted) return;
+      stop();
+      if (window.KeyTrackModal) window.KeyTrackModal.close('autoschedule-loading');
+      else modal.classList.add('hidden');
+    });
+  })();
+
+  // Switching the term reloads the page so the queue below follows it.
+  (function () {
+    var select = document.querySelector('form select[name="term"]');
+    if (!select) return;
+    select.addEventListener('change', function () {
+      if (!select.value) return;
+      var url = new URL(window.location.href);
+      url.searchParams.set('term', select.value);
+      window.location.assign(url.toString());
+    });
+  })();
+</script>
 {% endblock %}

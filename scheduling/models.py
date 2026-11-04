@@ -233,6 +233,10 @@ class CurriculumSubject(ArchiveClockMixin):
 
     program = models.CharField(max_length=20, help_text="Program code, e.g. BSIT.")
     year_level = models.PositiveSmallIntegerField(help_text="Year level, e.g. 4.")
+    # Every term owns its curriculum: a new term starts as a copy of the
+    # previous same-semester term's (curriculum.copy_curriculum) and is then
+    # edited on its own. ``semester`` always equals ``term.semester``.
+    term = models.ForeignKey(Term, on_delete=models.PROTECT, related_name="curriculum")
     semester = models.CharField(max_length=6, choices=Term.Semester.choices)
     subject = models.ForeignKey("Subject", on_delete=models.PROTECT,
                                 related_name="curriculum_entries")
@@ -245,14 +249,14 @@ class CurriculumSubject(ArchiveClockMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["program", "year_level", "semester", "subject__code"]
+        ordering = ["program", "year_level", "term", "subject__code"]
         constraints = [
-            models.UniqueConstraint(fields=["program", "year_level", "semester", "subject"],
-                                    name="unique_curriculum_subject"),
+            models.UniqueConstraint(fields=["term", "program", "year_level", "subject"],
+                                    name="unique_curriculum_term_subject"),
         ]
         indexes = [
-            models.Index(fields=["program", "year_level", "semester"],
-                         name="curriculum_slot_idx"),
+            models.Index(fields=["term", "program", "year_level"],
+                         name="curriculum_term_slot_idx"),
         ]
 
     def save(self, *args, **kwargs):
@@ -262,7 +266,7 @@ class CurriculumSubject(ArchiveClockMixin):
     @property
     def slot_label(self):
         return (f"{self.program} · {year_level_label(self.year_level)} · "
-                f"{self.get_semester_display()}")
+                f"{self.term}")
 
     def __str__(self):
         return f"{self.subject.code} in {self.slot_label}"

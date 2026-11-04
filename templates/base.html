@@ -55,6 +55,8 @@
   <script src="{% static 'js/modal.js' %}"></script>
   <script src="{% static 'js/modal-form.js' %}"></script>
   <script src="{% static 'js/list-region.js' %}"></script>
+  <script src="{% static 'js/page-skeleton.js' %}"></script>
+  <script src="{% static 'js/auto-filter.js' %}"></script>
   <script src="{% static 'js/confirm.js' %}"></script>
   <script src="{% static 'js/search.js' %}"></script>
   <script src="{% static 'js/searchable-select.js' %}"></script>
@@ -69,7 +71,7 @@
   {# First icon pass. Anything injected later must call KeyTrack.refreshIcons(). #}
   <script src="{% static 'js/init-icons.js' %}"></script>
 
-  {# Per-page scripts (pos.js, schedule-grid.js) load here, after the shared ones. #}
+  {# Per-page scripts (pos.js, class-modal.js) load here, after the shared ones. #}
   {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -11,7 +11,7 @@
   </a>
 </div>
 
-<form method="get" class="flex gap-2" role="search" aria-label="Search and filter keys" data-list-region-form="#key-availability-region">
+<form data-auto-filter method="get" class="flex gap-2" role="search" aria-label="Search and filter keys" data-list-region-form="#key-availability-region">
   <label for="key-q" class="sr-only">Search key code or room</label>
   <div class="flex items-center flex-1 bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -24,7 +24,7 @@
     <option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">Filter</button>
+  <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
 </form>
 
 <div id="key-availability-region" data-list-region class="mt-3">

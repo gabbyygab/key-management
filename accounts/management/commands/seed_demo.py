@@ -379,9 +379,10 @@ class Command(BaseCommand):
             return
         subjects = {s.code: s for s in Subject.objects.all()}
         for program, year, semester, codes in CURRICULUM:
-            add_subjects(program=program, year_level=year, semester=semester,
-                         subjects=[subjects[c] for c in codes if c in subjects],
-                         user=admin)
+            for term in Term.objects.filter(semester=semester):
+                add_subjects(program=program, year_level=year, term=term,
+                             subjects=[subjects[c] for c in codes if c in subjects],
+                             user=admin)
 
     def seed_history(self, keys, borrowers, users):
         if BorrowTransaction.objects.exists():

@@ -25,7 +25,7 @@
   </div>
 </div>
 
-<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter rooms">
+<form id="room-filter-form" method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter rooms">
   <label for="room-q" class="sr-only">Search room code or name</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -46,16 +46,35 @@
     <option value="">All statuses</option>
     {% for code, label in statuses %}<option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
-  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
-  {% if q or building_id or room_type or status %}<a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
+  <a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center {% if not q and not building_id and not room_type and not status %}invisible{% endif %}">Reset</a>
 </form>
+<script>
+(function () {
+  var form = document.getElementById('room-filter-form');
+  if (!form) return;
+  var searchInput = form.querySelector('input[name="q"]');
+  var selects = form.querySelectorAll('select');
+  var debounceTimer;
+
+  selects.forEach(function (sel) {
+    sel.addEventListener('change', function () { form.submit(); });
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () { form.submit(); }, 400);
+    });
+  }
+})();
+</script>
 
 <div id="room-list-region" data-list-region
      data-bulk-url="{% url 'facilities:room_bulk' %}"
      data-bulk-noun="room" data-bulk-noun-plural="rooms">
   {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Rooms</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
@@ -129,7 +148,7 @@
             {% endif %}
           </td>
           <td class="p-3.5 whitespace-nowrap">
-            {% if room.is_active %}{% include "partials/status_pill.html" with status=room.status label=room.get_status_display %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
+            {% if room.is_active %}{% include "partials/status_pill.html" with status=room.effective_status label=room.get_effective_status_display %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Archived" %}{% endif %}
           </td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">

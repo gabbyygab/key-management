@@ -144,14 +144,17 @@
           esc(b.active_transaction.key_code) + "</span>";
       }
       var current = state.borrower && state.borrower.id === b.id;
-      return '<button type="button" data-pos-pick-borrower="' + i + '"' + (current ? ' aria-current="true"' : "") +
-        ' class="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-3 text-left hover:bg-stone-50 focus:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]' +
-        (current ? " bg-emerald-50/60" : "") + '">' +
+      var clearBtn = current
+        ? '<button type="button" data-pos-clear-borrower aria-label="Clear selected borrower" class="flex shrink-0 items-center gap-1 self-center rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50"><i data-lucide="x" aria-hidden="true" class="h-3.5 w-3.5"></i>Clear</button>'
+        : "";
+      return '<div class="flex items-center gap-1' + (current ? " rounded-lg bg-emerald-50/60 pr-2" : "") + '">' + '<button type="button" data-pos-pick-borrower="' + i + '"' + (current ? ' aria-current="true"' : "") +
+        ' class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2 py-3 text-left hover:bg-stone-50 focus:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-[#1E6B4A]' +
+        (current ? "" : "") + '">' +
         '<span class="min-w-0 text-[13px]"><b class="block truncate">' + esc(b.last_name) + ", " + esc(b.first_name) + "</b>" +
         '<span class="font-mono text-[12px] text-stone-500">' + esc(b.id_number) + "</span>" +
         '<span class="text-[12px] text-stone-400"> · ' + esc(b.borrower_type_display) + (b.department ? " · " + esc(b.department) : "") + "</span></span>" +
         '<span class="flex shrink-0 items-center gap-1.5">' + badge +
-        '<i data-lucide="chevron-right" aria-hidden="true" class="h-4 w-4 text-stone-400"></i></span></button>';
+        '<i data-lucide="chevron-right" aria-hidden="true" class="h-4 w-4 text-stone-400"></i></span></button>' + clearBtn + "</div>";
     }).join("");
     KeyTrack.refreshIcons(el.borrowerResults);
   }
@@ -168,7 +171,7 @@
       '<span class="min-w-0 flex-1"><span class="block truncate font-semibold">' + esc(b.full_name) + "</span>" +
       '<span class="font-mono text-[12px] text-stone-500">' + esc(b.id_number) + "</span>" +
       '<span class="text-[12px] text-stone-400"> · ' + esc(b.borrower_type_display) + (b.department ? " · " + esc(b.department) : "") + "</span></span>" +
-      '<button type="button" data-pos-clear-borrower class="shrink-0 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50">Change</button></div>';
+      '<button type="button" data-pos-clear-borrower class="shrink-0 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50">Clear</button></div>';
 
     var blocked = "";
     if (!b.can_borrow) {
@@ -200,10 +203,19 @@
   function clearBorrower() {
     state.borrower = null;
     clearKey();
+    /* The server pre-selects from ?borrower_id / ?q_borrower; drop them so a
+       reload doesn't bring the old borrower and list back. */
+    var url = new URL(window.location.href);
+    if (url.searchParams.has("borrower_id") || url.searchParams.has("q_borrower")) {
+      url.searchParams.delete("borrower_id");
+      url.searchParams.delete("q_borrower");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      el.borrowerInput.value = "";
+    }
+    searchBorrowers(el.borrowerInput.value.trim());
     el.borrowerCard.innerHTML = '<p class="text-[13px] text-stone-500">Choose a borrower in the first pane to begin.</p>';
     el.keyArea.classList.add("hidden");
     el.keyArea.classList.remove("flex");
-    renderBorrowers(el.borrowerInput.value.trim());
     activateTab("borrowers", false);
     el.borrowerInput.focus();
     el.borrowerInput.select();

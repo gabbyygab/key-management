@@ -57,8 +57,28 @@ def form_view(request, *, form, full_template, modal_template, context=None,
                     return HttpResponse(msg, status=201 if created else 200)
                 messages.success(request, msg)
                 return redirect(redirect_to)
+        first_err = None
+        if form.non_field_errors():
+            first_err = str(form.non_field_errors()[0])
+        elif form.errors:
+            for errs in form.errors.values():
+                if errs:
+                    first_err = str(errs[0])
+                    break
+        clean_err = None
+        if first_err:
+            import re
+            clean_err = re.sub(r'<[^>]+>', '', first_err).strip()
+
         if modal:
-            return render(request, modal_template, ctx, status=422)
+            response = render(request, modal_template, ctx, status=422)
+            if clean_err:
+                from urllib.parse import quote
+                response["X-Error-Message"] = quote(clean_err)
+            return response
+        if clean_err:
+            messages.error(request, clean_err)
+        return render(request, full_template, ctx)
 
     if modal:
         return render(request, modal_template, ctx)
@@ -76,10 +96,25 @@ def querystring_without_page(request):
 LIST_PAGE_SIZE = 10
 
 
+# Sizes offered by the "Rows per page" selector in partials/pagination.html.
+PAGE_SIZE_CHOICES = (10, 25, 50)
+
+
+def page_size(request, default=LIST_PAGE_SIZE):
+    """``?per_page=`` if it is one of PAGE_SIZE_CHOICES, else ``default``."""
+    try:
+        value = int(request.GET.get("per_page", ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value in PAGE_SIZE_CHOICES else default
+
+
 def paginate(request, queryset, per_page=LIST_PAGE_SIZE):
     """Page ``queryset`` by ``?page=`` (bad or out-of-range values clamp to a
-    real page). Returns the Django Page for partials/pagination.html."""
-    return Paginator(queryset, per_page).get_page(request.GET.get("page"))
+    real page). ``?per_page=`` (10/25/50) overrides ``per_page``. Returns the
+    Django Page for partials/pagination.html."""
+    return Paginator(queryset, page_size(request, per_page)).get_page(
+        request.GET.get("page"))
 
 
 # ---------------------------------------------------------------------------

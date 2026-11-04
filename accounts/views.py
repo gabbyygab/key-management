@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
-from django.core.cache import cache
+from django.contrib.auth.decorators import login_not_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.core.paginator import Paginator
@@ -19,6 +19,7 @@ from .crud import (BULK_ACTIONS, archive_context,
                    bulk_delete_forever, bulk_response, bulk_selection,
                    bulk_summary, delete_forever, form_view, is_modal,
                    paginate, post_redirect, querystring_without_page)
+from . import lockout
 from .forms import (AdminPasswordResetForm, BorrowerForm, OwnPasswordChangeForm,
                     UserCreateForm, UserEditForm)
 from .models import Borrower, Department, User
@@ -55,25 +56,7 @@ def permission_denied_view(request, exception=None):
 # Login / logout
 # ---------------------------------------------------------------------------
 
-def _throttle_key(request, username):
-    ip = request.META.get("REMOTE_ADDR", "")
-    return f"login-fail:{ip}:{username.lower()}"
-
-
-def _is_throttled(key):
-    return cache.get(key, 0) >= settings.LOGIN_RATE_LIMIT
-
-
-def _record_failure(key):
-    # add() is a no-op if the key exists, so the window starts at the first
-    # failure and is not extended by later ones.
-    cache.add(key, 0, timeout=settings.LOGIN_RATE_WINDOW)
-    try:
-        cache.incr(key)
-    except ValueError:  # expired between add() and incr()
-        cache.set(key, 1, timeout=settings.LOGIN_RATE_WINDOW)
-
-
+@login_not_required
 def login_view(request):
     if request.user.is_authenticated:
         return redirect(get_post_login_redirect(request.user))
@@ -92,12 +75,11 @@ def login_view(request):
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
-        key = _throttle_key(request, username)
+        account = lockout.canonical(username)
 
-        # B7.4: refuse before even checking the password once the limit is hit.
-        if _is_throttled(key):
-            minutes = max(1, settings.LOGIN_RATE_WINDOW // 60)
-            error = f"Too many failed sign-in attempts. Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
+        # B7.4: refuse before even checking the password while the account is locked.
+        if lockout.is_locked(account):
+            error = f"Too many failed sign-in attempts. Try again in about {lockout.minutes_text()}."
             status = 429
         else:
             user = authenticate(request, username=username, password=password)
@@ -105,7 +87,7 @@ def login_view(request):
                 if not (user.is_superuser or user.role in {"ADMIN", "GUARD"}):
                     error = "This account is not allowed to log in."
                 else:
-                    cache.delete(key)
+                    lockout.clear(account)
                     login(request, user)
                     if nxt:
                         return redirect(nxt)
@@ -115,8 +97,13 @@ def login_view(request):
                 error = "The sign-in service cannot be reached right now. Try again shortly."
                 status = 503
             else:
-                _record_failure(key)
-                error = "Invalid credentials."
+                lockout.record_failure(account)
+                left = lockout.attempts_left(account)
+                error = ("Invalid credentials." if left > 0 else
+                         "Invalid credentials. This account is now locked for "
+                         f"about {lockout.minutes_text()}.")
+                if 0 < left < settings.LOGIN_RATE_LIMIT:
+                    error += f" {left} attempt{'s' if left != 1 else ''} left."
 
     # `next` goes back into the template so the form can carry it through the
     # POST; the form used to drop it, which sent every guard to the dashboard.
@@ -189,8 +176,8 @@ def _borrower_list(request, *, archived):
     elif auth_filter == "holding":
         borrowers = borrowers.filter(is_holding=True)
 
-    page_obj = Paginator(borrowers.order_by("last_name", "first_name", "-pk"),
-                         25).get_page(request.GET.get("page"))
+    page_obj = paginate(request, borrowers.order_by("last_name", "first_name", "-pk"),
+                         per_page=25)
     return render(request, "accounts/borrower_list.html", {
         "borrowers": page_obj, "page_obj": page_obj,
         "querystring": querystring_without_page(request),
@@ -419,6 +406,10 @@ def user_list(request):
     users = users.order_by("-date_joined", "-pk")
 
     page_obj = paginate(request, users)
+    # Only the 10 rows on screen are looked up. `lock_seconds` drives the red
+    # "Locked" badge and its live countdown (static/js/lock-countdown.js).
+    for u in page_obj:
+        u.lock_seconds = lockout.remaining(u.username)
     return render(request, "accounts/user_list.html", {
         "users": page_obj,
         "page_obj": page_obj,
@@ -616,13 +607,12 @@ def password_change(request):
            "center_page": True}
     status = 200
     if request.method == "POST":
-        key = _throttle_key(request, user.username)
-        if _is_throttled(key):
+        account = user.username.lower()
+        if lockout.is_locked(account):
             # Checked before the form, so a locked-out session never even
             # reaches authenticate().
-            minutes = max(1, settings.LOGIN_RATE_WINDOW // 60)
-            messages.error(request, f"Too many wrong passwords. Try again in about {minutes} "
-                                    f"minute{'s' if minutes != 1 else ''}.")
+            messages.error(request, f"Too many wrong passwords. Try again in about "
+                                    f"{lockout.minutes_text()}.")
             ctx["form"] = OwnPasswordChangeForm(user, request=request)
             status = 429
         elif form.is_valid():
@@ -634,7 +624,7 @@ def password_change(request):
                 form.add_error(None, e)
                 status = 422
             else:
-                cache.delete(key)
+                lockout.clear(account)
                 update_session_auth_hash(request, user)  # stay signed in
                 log_activity(user, Action.UPDATE, obj=user, request=request,
                              description=f"{user.username} changed their own password.")
@@ -642,6 +632,6 @@ def password_change(request):
                 return redirect(get_post_login_redirect(user))
         else:
             if "current_password" in form.errors:
-                _record_failure(key)
+                lockout.record_failure(account)
             status = 422
     return render(request, "accounts/user_form.html", ctx, status=status)

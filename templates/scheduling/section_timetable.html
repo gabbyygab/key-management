@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{% if selected_section %}{{ selected_section.code }} timetable{% else %}Section timetable{% endif %} — KEYTRACK{% endblock %}
 
 {% block content %}
@@ -6,10 +7,14 @@
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Section timetable</h1>
     <p class="mt-0.5 text-[13px] text-stone-500">
-      One section's week. Picking a whole block shows its group classes too, which is what a student in that block actually attends.
+      One section's week. Click a free slot to add one of its curriculum subjects, click a class to move it, or drag it to another day and time. Picking a whole block shows its group classes too.
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
+    <button type="button" data-class-new{% if selected_section %} data-section="{{ selected_section.pk }}"{% endif %} data-day="0" data-start="09:00" data-end="10:30"{% if default_room_id %} data-room="{{ default_room_id }}"{% endif %}
+            class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
+      <i data-lucide="plus" class="h-4 w-4"></i><span>Add class</span>
+    </button>
     <button type="button" data-modal-open="swap-modal"
             class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
       <i data-lucide="arrow-left-right" class="h-4 w-4 text-stone-500"></i><span>Swap two classes</span>
@@ -26,7 +31,7 @@
   </div>
 </div>
 
-<form method="get" class="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+<form method="get" data-auto-filter class="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
   <div class="w-full sm:w-64">
     <label for="tt-section" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Section</label>
     <select id="tt-section" name="section" data-searchable data-search-placeholder="Search section…"
@@ -51,7 +56,14 @@
       <option value="0" {% if not include_groups %}selected{% endif %}>Block-wide classes only</option>
     </select>
   </div>
-  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Show</button>
+  {% if selected_section and selected_term %}
+  <button type="button" data-modal-open="section-subjects-modal"
+          class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
+    <i data-lucide="list-checks" class="h-4 w-4 text-stone-500"></i><span>Subjects</span>
+    <span class="rounded-full bg-stone-100 px-1.5 text-[11px] font-semibold text-stone-600">{{ subjects_placed }}/{{ subject_rows|length }}</span>
+  </button>
+  {% endif %}
+  <noscript><button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white">Show</button></noscript>
 </form>
 
 {% if selected_section %}
@@ -73,40 +85,53 @@
 {% endif %}
 {% endif %}
 
-<div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
+<div {% if selected_section and selected_term %}data-preserve-scroll="timetable:page" {% endif %}class="timetable-scroll overflow-x-auto overflow-y-auto max-h-[calc(100vh-230px)] rounded-xl border border-stone-200 bg-white shadow-sm">
   {% if selected_section and selected_term %}
-  <div class="min-w-[860px] p-4">
-    <div class="grid gap-px" style="grid-template-columns: 64px repeat(6, minmax(0, 1fr)); grid-template-rows: 32px repeat(28, 22px);">
-      {# Day headers #}
+  <div class="min-w-[850px]">
+
+    {# Same layout as the room schedule: a sticky day header, then a body of 28 rows of 38px with no gaps #}
+    <div class="grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))] sticky top-0 z-20 bg-stone-50 border-b border-stone-200 text-stone-700 font-semibold text-[13px]">
+      <div class="p-3 text-right text-stone-400 font-mono text-[11px] uppercase tracking-wider border-r border-stone-200 bg-stone-50">Time</div>
       {% for d in days %}
-      <div class="flex items-center justify-center rounded-t-lg bg-stone-50 text-[12px] font-bold uppercase tracking-wide text-stone-600"
-           style="grid-column: {{ d.col }}; grid-row: 1;">
-        <span class="hidden sm:inline">{{ d.name }}</span><span class="sm:hidden">{{ d.short }}</span>
+      <div class="p-3 text-center border-r border-stone-200 last:border-r-0 flex items-center justify-center gap-1.5">
+        <span class="font-bold text-stone-800">{{ d.short }}</span>
+        <span class="hidden lg:inline text-stone-500 font-normal text-[12px]">({{ d.name }})</span>
       </div>
       {% endfor %}
+    </div>
 
-      {# Time gutter + row rules #}
+    <div data-schedule-grid data-section="{{ selected_section.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
       {% for slot in time_slots %}
-      <div class="pr-2 text-right text-[11px] {% if slot.is_hour %}font-semibold text-stone-500{% else %}text-stone-300{% endif %}"
-           style="grid-column: 1; grid-row: {{ slot.row|add:1 }};">
-        {% if slot.is_hour %}{{ slot.label }}{% endif %}
+      <div class="sticky left-0 z-10 bg-white border-r border-b border-stone-200 text-[11px] font-mono text-stone-500 px-2 flex items-center justify-end select-none"
+           style="grid-column: 1; grid-row: {{ slot.row }};">
+        {% if slot.is_hour %}<span class="font-semibold text-stone-700">{{ slot.label }}</span>{% else %}<span class="text-stone-400 text-[10px]">{{ slot.label }}</span>{% endif %}
       </div>
-      {% for d in days %}
-      <div class="{% if slot.is_hour %}border-t border-stone-200{% else %}border-t border-stone-100{% endif %}"
-           style="grid-column: {{ d.col }}; grid-row: {{ slot.row|add:1 }};" aria-hidden="true"></div>
-      {% endfor %}
       {% endfor %}
 
-      {# Class cards #}
+      {% for d in days %}
+        {% for slot in time_slots %}
+        <div class="slot-cell border-r border-b border-stone-100 hover:bg-emerald-50/50 transition cursor-pointer group"
+             style="grid-column: {{ d.col }}; grid-row: {{ slot.row }};"
+             data-slot-day="{{ d.code }}" data-slot-time="{{ slot.hhmm }}"
+             title="Click to add a class on {{ d.name }} at {{ slot.label }}">
+          <span class="hidden group-hover:inline-block text-[10px] text-emerald-700 font-medium pl-1.5 pt-0.5 select-none">+ Add</span>
+        </div>
+        {% endfor %}
+      {% endfor %}
+
+      {# Class cards: margin and lanes are inside the cell, so the card edge lines up with the row #}
       {% for b in timetable.blocks %}
-      <div style="grid-column: {{ b.col }}; grid-row: {{ b.row_start|add:1 }} / span {{ b.span }}; margin-left: calc({{ b.lane }} * 100% / {{ b.lane_count }}); width: calc(100% / {{ b.lane_count }});"
-           class="overflow-hidden rounded-lg border {{ b.palette.border }} {{ b.palette.bg }} {{ b.palette.border_accent }} px-1.5 py-1 text-[11px] leading-tight {{ b.palette.text }}">
-        <div class="truncate font-bold">{{ b.subject_code|default:b.title }}</div>
-        <div class="truncate font-mono text-[10px] opacity-80">{% if b.shared_groups %}{{ b.shared_groups }} together{% else %}{{ b.section_code }}{% endif %}</div>
-        <div class="truncate text-[10px] opacity-80">{{ b.time_display }}</div>
+      <div style="grid-column: {{ b.col }}; grid-row: {{ b.row_start }} / {{ b.row_end }}; margin-left: calc({{ b.lane }} * 100% / {{ b.lane_count }} + 2px); width: calc(100% / {{ b.lane_count }} - 4px);"
+           data-block='{{ b.json }}' draggable="true" title="{{ b.title }} ({{ b.time_display }}) - click to edit, drag to move"
+           class="timetable-block z-10 my-0.5 flex cursor-grab select-none flex-col overflow-hidden rounded-lg border p-2 text-[12px] leading-tight shadow-xs transition hover:shadow-md active:cursor-grabbing {{ b.palette.border }} {{ b.palette.bg }} {{ b.palette.border_accent }} {{ b.palette.text }}">
+        <div class="font-bold leading-tight line-clamp-2">
+          {% if b.subject_code %}<span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold {{ b.palette.badge }}">{{ b.subject_code }}</span>{% endif %}{{ b.title }}
+        </div>
+        <div class="mt-1 truncate font-mono text-[11px] opacity-80">{% if b.shared_groups %}{{ b.shared_groups }} together{% else %}{{ b.section_code }}{% endif %}</div>
+        <div class="truncate text-[11px] opacity-80">{{ b.time_display }}</div>
         {% if b.span > 2 %}
-        <div class="truncate text-[10px] opacity-80">{{ b.room_label }}</div>
-        <div class="truncate text-[10px] opacity-70">{{ b.instructor_name }}</div>
+        <div class="truncate text-[11px] opacity-80">{{ b.room_label }}</div>
+        <div class="truncate text-[11px] opacity-70">{{ b.instructor_name }}</div>
         {% endif %}
       </div>
       {% endfor %}
@@ -125,7 +150,7 @@
     <p class="mt-0.5 text-[12px] text-stone-500">Exactly the rows the CSV export contains.</p>
   </div>
   <div class="overflow-x-auto">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">{{ selected_section.code }} timetable rows</caption>
       <thead>
         <tr class="border-b border-stone-200 text-left text-[11px] uppercase tracking-wide text-stone-500">
@@ -167,6 +192,65 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+{% endif %}
+
+{% include "scheduling/_class_modal.html" %}
+
+{% if selected_section and selected_term %}
+{# ---------------- Section subjects modal ---------------- #}
+<div id="section-subjects-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="section-subjects-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="min-w-0">
+        <h2 id="section-subjects-title" class="text-[15px] font-bold text-stone-900">{{ selected_section.code }} subjects</h2>
+        <p class="text-[12px] text-stone-500">{{ selected_term.name }}{% if subjects_restricted %} · from the curriculum{% else %} · no curriculum set, all subjects listed{% endif %} · {{ subjects_placed }} placed, {{ subjects_unplaced }} not yet</p>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+      </button>
+    </div>
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto">
+      <table data-sticky-actions class="min-w-full text-[13px]">
+        <thead>
+          <tr class="border-b border-stone-200 text-left text-[11px] uppercase tracking-wide text-stone-500">
+            <th scope="col" class="p-3 font-semibold">Subject</th>
+            <th scope="col" class="p-3 font-semibold">Professor</th>
+            <th scope="col" class="p-3 font-semibold">Placed</th>
+            <th scope="col" class="p-3 text-right font-semibold"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {% for r in subject_rows %}
+          <tr>
+            <td class="p-3"><span class="font-mono font-semibold text-stone-900">{{ r.code }}</span>
+              <span class="text-stone-500">{{ r.label }}</span></td>
+            <td class="p-3 text-stone-700">{{ r.instructor|default:"—" }}</td>
+            <td class="whitespace-nowrap p-3">
+              {% if r.complete %}
+              <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">Placed {{ r.scheduled }}/{{ r.meetings }}</span>
+              {% elif r.placed %}
+              <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Partial {{ r.scheduled }}/{{ r.meetings }}</span>
+              {% else %}
+              <span class="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-semibold text-stone-600">Not placed</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap p-3 text-right">
+              {% if not r.complete %}
+              <button type="button" data-class-new data-modal-close data-section="{{ selected_section.pk }}" data-subject="{{ r.id }}" data-day="0" data-start="09:00" data-end="10:30"
+                      class="font-medium text-[#1E6B4A] hover:text-[#0F2E1F] hover:underline">Place</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="p-6 text-center text-stone-500">No subjects for this section and semester.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -213,6 +297,8 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/class-modal.js' %}?v=3"></script>
+<script src="{% static 'js/schedule-dnd.js' %}?v=2"></script>
 <script>
 // The "Swap" link on a row preselects that class in the modal, so the admin
 // picks only the partner. The modal itself is the full control for both sides.

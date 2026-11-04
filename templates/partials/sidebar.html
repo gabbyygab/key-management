@@ -63,14 +63,8 @@
     <a href="{% url 'scheduling:room_timetable' %}" {% if ns == 'scheduling' and current == 'room_timetable' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'room_timetable' %} is-active{% endif %}">
       <i data-lucide="calendar" aria-hidden="true"></i><span>Room Schedule</span>
     </a>
-    <a href="{% url 'scheduling:schedule_list' %}" {% if ns == 'scheduling' and current == 'schedule_list' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'schedule_list' %} is-active{% endif %}">
-      <i data-lucide="calendar-days" aria-hidden="true"></i><span>Schedule List</span>
-    </a>
     <a href="{% url 'scheduling:free_rooms' %}" {% if ns == 'scheduling' and current == 'free_rooms' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'free_rooms' %} is-active{% endif %}">
       <i data-lucide="search-check" aria-hidden="true"></i><span>Room Finder</span>
-    </a>
-    <a href="{% url 'scheduling:conflicts' %}" {% if ns == 'scheduling' and current == 'conflicts' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'scheduling' and current == 'conflicts' %} is-active{% endif %}">
-      <i data-lucide="calendar-x" aria-hidden="true"></i><span>Conflicts</span>
     </a>
 
     <div class="sidebar-section-title">Inventory</div>
@@ -114,7 +108,7 @@
   {% else %}
     <div class="sidebar-section-title">Workspace</div>
     <a href="{% url 'transactions:borrow_dashboard' %}" {% if ns == 'transactions' and current == 'borrow_dashboard' %}aria-current="page" {% endif %}class="sidebar-link{% if ns == 'transactions' and current == 'borrow_dashboard' %} is-active{% endif %}">
-      <i data-lucide="arrow-left-right" aria-hidden="true"></i><span>Key Transactions (POS)</span>
+      <i data-lucide="arrow-left-right" aria-hidden="true"></i><span>Key Transactions</span>
     </a>
 
     <div class="sidebar-section-title">Lookup</div>

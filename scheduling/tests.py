@@ -97,15 +97,6 @@ class FreeRoomsTests(TestCase):
         self.assertEqual(len(res.context["rooms"]), 2)
         self.assertContains(res, "2 rooms free")
 
-    def test_schedule_list_page_renders_for_admin(self):
-        self.client.force_login(self.admin)
-        res = self.client.get(reverse("scheduling:schedule_list"))
-        self.assertEqual(res.status_code, 200)
-        self.assertContains(res, "id=\"schedule-list-form\"")
-        # The real block editor (shared with the timetable), not a sample-data dialog.
-        self.assertContains(res, 'id="schedule-form-modal"')
-        self.assertContains(res, "data-schedule-new")
-
     def test_page_forbidden_for_guard(self):
         self.client.force_login(self.guard)
         self.assertEqual(self.client.get(self.page).status_code, 403)
@@ -275,14 +266,14 @@ class RoomTimetableTests(TestCase):
         self.assertContains(res, "data-schedule-grid")
         self.assertContains(res, "Mon")
         self.assertContains(res, "Sat")
-        self.assertContains(res, "07:00")
-        self.assertContains(res, "20:30")
+        self.assertContains(res, "7:00 AM")
+        self.assertContains(res, 'data-slot-time="20:30"')
         self.assertContains(res, "Intro to CS Lab")
         self.assertContains(res, "CS 101")
-        self.assertContains(res, "09:00 – 10:30")
+        self.assertContains(res, "9:00 AM - 10:30 AM")
         self.assertContains(res, "@media print")
         self.assertContains(res, "Print timetable")
-        self.assertContains(res, 'id="schedule-form-modal"')
+        self.assertContains(res, 'id="class-modal"')
 
     def test_timetable_page_filters_by_room_and_term(self):
         self.client.force_login(self.admin)

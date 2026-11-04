@@ -4,9 +4,10 @@ from . import views
 app_name = "scheduling"
 
 urlpatterns = [
-    path("scheduling/", views.schedule_list, name="schedule_list"),
-    path("scheduling/conflicts/", views.schedule_list, name="conflicts"),
-    path("scheduling/blocks/<int:pk>/toggle/", views.schedule_toggle, name="schedule_toggle"),
+    # The old schedule list is gone: the room schedule and the section timetable
+    # replaced it. The bare URLs stay as redirects so bookmarks keep working.
+    path("scheduling/", views.schedule_legacy),
+    path("scheduling/conflicts/", views.schedule_legacy),
     path("scheduling/blocks/<int:pk>/exception/", views.exception_create, name="exception_create"),
     path("scheduling/timetable/", views.room_timetable, name="room_timetable"),
     path("scheduling/free-rooms/", views.free_rooms, name="free_rooms"),
@@ -76,6 +77,8 @@ urlpatterns = [
     path("api/scheduling/free-rooms/", views.free_rooms_api, name="free_rooms_api"),
     path("api/scheduling/offerable-subjects/", views.offerable_subjects_api,
          name="offerable_subjects_api"),
+    path("api/scheduling/class-options/", views.class_options_api, name="class_options"),
+    path("api/scheduling/classes/", views.class_place_api, name="class_place"),
     path("api/scheduling/check-conflict/", views.conflict_check_api, name="conflict_check"),
     path("api/scheduling/blocks/", views.schedule_block_save_api, name="schedule_block_save"),
     path("api/scheduling/blocks/<int:pk>/delete/", views.schedule_block_delete_api, name="schedule_block_delete"),

@@ -7,3 +7,9 @@ media/
 staticfiles/
 .vscode/
 .django_tailwind_cli/
+
+# one-off SQLite -> Supabase export (contains password hashes)
+sqlite_backup.json
+
+# on-disk cache (login lockout state)
+.cache/

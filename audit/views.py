@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
 
+from accounts.crud import paginate
 from accounts.permissions import admin_required
 from .models import ActivityLog
 
@@ -96,9 +97,7 @@ def log_list(request):
             pass
 
     # Real pagination: 25 records per page.
-    paginator = Paginator(logs, 25)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginate(request, logs, per_page=25)
 
     # Attach per-action icon + colour pill classes and safe user labels.
     for log in page_obj:

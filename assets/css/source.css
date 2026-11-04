@@ -59,6 +59,24 @@
   outline-style: solid;
 }
 
+/* Text fields: no rectangular outline. A square ring cuts across rounded
+ * fields and wrapper pills (POS search). Instead the field's own shape shows
+ * focus: bordered fields get an accent border + a 1px shadow that follows
+ * their radius; borderless inputs sit in a wrapper that handles its own
+ * focus-within border, so they show nothing extra. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+input[class*="border"]:not([class*="border-0"]):not([class*="border-none"]):not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea[class*="border"]:not([class*="border-0"]):not([class*="border-none"]):focus-visible,
+select[class*="border"]:not([class*="border-0"]):not([class*="border-none"]):focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
 /* On the dark green sidebar a #1E6B4A ring is nearly invisible (1.5:1 against
  * #0F2E1F). White clears 3:1 for non-text contrast. */
 aside :focus-visible {
@@ -165,6 +183,51 @@ aside :focus-visible {
   [aria-modal="true"]:not(.hidden) > :not([data-modal-overlay]) {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Auto-schedule loading graphic (templates/scheduling/autoschedule.html).
+ * Class blocks drop into a weekly grid while a scan band sweeps across it.
+ * opacity/transform only, looping, off under prefers-reduced-motion (the
+ * blocks then simply sit in the grid).
+ * ------------------------------------------------------------------------- */
+@keyframes kt-sched-block {
+  0%   { opacity: 0; transform: translateY(-10px) scale(0.9); }
+  8%   { opacity: 1; transform: none; }
+  80%  { opacity: 1; transform: none; }
+  92%  { opacity: 0; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes kt-sched-scan {
+  from { transform: translateX(0); }
+  to   { transform: translateX(308px); }
+}
+
+@keyframes kt-sched-bar {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(300%); }
+}
+
+.kt-sched-block {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: kt-sched-block 4.8s ease-out var(--d, 0s) infinite both;
+}
+
+.kt-sched-scan {
+  animation: kt-sched-scan 2.4s linear infinite;
+}
+
+.kt-sched-bar {
+  animation: kt-sched-bar 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kt-sched-block { animation: none; opacity: 1; }
+  .kt-sched-scan  { animation: none; display: none; }
+  .kt-sched-bar   { animation: none; transform: none; width: 100%; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -413,4 +476,61 @@ select:disabled {
   select {
     transition: none;
   }
+}
+
+/* Cross-document view transitions: page-to-page navigations crossfade instead of
+ * flashing white. The sidebar gets its own transition name so it stays put while
+ * only the content area fades. opacity only, 150ms, in line with the motion budget. */
+@view-transition {
+  navigation: auto;
+}
+
+#app-sidebar {
+  view-transition-name: kt-sidebar;
+}
+
+::view-transition-group(kt-sidebar) {
+  animation-duration: 0s;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+}
+
+/* ==========================================================================
+ * Sticky action column — <table data-sticky-actions>
+ *
+ * The table's last column (the row's Actions) stays pinned to the right edge
+ * of its scroll wrapper, so Edit / Delete never scroll out of reach when long
+ * data makes the table scroll sideways. Put the attribute on any table whose
+ * last column is the actions; no per-cell classes are needed, so rows swapped
+ * in by list-region.js are covered too. The wrapper must be overflow-x-auto.
+ *
+ * Cells need an opaque background (content scrolls underneath), so a row that
+ * is tinted sets --kt-row-bg / --kt-row-hover-bg for its sticky cell.
+ * ========================================================================== */
+table[data-sticky-actions] > thead > tr > :last-child,
+table[data-sticky-actions] > tbody > tr > :last-child:not([colspan]) {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background-color: var(--kt-row-bg, #fff);
+  /* hairline + soft shadow on the left edge marks where the column floats */
+  box-shadow: inset 1px 0 0 #e7e5e4, -8px 0 8px -8px rgb(28 25 23 / 0.14);
+}
+
+table[data-sticky-actions] > thead > tr > :last-child {
+  background-color: #fafaf9; /* stone-50 header, opaque */
+  z-index: 2;
+}
+
+table[data-sticky-actions] > tbody > tr:hover > :last-child:not([colspan]) {
+  background-color: var(--kt-row-hover-bg, #fafaf9);
 }

@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from accounts.cache_utils import remember
 from accounts.crud import (BULK_ACTIONS, archive_context,
                            bulk_delete_forever, bulk_response, bulk_selection,
                            bulk_summary, delete_forever, is_ajax, paginate,
@@ -69,12 +70,13 @@ def _key_list(request, *, archived):
     if category_id:
         keys = keys.filter(category_id=category_id)
 
-    paginator = Paginator(keys, 25)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginate(request, keys, per_page=25)
 
-    buildings = Building.objects.filter(is_active=True).order_by("name")
-    categories = KeyCategory.objects.all().order_by("name")
+    # Filter dropdowns change rarely: cached, and dropped when inventory changes.
+    buildings = remember("keys-filter-buildings", ["inventory"],
+                         lambda: list(Building.objects.filter(is_active=True).order_by("name")))
+    categories = remember("keys-filter-categories", ["inventory"],
+                          lambda: list(KeyCategory.objects.all().order_by("name")))
 
     return render(
         request,

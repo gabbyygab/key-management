@@ -25,7 +25,7 @@
 </div>
 
 <!-- Filters Bar: Keep search and status, add building and category -->
-<form method="get" class="flex flex-wrap items-center gap-2 mb-3 bg-white p-3 rounded-xl border border-stone-200 shadow-sm" role="search" aria-label="Search and filter keys">
+<form id="key-filter-form" method="get" class="flex flex-wrap items-center gap-2 mb-3 bg-white p-3 rounded-xl border border-stone-200 shadow-sm" role="search" aria-label="Search and filter keys">
   <label for="key-q" class="sr-only">Search key code, room or description</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-[#FAF7F0] border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -59,19 +59,32 @@
       <option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-
   {% endif %}
 
-  <button type="submit" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">
-    Filter
-  </button>
-
-  {% if q or status or building_id or category_id %}
-    <a href="{{ request.path }}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0">
-      Reset
-    </a>
-  {% endif %}
+  <a href="{{ request.path }}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0 {% if not q and not status and not building_id and not category_id %}invisible{% endif %}">
+    Reset
+  </a>
 </form>
+<script>
+(function () {
+  var form = document.getElementById('key-filter-form');
+  if (!form) return;
+  var searchInput = form.querySelector('input[name="q"]');
+  var selects = form.querySelectorAll('select');
+  var debounceTimer;
+
+  selects.forEach(function (sel) {
+    sel.addEventListener('change', function () { form.submit(); });
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () { form.submit(); }, 400);
+    });
+  }
+})();
+</script>
 
 <!-- Table Region (Refreshed by modal-form.js on AJAX save) -->
 <div id="key-list-region" data-list-region
@@ -79,7 +92,7 @@
      data-bulk-noun="key" data-bulk-noun-plural="keys">
   {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Key inventory records</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/50">

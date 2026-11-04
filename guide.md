@@ -14,7 +14,7 @@ verified against the source, not assumed.
 |---|---|
 | Framework | **Django 6.1.2** (`requirements.txt`) — the task files say "Django 5.x"; they are wrong. Use 6.1 docs. |
 | Python | 3.14 (venv at `venv/`) |
-| DB | SQLite dev, `db.sqlite3`, **gitignored** — every dev has their own |
+| DB | Supabase Postgres via `DATABASE_URL` (tests: in-memory SQLite) |
 | CSS | Tailwind via `django-tailwind-cli==4.8.1` — `{% tailwind_css %}` in `base.html`, **no npm, no build step** |
 | JS | Vanilla, no framework, no bundler |
 | Icons | Lucide from CDN, `lucide.createIcons()` in `base.html` |

@@ -10,3 +10,7 @@ reportlab==5.0.1
 semver==3.1.0
 sqlparse==0.6.0
 tzdata==2026.5
+psycopg[binary,pool]==3.3.8
+dj-database-url==3.1.2
+gunicorn==23.0.0
+whitenoise==6.9.0

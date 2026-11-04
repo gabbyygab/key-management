@@ -140,54 +140,11 @@ class ScheduleAdminViewTests(SchedulingFixture):
                                      "reason": "Aircon broken"})
         self.assertContains(res, "Choose the room", status_code=422)
 
-    def test_toggle_refuses_reactivation_that_would_conflict(self):
-        old = self.block(title="Old", active=False)
-        self.block(start=(10, 0), end=(11, 0), title="New")
-        self.assertEqual(self.client.get(reverse("scheduling:schedule_toggle", args=[old.pk])).status_code, 405)
-        self.client.post(reverse("scheduling:schedule_toggle", args=[old.pk]))
-        old.refresh_from_db()
-        self.assertFalse(old.is_active)
-
-    def test_toggle_ignores_offsite_next(self):
-        block = self.block()
-        res = self.client.post(reverse("scheduling:schedule_toggle", args=[block.pk]),
-                               {"next": "https://evil.example.com/"})
-        self.assertEqual(res.url, reverse("scheduling:schedule_list"))
-        block.refresh_from_db()
-        self.assertFalse(block.is_active)  # soft delete, row kept
-
-    def test_bulk_toggle_skips_conflicting_reactivations(self):
-        a = self.block(title="A", active=False)
-        b = self.block(room=self.r102, title="B", active=False)
-        self.block(start=(10, 0), end=(11, 0), title="Blocker")
-        res = self.client.post(reverse("scheduling:schedule_list"), {
-            "bulk_action": "activate", "selected_schedule": [a.pk, b.pk],
-            "return_qs": "state=inactive"})
-        self.assertEqual(res.url, reverse("scheduling:schedule_list") + "?state=inactive")
-        a.refresh_from_db(); b.refresh_from_db()
-        self.assertFalse(a.is_active)
-        self.assertTrue(b.is_active)
-
-    def test_conflicts_view_lists_only_overlapping_blocks(self):
-        # Overlaps can exist from before validation (e.g. legacy data); the
-        # conflicts view is how an admin finds them.
-        ScheduleBlock.objects.bulk_create([
-            ScheduleBlock(term=self.term, room=self.r101, title="Clash A", day_of_week=0,
-                          start_time=time(9), end_time=time(10, 30)),
-            ScheduleBlock(term=self.term, room=self.r101, title="Clash B", day_of_week=0,
-                          start_time=time(10), end_time=time(11)),
-        ])
-        self.block(room=self.r102, title="Peaceful")
-        res = self.client.get(reverse("scheduling:conflicts"))
-        self.assertContains(res, "Clash A")
-        self.assertContains(res, "Clash B")
-        self.assertNotContains(res, "Peaceful")
-
     def test_guard_is_refused(self):
         guard = User.objects.create_user(username="g", email="g@example.com",
                                          password="pw-Strong-12345", role=User.Role.GUARD)
         self.client.force_login(guard)
-        self.assertEqual(self.client.get(reverse("scheduling:schedule_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("scheduling:room_timetable")).status_code, 403)
         self.assertEqual(self.save().status_code, 403)
 
 
@@ -303,23 +260,10 @@ class ArchivedHiddenTests(SchedulingFixture):
     def test_archived_term_not_offered_in_pickers(self):
         old = Term.objects.create(name="2025 Fall", start_date="2025-08-01",
                                   end_date="2025-12-20", is_active=False)
-        for name in ("scheduling:schedule_list", "scheduling:offering_list",
+        for name in ("scheduling:section_timetable", "scheduling:offering_list",
                      "scheduling:room_timetable"):
             resp = self.client.get(reverse(name))
             self.assertNotIn(old, list(resp.context["terms"]), name)
-
-    def test_block_of_archived_subject_hidden_from_list(self):
-        from .models import Subject
-        sub = Subject.objects.create(code="IT101", title="Intro", is_active=False)
-        shown = self.block(title="Visible")
-        hidden = self.block(day=1, title="Hidden")
-        hidden.subject = sub
-        hidden.save()
-        resp = self.client.get(reverse("scheduling:schedule_list"))
-        pks = [b.pk for b in resp.context["blocks"]]
-        self.assertIn(shown.pk, pks)
-        self.assertNotIn(hidden.pk, pks)
-
 
 class DepartmentPageTests(SchedulingFixture):
     def setUp(self):

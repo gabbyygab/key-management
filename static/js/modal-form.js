@@ -215,6 +215,31 @@
           return res.text().then(function (html) {
             inject(modal, html);
             restore();
+            var errorMsg = null;
+            var headerErr = res.headers.get("X-Error-Message");
+            if (headerErr) {
+              try {
+                errorMsg = decodeURIComponent(headerErr);
+              } catch (e) {
+                errorMsg = headerErr;
+              }
+            }
+            if (!errorMsg) {
+              var formEl = bodyOf(modal).querySelector("form");
+              if (formEl) errorMsg = formEl.getAttribute("data-form-error");
+            }
+            if (!errorMsg) {
+              var alert = bodyOf(modal).querySelector('[role="alert"]') ||
+                          bodyOf(modal).querySelector('[data-form-field-error]') ||
+                          bodyOf(modal).querySelector('.errorlist');
+              if (alert) {
+                var firstLi = alert.querySelector("li");
+                errorMsg = (firstLi || alert).textContent.replace(/\s+/g, " ").trim();
+              }
+            }
+            if (KeyTrack.toast) {
+              KeyTrack.toast(errorMsg || "Please correct the errors below.", "error");
+            }
             return null;
           });
         }

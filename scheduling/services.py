@@ -8,6 +8,19 @@ from facilities.models import Room
 from .models import ScheduleBlock, ScheduleException, ScheduleSettings, Term
 
 
+def _fmt_time(t):
+    """Format a time object as 12-hour clock, e.g. '7:00 AM', '12:30 PM'."""
+    h = t.hour % 12 or 12
+    suffix = "AM" if t.hour < 12 else "PM"
+    return f"{h}:{t.minute:02d} {suffix}"
+
+
+def _fmt_time_range(start, end):
+    """Format a start-end pair as '7:00 AM - 8:30 AM'."""
+    return f"{_fmt_time(start)} - {_fmt_time(end)}"
+
+
+
 class ScheduleConflictError(ValueError):
     def __init__(self, conflicts=None):
         self.conflicts = list(conflicts or [])
@@ -223,7 +236,7 @@ def get_room_timetable(room, term):
             palette_idx = sum(ord(c) for c in block.title) % len(PALETTES)
         palette = PALETTES[palette_idx]
 
-        time_display = f"{block.start_time.strftime('%H:%M')} – {block.end_time.strftime('%H:%M')}"
+        time_display = _fmt_time_range(block.start_time, block.end_time)
 
         exceptions = list(block.exceptions.all())
         has_exception = len(exceptions) > 0
@@ -244,6 +257,11 @@ def get_room_timetable(room, term):
             "is_active": block.is_active,
             "room_id": block.room_id,
             "term_id": block.term_id,
+            "section_id": block.section_id or "",
+            "section_code": block.section.code if block.section_id else "",
+            "offering_id": block.offering_id or "",
+            "subject_code": block.subject.code if block.subject_id else "",
+            "instructor": instructor_display,
         })
 
         processed_blocks.append({
@@ -317,7 +335,7 @@ def _format_block_summary(block, when):
         "end_time": block.end_time,
         "start_time_str": block.start_time.strftime("%H:%M"),
         "end_time_str": block.end_time.strftime("%H:%M"),
-        "time_display": f"{block.start_time.strftime('%H:%M')} – {block.end_time.strftime('%H:%M')}",
+        "time_display": _fmt_time_range(block.start_time, block.end_time),
         "is_current": is_current,
         "is_upcoming": is_upcoming,
         "is_past": is_past,

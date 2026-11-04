@@ -7,7 +7,7 @@
   <div class="min-w-0">
     <h1 class="text-[22px] font-extrabold tracking-tight">Curriculum</h1>
     <p class="mt-0.5 max-w-2xl text-[13px] text-stone-500">
-      The subjects each year of a program takes, per semester. When a subject offering picks a section, it only lists that year's subjects for the term's semester, minus what the section already has.
+      The subjects each year of a program takes <strong class="font-semibold text-stone-700">in one term</strong>. A new term starts as a copy of the previous one's curriculum; add or remove subjects per program without touching other terms. A subject offering only lists the section's year subjects for its term, minus what the section already has.
     </p>
   </div>
   <div class="flex items-center gap-2">
@@ -15,7 +15,7 @@
        class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-[13px] font-medium text-stone-700 shadow-sm hover:bg-stone-50">
       <i data-lucide="list-ordered" class="h-4 w-4 text-stone-500"></i><span>Subject offerings</span>
     </a>
-    <a href="{% url 'scheduling:curriculum_add' %}{% if program %}?program={{ program|urlencode }}{% if semester %}&semester={{ semester }}{% endif %}{% endif %}"
+    <a href="{% url 'scheduling:curriculum_add' %}{% if program %}?program={{ program|urlencode }}{% if selected_term %}&term={{ selected_term.pk }}{% endif %}{% endif %}"
        data-modal-form="curriculum-modal" data-modal-refresh="#curriculum-board"
        class="inline-flex items-center gap-1.5 rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[#0F2E1F]">
       <i data-lucide="plus" class="h-4 w-4"></i><span>Add subjects</span>
@@ -36,7 +36,7 @@
   {% else %}<span></span>{% endif %}
 
   {% if terms %}
-  <form method="get" class="flex items-center gap-2" aria-label="Highlight a term's semester">
+  <form method="get" class="flex items-center gap-2" aria-label="Pick a term">
     <input type="hidden" name="program" value="{{ program }}">
     <label for="cur-term" class="text-[12px] font-semibold uppercase tracking-wider text-stone-500">Term</label>
     <select id="cur-term" name="term" data-auto-submit
@@ -52,11 +52,7 @@
   {% if selected_term %}
   <p class="flex flex-wrap items-center gap-1.5 text-[13px] text-stone-600">
     <i data-lucide="calendar-check" aria-hidden="true" class="h-4 w-4 text-[#1E6B4A]"></i>
-    {% if semester_label %}
-      Offerings for <strong class="font-semibold text-stone-800">{{ selected_term }}</strong> pick from the highlighted <strong class="font-semibold text-stone-800">{{ semester_label }}</strong> column.
-    {% else %}
-      <strong class="font-semibold text-stone-800">{{ selected_term }}</strong> has no semester set, so its offerings may pick from every semester of the year. Set one on the Terms page.
-    {% endif %}
+    Curriculum of <strong class="font-semibold text-stone-800">{{ selected_term }}</strong>. Changes here only affect this term.
   </p>
   {% endif %}
 
@@ -79,15 +75,14 @@
       </ul>
       {% endif %}
     </header>
-    <div class="grid grid-cols-1 divide-y divide-stone-100 {% if year.semesters|length == 3 %}md:grid-cols-3{% else %}md:grid-cols-2{% endif %} md:divide-x md:divide-y-0">
+    <div class="grid grid-cols-1">
       {% for sem in year.semesters %}
       <div class="min-w-0 p-4 {% if sem.is_current %}bg-[#1E6B4A]/[0.04]{% endif %}">
         <div class="mb-2 flex items-center justify-between gap-2">
           <h3 class="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider {% if sem.is_current %}text-[#1E6B4A]{% else %}text-stone-500{% endif %}">
             {{ sem.label }}
-            {% if sem.is_current %}<span class="rounded-full bg-[#1E6B4A] px-1.5 py-px text-[10px] font-bold normal-case tracking-normal text-white">This term</span>{% endif %}
           </h3>
-          <a href="{% url 'scheduling:curriculum_add' %}?program={{ program|urlencode }}&year_level={{ year.year }}&semester={{ sem.code }}"
+          <a href="{% url 'scheduling:curriculum_add' %}?program={{ program|urlencode }}&year_level={{ year.year }}&term={{ selected_term.pk }}"
              data-modal-form="curriculum-modal" data-modal-refresh="#curriculum-board"
              class="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[#1E6B4A] hover:bg-[#1E6B4A]/10">
             <i data-lucide="plus" aria-hidden="true" class="h-3.5 w-3.5"></i><span>Add</span><span class="sr-only"> subjects to {{ year.label }}, {{ sem.label }}</span>
@@ -100,7 +95,7 @@
             <span class="shrink-0 font-mono text-[13px] font-semibold text-stone-900">{{ e.subject.code }}</span>
             <span class="min-w-0 flex-1 truncate text-[13px] text-stone-600" title="{{ e.subject.title }}">{{ e.subject.title }}</span>
             <form method="post" action="{% url 'scheduling:curriculum_remove' e.pk %}" class="shrink-0"
-                  data-confirm="{{ e.subject.code }} will no longer be listed for {{ program }} {{ year.label }} sections in the {{ sem.label }}. Offerings already filed are kept."
+                  data-confirm="{{ e.subject.code }} will no longer be listed for {{ program }} {{ year.label }} sections in {{ selected_term }}. Offerings already filed are kept."
                   data-confirm-title="Remove from curriculum" data-confirm-label="Remove" data-confirm-subject="{{ e.subject.code }}">
               {% csrf_token %}
               <input type="hidden" name="next" value="{{ request.get_full_path }}">

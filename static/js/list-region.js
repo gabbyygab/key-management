@@ -63,6 +63,16 @@
           if (oldReset && !newReset) oldReset.remove();
           else if (!oldReset && newReset) oldForm.appendChild(newReset);
         }
+        /* Page furniture that depends on the filters (stat cards, header links
+         * carrying ?term=) sits outside the region: mark it
+         * `id="x" data-list-sync` and it is swapped along with the rows. */
+        doc.querySelectorAll("[data-list-sync][id]").forEach(function (fresh2) {
+          var old = document.getElementById(fresh2.id);
+          if (old) {
+            old.innerHTML = fresh2.innerHTML;
+            KeyTrack.refreshIcons(old);
+          }
+        });
         region.removeAttribute("aria-busy");
         KeyTrack.refreshIcons(region);
         if (KeyTrack.bindSearch) KeyTrack.bindSearch(region);
@@ -94,6 +104,16 @@
     if (!region || !region.id) return;
     e.preventDefault();
     load(region, link.href, true);
+  });
+
+  /* "Rows per page" select: each option's value is the target URL. */
+  document.addEventListener("change", function (e) {
+    var sel = e.target;
+    if (!sel.matches || !sel.matches("select[data-per-page]")) return;
+    var url = new URL(sel.value, window.location.href).toString();
+    var region = sel.closest("[data-list-region]");
+    if (region && region.id) load(region, url, true);
+    else window.location.href = url;
   });
 
   document.addEventListener("submit", function (e) {

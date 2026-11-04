@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 from django.core.exceptions import ValidationError
 
 from accounts.models import Borrower, Department
@@ -33,8 +34,7 @@ def _style(form):
 
 
 def borrower_label(borrower):
-    return (f"{borrower.last_name}, {borrower.first_name} ({borrower.id_number})"
-            f" — {borrower.get_borrower_type_display()}")
+    return f"{borrower.last_name}, {borrower.first_name}"
 
 
 def room_label(room):
@@ -209,8 +209,13 @@ class SubjectOfferingForm(forms.ModelForm):
             self.fields[_name].widget.attrs["data-search-placeholder"] = _hint
         self.fields["section"].queryset = Section.objects.filter(is_active=True)
         self.fields["section"].label_from_instance = lambda s: s.code
+        # Only faculty can teach an offering. Keep the currently assigned person
+        # selectable so editing an older offering doesn't fail validation.
+        faculty = Q(borrower_type=Borrower.BorrowerType.FACULTY)
+        if self.instance and self.instance.instructor_id:
+            faculty |= Q(pk=self.instance.instructor_id)
         self.fields["instructor"].queryset = (
-            Borrower.objects.filter(is_active=True).order_by("last_name", "first_name"))
+            Borrower.objects.filter(faculty, is_active=True).order_by("last_name", "first_name"))
         self.fields["instructor"].label_from_instance = borrower_label
         self.fields["instructor"].required = False
         self.fields["instructor"].empty_label = "Unassigned"
@@ -265,8 +270,13 @@ class SubjectOfferingForm(forms.ModelForm):
         rather than Django's bare "Select a valid choice"."""
         section = self._picked("section", Section)
         term = self._picked("term", Term)
+        keep_id = self.instance.subject_id
+        if not keep_id and self.is_bound:
+            picked_sub = self._picked("subject", Subject)
+            if picked_sub:
+                keep_id = picked_sub.pk
         self.curriculum = offerable_subjects(
-            section=section, term=term, keep_subject_id=self.instance.subject_id)
+            section=section, term=term, keep_subject_id=keep_id)
         field = self.fields["subject"]
         field.empty_label = "Pick a subject" if section else "Pick a section first"
         field.widget.choices = [("", field.empty_label)] + [
@@ -339,8 +349,11 @@ class SubjectOfferingForm(forms.ModelForm):
             if self.instance.pk:
                 clash = clash.exclude(pk=self.instance.pk)
             if clash.exists():
-                raise ValidationError(
-                    f"{subject.code} is already offered to {section.code} in {term}.")
+                existing = clash.first()
+                hint = " (archived: restore it instead)" if not existing.is_active else ""
+                err = f"{subject.code} is already offered to {section.code} in {term}.{hint}"
+                self.add_error("subject", err)
+                raise ValidationError(err)
             self._check_sharing(term, subject, section, cleaned.get("shared"))
             moved = {"term", "subject", "section"} & set(self.changed_data)
             if not self.instance.pk or moved:
@@ -388,10 +401,9 @@ YEAR_LEVEL_CHOICES = [(y, year_level_label(y)) for y in range(1, MAX_YEAR_LEVEL 
 
 
 class CurriculumAddForm(forms.Form):
-    """Put one or more subjects into a curriculum slot (program/year/semester).
+    """Put one or more subjects into a curriculum slot (term/program/year).
 
-    The semester choices are the Term ones, so a curriculum column lines up with
-    the term an offering is filed under.
+    A term owns its curriculum, so the slot is picked per term.
     """
 
     program = forms.CharField(
@@ -399,7 +411,9 @@ class CurriculumAddForm(forms.Form):
         help_text="The program code sections use, e.g. BSIT.")
     year_level = forms.TypedChoiceField(choices=YEAR_LEVEL_CHOICES, coerce=int,
                                         label="Year level")
-    semester = forms.ChoiceField(choices=Term.Semester.choices, label="Semester")
+    term = forms.ModelChoiceField(
+        queryset=Term.objects.filter(is_active=True).order_by("-start_date"),
+        empty_label=None, label="Term")
     subjects = forms.ModelMultipleChoiceField(
         queryset=Subject.objects.filter(is_active=True).select_related("department")
         .order_by("code"),
@@ -413,7 +427,7 @@ class CurriculumAddForm(forms.Form):
             "autocomplete": "off", "data-curriculum-slot": "program",
             "class": TAILWIND + " uppercase"})
         self.fields["year_level"].widget.attrs["data-curriculum-slot"] = "year_level"
-        self.fields["semester"].widget.attrs["data-curriculum-slot"] = "semester"
+        self.fields["term"].widget.attrs["data-curriculum-slot"] = "term"
         _style(self)
 
     def clean_program(self):
@@ -426,14 +440,14 @@ class CurriculumAddForm(forms.Form):
 
     @property
     def slot(self):
-        """``(program, year, semester)`` as posted or prefilled, for the template."""
+        """``(program, year, term pk)`` as posted or prefilled, for the template."""
         if self.is_bound:
             data = (self.data.get("program", ""), self.data.get("year_level", ""),
-                    self.data.get("semester", ""))
+                    self.data.get("term", ""))
         else:
             data = (self.initial.get("program", ""), self.initial.get("year_level", ""),
-                    self.initial.get("semester", ""))
-        return normalise_program(data[0]), str(data[1] or ""), data[2] or ""
+                    self.initial.get("term", ""))
+        return normalise_program(data[0]), str(data[1] or ""), str(data[2] or "")
 
     def selected_ids(self):
         if self.is_bound:

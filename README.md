@@ -32,7 +32,7 @@ A shift starts automatically; logging out ends it.
 - Only **GUARD** accounts (plus superusers) can log into the dashboard.
   Other roles get a login error. Manage login accounts in `/admin/` → Users.
 - **Borrowers** (Borrowers page) are searchable profiles, not logins.
-- Each developer gets their own `db.sqlite3` (gitignored) — never commit it.
+- The database is Supabase Postgres: put `DATABASE_URL` in `.env` (see `.env.example`). Tests use in-memory SQLite.
 - Never commit `.env`. CI/production must provide `SECRET_KEY`, `DEBUG=False`,
   and real `ALLOWED_HOSTS`.
 

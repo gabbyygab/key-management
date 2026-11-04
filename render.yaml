@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: keytrack
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt && python manage.py tailwind build && python manage.py collectstatic --noinput && python manage.py migrate --noinput
+    startCommand: gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /accounts/login/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DEFAULT_USER_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_AUTH_ENABLED
+        value: "False"
+      - key: SUPABASE_SYNC_ENABLED
+        value: "False"
+  - type: cron
+    name: keytrack-purge-archived
+    runtime: python
+    schedule: "0 18 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py purge_archived --yes
+    envVars:
+      - fromService: {type: web, name: keytrack, envVarKey: DATABASE_URL}
+        key: DATABASE_URL
+      - fromService: {type: web, name: keytrack, envVarKey: SECRET_KEY}
+        key: SECRET_KEY
+      - key: PYTHON_VERSION
+        value: 3.12.10
+  - type: cron
+    name: keytrack-mark-overdue
+    runtime: python
+    schedule: "0 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py mark_overdue
+    envVars:
+      - fromService: {type: web, name: keytrack, envVarKey: DATABASE_URL}
+        key: DATABASE_URL
+      - fromService: {type: web, name: keytrack, envVarKey: SECRET_KEY}
+        key: SECRET_KEY
+      - key: PYTHON_VERSION
+        value: 3.12.10

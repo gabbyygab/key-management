@@ -11,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from . import throttle
 from .conf import get_config
 
 RETRY_STATUSES = {429, 500, 502, 503, 504}
@@ -101,6 +102,10 @@ class SupabaseClient:
         while True:
             req = Request(url, data=data, method=method, headers=self._headers(method, prefer))
             try:
+                throttle.acquire("rest")
+            except throttle.RateLimited as e:
+                raise SupabaseError(str(e), status=429) from None
+            try:
                 with urlopen(req, timeout=self.config.timeout) as resp:  # noqa: S310 (scheme checked in conf)
                     raw = resp.read()
                     return json.loads(raw) if raw else None
@@ -108,7 +113,15 @@ class SupabaseClient:
                 err = _error_from_http(e)
                 if e.code in RETRY_STATUSES and attempt < self.retries:
                     attempt += 1
-                    time.sleep(self.backoff * attempt)
+                    delay = self.backoff * attempt
+                    if e.code == 429:
+                        # Honour Retry-After and make every caller back off.
+                        try:
+                            delay = max(delay, min(float(e.headers.get("Retry-After", 0)), 30))
+                        except (TypeError, ValueError):
+                            pass
+                        throttle.get_bucket("rest").retry_after(delay)
+                    time.sleep(delay)
                     continue
                 raise err from None
             except (URLError, TimeoutError, OSError) as e:

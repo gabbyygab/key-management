@@ -1,13 +1,15 @@
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction as db_transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import (Case, CharField, Count, F, Prefetch, Q, Value,
+                              When)
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from accounts.crud import (BULK_ACTIONS, archive_context,
+from accounts.cache_utils import remember
+from accounts.crud import (BULK_ACTIONS, archive_context, paginate,
                            bulk_delete_forever, bulk_response, bulk_selection,
                            bulk_summary, delete_forever, form_view, is_modal,
                            post_redirect, querystring_without_page)
@@ -201,7 +203,14 @@ def _room_list(request, *, archived):
                  queryset=Key.objects.exclude(status=Key.Status.INACTIVE).select_related("category").order_by("copy_number", "key_code")
              ))
              .annotate(key_count=Count(
-                 "keys", filter=~Q(keys__status=Key.Status.INACTIVE)))
+                 "keys", filter=~Q(keys__status=Key.Status.INACTIVE)),
+                 out_count=Count("keys", filter=Q(keys__status__in=OUT_STATUSES)))
+             # Occupied is derived from live borrows, never stored: a room whose
+             # key is out reads Occupied unless it is in Maintenance/Inactive.
+             .annotate(effective_status=Case(
+                 When(Q(status=Room.Status.AVAILABLE, out_count__gt=0),
+                      then=Value(Room.Status.OCCUPIED)),
+                 default=F("status"), output_field=CharField()))
              .filter(is_active=not archived)
              .order_by("building__code", "room_code", "-pk"))
     if q:
@@ -211,15 +220,16 @@ def _room_list(request, *, archived):
     if room_type:
         rooms = rooms.filter(room_type=room_type)
     if status:
-        rooms = rooms.filter(status=status)
+        rooms = rooms.filter(effective_status=status)
 
-    page_obj = Paginator(rooms, 25).get_page(request.GET.get("page"))
+    page_obj = paginate(request, rooms, per_page=25)
     return render(request, "facilities/room_list.html", {
         "rooms": page_obj,
         "page_obj": page_obj,
         "querystring": querystring_without_page(request),
         "q": q, "building_id": building_id, "room_type": room_type, "status": status,
-        "buildings": Building.objects.order_by("code"),
+        "buildings": remember("rooms-filter-buildings", ["inventory"],
+                              lambda: list(Building.objects.order_by("code"))),
         "room_types": Room.RoomType.choices,
         "statuses": Room.Status.choices,
         **archive_context(

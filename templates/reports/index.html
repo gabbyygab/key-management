@@ -53,7 +53,7 @@
 
 <!-- Date Filter Bar -->
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-6">
-  <form method="get" action="{% url 'reports:index' %}" id="report-filter-form" class="flex flex-col lg:flex-row items-stretch lg:items-end justify-between gap-4">
+  <form data-auto-filter method="get" action="{% url 'reports:index' %}" id="report-filter-form" data-page-skeleton="reports" class="flex flex-col lg:flex-row items-stretch lg:items-end justify-between gap-4">
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
       <div class="flex items-center gap-2 text-stone-700 font-semibold text-[13px] shrink-0 mr-1">
         <div class="w-8 h-8 rounded-lg bg-emerald-50 text-[#1E6B4A] flex items-center justify-center">
@@ -67,13 +67,6 @@
       </div>
 
       <div class="flex items-center gap-2 pt-1 sm:pt-4">
-        <button
-          type="submit"
-          class="inline-flex items-center justify-center gap-1.5 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors shadow-sm"
-        >
-          <i data-lucide="filter" class="w-4 h-4"></i>
-          <span>Apply Filters</span>
-        </button>
 
         {% if is_filtered %}
         <a

@@ -46,8 +46,6 @@ def active_nav_context(request):
             active = "room_schedule"
         elif current == "free_rooms":
             active = "room_finder"
-        elif current in {"conflicts", "schedule_list"}:
-            active = "conflicts"
     elif ns == "keys":
         if current in {"key_list", "key_create", "key_update"}:
             active = "key_inventory"

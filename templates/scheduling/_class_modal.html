@@ -1,0 +1,117 @@
+{% comment %}
+   Add / edit one class on the timetable. Shared by the room schedule, the
+   section timetable and the room finder; class-modal.js drives it.
+   Needs: selected_term, modal_sections, modal_rooms, modal_borrowers, modal_days
+   and the four URLs from views._class_modal_context.
+{% endcomment %}
+<div id="class-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="class-modal-title"
+     data-term="{{ selected_term.pk|default:'' }}"
+     data-options-url="{{ options_url }}" data-place-url="{{ place_url }}"
+     data-move-url="{{ move_url }}" data-delete-url="{{ delete_url }}">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div class="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1E6B4A]/20 bg-[#1E6B4A]/10 text-[#1E6B4A]">
+          <i data-lucide="calendar-plus" aria-hidden="true" class="h-5 w-5"></i>
+        </div>
+        <div class="min-w-0">
+          <h2 id="class-modal-title" class="text-[15px] font-bold text-stone-900">Add a class</h2>
+          <p id="class-modal-desc" class="text-[12px] text-stone-500">Pick a section and one of its curriculum subjects.</p>
+        </div>
+      </div>
+      <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
+        <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
+      </button>
+    </div>
+
+    <form id="class-form" novalidate class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+      <input type="hidden" id="cm-block-id" value="">
+      <input type="hidden" id="cm-term" value="{{ selected_term.pk|default:'' }}">
+      <p class="text-[12px] text-stone-500">Term: <strong class="text-stone-700">{{ selected_term.name }}</strong></p>
+
+      <div>
+        <label for="cm-section" class="mb-1 block text-[13px] font-medium text-stone-700">Section</label>
+        <select id="cm-section" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+          <option value="">Choose a section…</option>
+          {% for s in modal_sections %}<option value="{{ s.pk }}">{{ s.option_label }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="cm-subject" class="mb-1 block text-[13px] font-medium text-stone-700">Subject</label>
+        <select id="cm-subject" disabled data-searchable data-search-placeholder="Search subject…"
+                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A] disabled:bg-stone-100">
+          <option value="">Choose a section first</option>
+        </select>
+        <p id="cm-subject-hint" class="mt-1 text-[12px] text-stone-500">Only subjects in the section's curriculum for this semester are listed.</p>
+      </div>
+
+      <div>
+        <label for="cm-instructor" class="mb-1 block text-[13px] font-medium text-stone-700">Professor <span class="font-normal text-stone-400">(optional)</span></label>
+        <select id="cm-instructor" data-searchable data-search-placeholder="Search professor…"
+                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A] disabled:bg-stone-100">
+          <option value="">Unassigned</option>
+          {% for b in modal_borrowers %}<option value="{{ b.pk }}">{{ b.last_name }}, {{ b.first_name }} ({{ b.id_number }})</option>{% endfor %}
+        </select>
+        <p id="cm-instructor-hint" class="mt-1 hidden text-[12px] text-stone-500"></p>
+      </div>
+
+      <div>
+        <label for="cm-room" class="mb-1 block text-[13px] font-medium text-stone-700">Room</label>
+        <select id="cm-room" data-searchable data-search-placeholder="Search room…"
+                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+          {% for r in modal_rooms %}<option value="{{ r.pk }}">{{ r.building.code }} - {{ r.room_code }} ({{ r.get_room_type_display }})</option>{% endfor %}
+        </select>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label for="cm-day" class="mb-1 block text-[13px] font-medium text-stone-700">Day</label>
+          <select id="cm-day" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+            {% for value, label in modal_days %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="cm-start" class="mb-1 block text-[13px] font-medium text-stone-700">Start</label>
+          <input id="cm-start" type="time" step="1800" min="07:00" max="21:00" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        </div>
+        <div>
+          <label for="cm-end" class="mb-1 block text-[13px] font-medium text-stone-700">End</label>
+          <input id="cm-end" type="time" step="1800" min="07:00" max="21:00" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        </div>
+      </div>
+
+      <fieldset data-repeat-days class="rounded-lg border border-stone-200 p-3">
+        <legend class="px-1 text-[12px] font-semibold uppercase tracking-wider text-stone-500">Also repeat on</legend>
+        <div class="flex flex-wrap gap-1.5">
+          {% for value, label in modal_days %}
+          <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[12px] font-medium text-stone-700 has-[:checked]:border-[#1E6B4A] has-[:checked]:bg-[#1E6B4A]/10">
+            <input type="checkbox" value="{{ value }}" class="h-3.5 w-3.5 rounded border-stone-300 text-[#1E6B4A]">{{ label|slice:":3" }}
+          </label>
+          {% endfor %}
+        </div>
+        <p class="mt-1.5 text-[12px] text-stone-500">One extra meeting per ticked day, same time and room. If any day clashes, nothing is saved.</p>
+      </fieldset>
+
+      <p id="cm-edit-note" class="hidden rounded-lg border border-stone-200 bg-stone-50 p-3 text-[12px] text-stone-600">
+        The section, subject and professor come from the subject offering. Change them under Subject Offerings; here you can move this meeting to another room, day or time.
+      </p>
+      <div id="cm-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert"></div>
+    </form>
+
+    <div class="flex shrink-0 items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 py-3">
+      <button type="button" id="cm-delete" class="hidden [&:not(.hidden)]:inline-flex items-center gap-1.5 text-[13px] font-semibold text-red-600 hover:text-red-700 hover:underline">
+        <i data-lucide="trash-2" aria-hidden="true" class="h-4 w-4"></i> Remove from timetable
+      </button>
+      <div class="ml-auto flex items-center gap-2">
+        <button type="button" data-modal-close class="rounded-lg border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 hover:bg-stone-50">Cancel</button>
+        <button type="button" id="cm-save" class="inline-flex items-center gap-2 rounded-lg bg-[#14342A] px-5 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] disabled:cursor-not-allowed disabled:opacity-50">
+          <span id="cm-save-label">Add class</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

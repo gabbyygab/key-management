@@ -1,8 +1,8 @@
 {% comment %}
   The curriculum add form's fields, shared by the modal and the no-JS page.
   The subject checklist is drawn by hand so each row can carry the slots the
-  subject is already in (data-slots, "BSIT|4|1ST ..."): curriculum.js reads it
-  to grey out what is already in the slot as the slot fields change.
+  subject is already in (data-slots, "BSIT|4|<term id> ..."): curriculum.js reads it
+  to grey out what is already in the slot as the term, program or year changes.
 {% endcomment %}
 {% if form.non_field_errors %}
 <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-800" role="alert">{{ form.non_field_errors }}</div>
@@ -13,7 +13,7 @@
 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
   {% include "partials/form_field.html" with field=form.program field_label="Program" %}
   {% include "partials/form_field.html" with field=form.year_level field_label="Year level" %}
-  {% include "partials/form_field.html" with field=form.semester field_label="Semester" %}
+  {% include "partials/form_field.html" with field=form.term field_label="Term" %}
 </div>
 
 <fieldset data-form-field data-field-name="subjects" class="rounded-lg border border-stone-200">

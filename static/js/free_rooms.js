@@ -198,7 +198,7 @@
   }
 
   // --- "Schedule this" ----------------------------------------------------
-  // schedule-modal.js listens for this event and opens the block editor
+  // class-modal.js listens for this event and opens the add-class dialog
   // pre-filled with the room and the slot the cards were searched for.
   function openScheduler(btn) {
     var q = lastQuery || currentParams();

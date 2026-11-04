@@ -49,6 +49,12 @@ class Room(ArchiveClockMixin):
                                    help_text="Leave blank for a shared room any department may use.")
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.AVAILABLE)
     is_active = models.BooleanField(default=True)
+
+    def get_effective_status_display(self):
+        """Label for the list's annotated `effective_status` (Occupied is derived
+        from borrowed keys, see facilities.views._room_list)."""
+        return Room.Status(getattr(self, "effective_status", self.status)).label
+
     # See Building.archived_at.
     archived_at = models.DateTimeField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)

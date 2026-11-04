@@ -13,7 +13,9 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import sys
 from pathlib import Path
 
+import dj_database_url
 from decouple import Csv, config
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,10 +52,15 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.middleware.gzip.GZipMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'accounts.middleware.SessionTouchMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'accounts.middleware.SessionRequiredMiddleware',
+    'accounts.middleware.NoStoreMiddleware',
     'accounts.middleware.ForcePasswordChangeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -90,9 +97,33 @@ LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "accounts:post_login_router"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
+# Sessions: HttpOnly + SameSite=Lax are Django's defaults; stated so they
+# cannot drift. The session slides, so SESSION_COOKIE_AGE is an idle timeout:
+# a guard post left unattended signs itself out after that many seconds.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = config("SESSION_IDLE_TIMEOUT", default=8 * 60 * 60, cast=int)
+# Sessions are read from the cache (cached_db) and the sliding idle timeout
+# is refreshed at most every SESSION_TOUCH_INTERVAL seconds by
+# accounts.middleware.SessionTouchMiddleware, instead of writing the session
+# row on every page (one ~0.1s round trip to Supabase each time).
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_TOUCH_INTERVAL = config("SESSION_TOUCH_INTERVAL", default=300, cast=int)
+
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static", BASE_DIR / "images"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# WhiteNoise serves collected static files in production (Render has no nginx).
+# Plain storage under tests/DEBUG so a missing manifest never breaks them.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        if DEBUG or (len(sys.argv) > 1 and sys.argv[1] == "test")
+        else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
+}
 
 # Tailwind source lives in the repo so hand-written CSS survives a rebuild.
 # Without this, django_tailwind_cli generates its own source at
@@ -110,12 +141,41 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+# Supabase Postgres in every environment. DATABASE_URL is the Supabase *session
+# pooler* string (port 5432, not the 6543 transaction pooler: the services use
+# select_for_update()). `manage.py test` always uses in-memory SQLite so the
+# suite never touches the live database (see TESTING below).
+DATABASE_URL = config("DATABASE_URL", default="")
+
+if len(sys.argv) > 1 and sys.argv[1] == "test":
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
+else:
+    if not DATABASE_URL:
+        raise ImproperlyConfigured(
+            "DATABASE_URL is not set. Copy the Supabase session-pooler connection "
+            "string into .env (see .env.example)."
+        )
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=0)}
+    if DATABASES["default"]["ENGINE"].endswith("postgresql"):
+        DATABASES["default"].setdefault("OPTIONS", {})["sslmode"] = "require"
+        # Opening a connection to the remote Supabase pooler costs ~0.7s and
+        # every query ~0.1s. Django's dev server handles each request in a new
+        # thread, so conn_max_age cannot reuse connections there; a
+        # process-wide psycopg pool can, and it needs no per-request
+        # "SELECT 1" health check either. Falls back to conn_max_age when
+        # psycopg_pool is not installed.
+        try:
+            import psycopg_pool  # noqa: F401
+        except ImportError:
+            DATABASES["default"]["CONN_MAX_AGE"] = 60
+            DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+        else:
+            DATABASES["default"]["OPTIONS"]["pool"] = {
+                "min_size": config("DB_POOL_MIN", default=2, cast=int),
+                "max_size": config("DB_POOL_MAX", default=10, cast=int),
+                "timeout": config("DB_POOL_TIMEOUT", default=10, cast=int),
+                "max_idle": 300,
+            }
 
 
 # Password validation
@@ -160,11 +220,23 @@ SCHEDULE_ENFORCEMENT = config("SCHEDULE_ENFORCEMENT", default="warn")
 # `python manage.py purge_archived`. 0 turns purging off (archive forever).
 ARCHIVE_RETENTION_DAYS = config("ARCHIVE_RETENTION_DAYS", default=30, cast=int)
 
-# B7.4: login throttling. After LOGIN_RATE_LIMIT failed attempts for one
-# username+IP inside LOGIN_RATE_WINDOW seconds, further attempts are refused
-# until the window expires. Uses the default (local-memory) cache.
-LOGIN_RATE_LIMIT = config("LOGIN_RATE_LIMIT", default=5, cast=int)
-LOGIN_RATE_WINDOW = config("LOGIN_RATE_WINDOW", default=300, cast=int)
+# B7.4: account lockout. After LOGIN_RATE_LIMIT wrong passwords for one
+# username (from any IP or browser) inside LOGIN_RATE_WINDOW seconds, that
+# account is locked until the window expires, even for the right password.
+# Uses the default (local-memory) cache.
+#
+# The lock state is kept on disk (FileBasedCache), not in process memory, so a
+# dev-server auto-reload, a restart or a second worker does not lose it. Tests
+# keep the in-memory cache so they stay isolated.
+if len(sys.argv) > 1 and sys.argv[1] == "test":
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+else:
+    CACHES = {"default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": BASE_DIR / ".cache" / "django",
+    }}
+LOGIN_RATE_LIMIT = config("LOGIN_RATE_LIMIT", default=3, cast=int)
+LOGIN_RATE_WINDOW = config("LOGIN_RATE_WINDOW", default=900, cast=int)
 
 # Supabase (optional). The integration is inert until SUPABASE_URL and a key
 # are set — see supabase_sync/README.md.
@@ -174,6 +246,17 @@ SUPABASE_SERVICE_ROLE_KEY = config("SUPABASE_SERVICE_ROLE_KEY", default="")
 SUPABASE_SCHEMA = config("SUPABASE_SCHEMA", default="public")
 SUPABASE_TIMEOUT = config("SUPABASE_TIMEOUT", default=10, cast=int)
 SUPABASE_SYNC_ENABLED = config("SUPABASE_SYNC_ENABLED", default=False, cast=bool)
+# Rate limit on calls to the Supabase REST and Auth APIs (supabase_sync/
+# throttle.py): a token bucket per API, per process. RATE is requests/second
+# (0 turns it off), BURST the bucket size, MAX_WAIT how long a call may queue
+# before it fails as "unavailable" instead of hanging the page.
+SUPABASE_RATE_LIMIT = config("SUPABASE_RATE_LIMIT", default=8.0, cast=float)
+SUPABASE_RATE_BURST = config("SUPABASE_RATE_BURST", default=16, cast=int)
+SUPABASE_RATE_MAX_WAIT = config("SUPABASE_RATE_MAX_WAIT", default=5.0, cast=float)
+
+# Short-lived cache for data-heavy admin pages (accounts/cache_utils.py).
+# Entries are also dropped the moment related rows change.
+DATA_CACHE_TTL = config("DATA_CACHE_TTL", default=60, cast=int)
 
 # Supabase Auth checks guard/admin passwords (accounts/supabase_auth.py).
 # Roles and sessions stay in Django. Needs SUPABASE_URL, the anon or
@@ -217,6 +300,10 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=3600, cast=int)
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
+    # Behind Render's TLS-terminating proxy: trust X-Forwarded-Proto, otherwise
+    # SECURE_SSL_REDIRECT loops forever.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 
 # Email (dev: print to console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

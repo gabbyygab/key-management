@@ -26,7 +26,7 @@ python manage.py import_schedule <csv> --term <id|name> [--dry-run]
 python manage.py supabase_sync [--check|--dry-run|--full|--schema|--table keys_key]
 ```
 
-Each developer has their own `db.sqlite3` (gitignored). Migration `accounts/0007` creates a built-in `Admin` user whose password is `DEFAULT_USER_PASSWORD` (default `Admin2026`). That user must change the password on first login. `main` is protected, so work on a branch and merge through a PR.
+The database is Supabase Postgres in every environment: set `DATABASE_URL` (session pooler, port 5432) in `.env`, see `.env.example`. `manage.py test` alone uses in-memory SQLite, so tests never touch it. Migration `accounts/0007` creates a built-in `Admin` user whose password is `DEFAULT_USER_PASSWORD` (default `Admin2026`). That user must change the password on first login. `main` is protected, so work on a branch and merge through a PR.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Each developer has their own `db.sqlite3` (gitignored). Migration `accounts/0007
 
 ## Supabase (backend project)
 
-The project is `sqhwpszzfqkbwppkggyo` (`https://sqhwpszzfqkbwppkggyo.supabase.co`). The **`supabase-keytrack` MCP server** points at this project, so use its tools (`list_tables`, `execute_sql`, `get_advisors`, `query_logs`, `apply_migration`) to inspect the live database. The generic `supabase` MCP server is a different connection. Look before you change anything: the data is live.
+The project is `gxqljsyzxddujofksykh` (`https://gxqljsyzxddujofksykh.supabase.co`). The **`supabase-keytrack` MCP server** points at this project, so use its tools (`list_tables`, `execute_sql`, `get_advisors`, `query_logs`, `apply_migration`) to inspect the live database. The generic `supabase` MCP server is a different connection. Look before you change anything: the data is live.
 
 The repo has two independent integrations, each switched on by flags in `.env`:
 

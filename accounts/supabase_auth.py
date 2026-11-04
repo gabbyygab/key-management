@@ -17,6 +17,8 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from supabase_sync import throttle
+
 # Supabase has no "disable user" flag; a long ban is how its dashboard does it.
 BAN_FOREVER = "876000h"  # ~100 years
 UNBAN = "none"
@@ -134,6 +136,10 @@ class SupabaseAuthClient:
         if body is not None:
             headers["Content-Type"] = "application/json"
             data = json.dumps(body).encode()
+        try:
+            throttle.acquire("auth")
+        except throttle.RateLimited as e:
+            raise SupabaseAuthUnavailable(str(e), status=429) from None
         req = Request(f"{self.url}/auth/v1{path}", data=data, method=method, headers=headers)
         try:
             with urlopen(req, timeout=self.timeout) as resp:  # noqa: S310 (https URL from settings)

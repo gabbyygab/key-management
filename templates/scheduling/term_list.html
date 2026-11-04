@@ -25,14 +25,13 @@
   </div>
 </div>
 
-<form method="get" data-list-region-form="#term-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search terms">
+<form data-auto-filter method="get" data-list-region-form="#term-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search terms">
   <label for="term-q" class="sr-only">Search academic year or term</label>
   <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
     <input id="term-q" name="q" value="{{ q }}" placeholder="Search 2025-2026…" autocomplete="off"
            class="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none">
   </div>
-  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Search</button>
   {% if q %}
   <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
   {% endif %}
@@ -43,7 +42,7 @@
      data-bulk-noun="term" data-bulk-noun-plural="terms">
   {% include "partials/bulk_bar.html" %}
   <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Academic terms</caption>
       <thead>
         <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">

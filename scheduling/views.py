@@ -27,10 +27,11 @@ from .forms import (AutoScheduleForm, BlockSwapForm, CurriculumAddForm, Departme
                     SubjectForm, SubjectOfferingForm, TermForm)
 from .models import (CurriculumSubject, ScheduleBlock, ScheduleException, Section, Subject,
                      SubjectOffering, Term)
-from .planner import (SwapError, auto_schedule, clear_term_schedule,
+from .planner import (PlaceError, SwapError, auto_schedule, clear_term_schedule,
                       export_section_timetable_csv, file_offering,
                       get_section_timetable, group_labels, move_block,
-                      offering_queue, restore_blocker, section_scope_ids,
+                      offering_queue, placeable_subjects, place_class,
+                      restore_blocker, section_scope_ids,
                       shared_label, sharing_info, swap_blocks,
                       unschedule_offering)
 from .services import (
@@ -40,6 +41,19 @@ from .services import (
 
 DURATIONS = [(60, "1h"), (90, "1.5h"), (120, "2h"), (180, "3h")]
 DAY_LABELS = [(str(v), label) for v, label in ScheduleBlock.DayOfWeek.choices]
+
+
+def slot_label_12h(h, m):
+    """Return a 12-hour slot label.
+    On-the-hour shows AM/PM (e.g. '7:00 AM'); half-hours show just h:mm
+    (e.g. '7:30') to keep the gutter compact.
+    """
+    hour12 = h % 12 or 12
+    if m == 0:
+        suffix = "AM" if h < 12 else "PM"
+        return f"{hour12}:{m:02d} {suffix}"
+    return f"{hour12}:{m:02d}"
+
 
 
 def _default_slot():
@@ -85,128 +99,56 @@ def _conflicting_ids():
             .annotate(clash=Exists(overlap)).filter(clash=True).values_list("pk", flat=True))
 
 
-@admin_required
-def schedule_list(request):
-    """F5.4 table view of real ScheduleBlocks, with filters + bulk toggle.
+def _time_slots():
+    """The 28 half-hour rows, 07:00 to 21:00, shared by both timetables.
 
-    The "Conflicts" sidebar entry lands here with ?conflicts=1, which narrows
-    the list to blocks that overlap another active block (only possible for
-    rows created before validation existed, or via raw imports)."""
-    if request.method == "POST":
-        return _bulk_toggle(request)
+    ``label`` is the 12-hour text for people; ``hhmm`` is the 24-hour value the
+    cells carry for the scripts and the API."""
+    slots = []
+    for i in range(28):
+        minute = 420 + i * 30
+        h, m = divmod(minute, 60)
+        slots.append({"index": i, "row": i + 1, "minute": minute,
+                      "label": slot_label_12h(h, m), "hhmm": f"{h:02d}:{m:02d}",
+                      "is_hour": m == 0})
+    return slots
 
-    term = request.GET.get("term", "").strip()
-    building = request.GET.get("building", "").strip()
-    room = request.GET.get("room", "").strip()
-    day = request.GET.get("day", "").strip()
-    instructor = request.GET.get("instructor", "").strip()
-    state = request.GET.get("state", "").strip()
-    only_conflicts = (request.GET.get("conflicts") == "1"
-                      or request.resolver_match.url_name == "conflicts")
 
-    blocks = live_blocks(_block_queryset())
-    if term.isdigit():
-        blocks = blocks.filter(term_id=int(term))
-    if building.isdigit():
-        blocks = blocks.filter(room__building_id=int(building))
-    if room.isdigit():
-        blocks = blocks.filter(room_id=int(room))
-    if day.isdigit():
-        blocks = blocks.filter(day_of_week=int(day))
-    if instructor:
-        blocks = blocks.filter(Q(instructor__first_name__icontains=instructor)
-                               | Q(instructor__last_name__icontains=instructor)
-                               | Q(instructor__id_number__icontains=instructor))
-    if state == "active":
-        blocks = blocks.filter(is_active=True)
-    elif state == "inactive":
-        blocks = blocks.filter(is_active=False)
-    conflict_ids = set(_conflicting_ids())
-    if only_conflicts:
-        blocks = blocks.filter(pk__in=conflict_ids)
-    blocks = blocks.order_by("term__start_date", "day_of_week", "start_time", "room__room_code")
-
-    page_obj = Paginator(blocks, 30).get_page(request.GET.get("page"))
-    for b in page_obj:
-        b.has_conflict = b.pk in conflict_ids
-
-    ctx = {
-        "blocks": page_obj,
-        "page_obj": page_obj,
-        "querystring": querystring_without_page(request),
-        "term": term, "building": building, "room": room, "day": day,
-        "instructor": instructor, "state": state, "only_conflicts": only_conflicts,
-        "conflict_count": len(conflict_ids),
-        "buildings": Building.objects.filter(is_active=True).order_by("code"),
-        "rooms": Room.objects.filter(is_active=True).select_related("building")
-                     .order_by("building__code", "room_code"),
-        "days": DAY_LABELS,
-        **_form_context(),
+def _class_modal_context():
+    """Pickers the add/edit class modal needs (it is shared by both grids)."""
+    return {
+        "modal_sections": _section_options(
+            Section.objects.filter(is_active=True).select_related("department")
+            .order_by("program", "year_level", "block", "group")),
+        "modal_rooms": (Room.objects.filter(is_active=True, building__is_active=True)
+                        .exclude(status__in=[Room.Status.MAINTENANCE, Room.Status.INACTIVE])
+                        .select_related("building").order_by("building__code", "room_code")),
+        "modal_borrowers": Borrower.objects.filter(is_active=True)
+                                           .order_by("last_name", "first_name"),
+        "modal_days": [(c, l) for c, l in ScheduleBlock.DayOfWeek.choices if c <= 5],
+        "options_url": reverse("scheduling:class_options"),
+        "place_url": reverse("scheduling:class_place"),
+        "move_url": reverse("scheduling:block_move", args=[0]),
+        "delete_url": reverse("scheduling:schedule_block_delete", args=[0]),
+        "swap_url": reverse("scheduling:block_swap"),
     }
-    return render(request, "scheduling/schedule_list.html", ctx)
-
-
-def _bulk_toggle(request):
-    action = request.POST.get("bulk_action")
-    ids = [int(i) for i in request.POST.getlist("selected_schedule") if i.isdigit()]
-    if action not in {"activate", "deactivate"}:
-        messages.warning(request, "Choose an action before submitting.")
-    elif not ids:
-        messages.warning(request, "Select at least one schedule block to apply the action.")
-    else:
-        activate = action == "activate"
-        skipped = []
-        changed = 0
-        with db_transaction.atomic():
-            for block in ScheduleBlock.objects.select_for_update().filter(pk__in=ids):
-                if block.is_active == activate:
-                    continue
-                if activate and find_conflicts(block.room, block.day_of_week, block.start_time,
-                                               block.end_time, block.term,
-                                               exclude_block_id=block.pk):
-                    skipped.append(block.title)
-                    continue
-                block.is_active = activate
-                block.save(update_fields=["is_active", "updated_at"])
-                changed += 1
-                log_activity(request.user, Action.UPDATE, obj=block, request=request,
-                             description=f"Schedule block '{block.title}' {action}d (bulk).")
-        messages.success(request, f"{changed} schedule block(s) {action}d.")
-        if skipped:
-            messages.warning(request, "Not activated because they would conflict: "
-                                      + ", ".join(skipped))
-    url = reverse("scheduling:schedule_list")
-    qs = request.POST.get("return_qs", "")
-    return redirect(f"{url}?{qs}" if qs else url)
 
 
 @admin_required
-@require_POST
-def schedule_toggle(request, pk):
-    block = get_object_or_404(_block_queryset(), pk=pk)
-    if not block.is_active:
-        clash = find_conflicts(block.room, block.day_of_week, block.start_time, block.end_time,
-                               block.term, exclude_block_id=block.pk)
-        if clash:
-            messages.error(request, f"Cannot reactivate '{block.title}': it overlaps "
-                                    + ", ".join(c.title for c in clash) + ".")
-            return redirect("scheduling:schedule_list")
-    block.is_active = not block.is_active
-    block.save(update_fields=["is_active", "updated_at"])
-    state = "activated" if block.is_active else "deactivated"
-    log_activity(request.user, Action.UPDATE, obj=block, request=request,
-                 description=f"Schedule block '{block.title}' {state}.")
-    messages.success(request, f"'{block.title}' {state}.")
-    nxt = request.POST.get("next", "")
-    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
-                                               require_https=request.is_secure()):
-        return redirect(nxt)
-    return redirect("scheduling:schedule_list")
+def schedule_legacy(request):
+    """/scheduling/ used to be the schedule list; the room schedule and the
+    section timetable replaced it, so old links land on the room schedule."""
+    return redirect("scheduling:room_timetable")
 
 
 @admin_required
 def room_timetable(request):
-    """Weekly timetable grid for one room and term (F5.1)."""
+    """Weekly timetable grid for one room and term (F5.1).
+
+    Classes are added by section + curriculum subject, edited from the card and
+    moved by drag and drop; every change goes through ``planner`` so the
+    section timetable and the subject offerings stay in step.
+    """
     terms = Term.objects.filter(is_active=True).order_by("-start_date")
     rooms = (
         Room.objects.filter(is_active=True, building__is_active=True)
@@ -228,43 +170,7 @@ def room_timetable(request):
     if not selected_room:
         selected_room = rooms.first()
 
-    form = None
-
-    # Progressive enhancement: handle form POST when JS is disabled
-    if request.method == "POST":
-        block_id = request.POST.get("block_id")
-        instance = ScheduleBlock.objects.filter(pk=block_id).first() if block_id else None
-        form = ScheduleBlockForm(request.POST, instance=instance)
-        if form.is_valid():
-            obj = form.save(commit=False)
-            if not instance and not obj.created_by:
-                obj.created_by = request.user
-            obj.save()
-            log_activity(request.user, Action.UPDATE if instance else Action.CREATE, obj=obj,
-                         request=request, description=f"Schedule block '{obj.title}' saved.",
-                         changes=form_changes(form) if instance else None)
-            messages.success(request, f"Schedule block '{obj.title}' saved successfully.")
-            redirect_url = reverse("scheduling:room_timetable")
-            params = urlencode({"room": obj.room_id, "term": obj.term_id})
-            return redirect(f"{redirect_url}?{params}")
-        else:
-            messages.error(request, "Please correct the errors in the schedule form.")
-
     timetable_data = get_room_timetable(selected_room, selected_term)
-
-    # 28 half-hour slots: 07:00 to 20:30 (ending at 21:00)
-    time_slots = []
-    for i in range(28):
-        minute = 420 + i * 30
-        h = minute // 60
-        m = minute % 60
-        time_slots.append({
-            "index": i,
-            "row": i + 1,
-            "minute": minute,
-            "label": f"{h:02d}:{m:02d}",
-            "is_hour": (m == 0),
-        })
 
     days = [
         {"code": 0, "col": 2, "short": "Mon", "name": "Monday"},
@@ -275,31 +181,15 @@ def room_timetable(request):
         {"code": 5, "col": 7, "short": "Sat", "name": "Saturday"},
     ]
 
-    subjects = Subject.objects.filter(is_active=True).order_by("code")
-    borrowers = Borrower.objects.filter(is_active=True).order_by("last_name", "first_name")
-
-    if form is None:
-        form = ScheduleBlockForm(initial={
-            "term": selected_term.pk if selected_term else None,
-            "room": selected_room.pk if selected_room else None,
-            "start_time": "09:00",
-            "end_time": "10:30",
-            "day_of_week": 0,
-            "is_active": True,
-        })
-
     ctx = {
         "terms": terms,
         "selected_term": selected_term,
         "rooms": rooms,
         "selected_room": selected_room,
         "timetable": timetable_data,
-        "time_slots": time_slots,
+        "time_slots": _time_slots(),
         "days": days,
-        "subjects": subjects,
-        "borrowers": borrowers,
-        "form": form,
-        "form_invalid": form.is_bound and bool(form.errors),
+        **_class_modal_context(),
     }
     return render(request, "scheduling/room_timetable.html", ctx)
 
@@ -499,7 +389,7 @@ def exception_create(request, pk):
             if modal:
                 return HttpResponse(msg, status=201)
             messages.success(request, msg)
-            return redirect("scheduling:schedule_list")
+            return redirect("scheduling:room_timetable")
         if modal:
             return render(request, "scheduling/_exception_modal.html", ctx, status=422)
     if modal:
@@ -516,8 +406,10 @@ def free_rooms(request):
     else:
         form = FreeRoomQueryForm(initial=_default_slot())
         rooms = None
+    _, selected_term = _selected_term(request)
     return render(request, "scheduling/free_rooms.html", {
         "form": form, "rooms": rooms, "durations": DURATIONS, **_form_context(),
+        "selected_term": selected_term, **_class_modal_context(),
     })
 
 
@@ -1367,10 +1259,15 @@ def autoschedule(request):
         else:
             messages.error(request, "Check the auto-schedule options.")
 
+    # The queue list is long, so it pages like every other list. The queue is
+    # already in service order, which is a total order, so it pages as it is.
+    queue_page = paginate(request, offering_queue(term, only_unscheduled=False) if term else [])
+
     return render(request, "scheduling/autoschedule.html", {
         "form": form, "terms": terms, "selected_term": term, "run": run,
         "applied": applied,
-        "queue": offering_queue(term, only_unscheduled=False) if term else [],
+        "queue": queue_page, "page_obj": queue_page,
+        "querystring": querystring_without_page(request),
         "offering_create_url": (
             f"{reverse('scheduling:offering_list')}?term={term.pk}&add=1"
             if term
@@ -1397,10 +1294,10 @@ def _curriculum_term(request):
 
 @admin_required
 def curriculum(request):
-    """One program's curriculum: a card per year level, a column per semester.
+    """One program's curriculum for one term: a card per year level.
 
-    The term picker highlights that term's semester, which is the column the
-    offering form narrows its subject list to for that term.
+    Every term owns its curriculum (a new term starts as a copy of the previous
+    one's), so the term picker switches which curriculum is shown and edited.
     """
     programs = curriculum_rules.known_programs()
     program = curriculum_rules.normalise_program(request.GET.get("program", ""))
@@ -1410,8 +1307,7 @@ def curriculum(request):
         programs = sorted({*programs, program})
     terms, term = _curriculum_term(request)
     semester = term.semester if term else ""
-    board = (curriculum_rules.program_board(program, highlight_semester=semester)
-             if program else [])
+    board = curriculum_rules.program_board(program, term) if program else []
     sections = list(Section.objects.filter(program=program, is_active=True)
                     .order_by("year_level", "block", "group")) if program else []
     for year in board:
@@ -1431,10 +1327,11 @@ def curriculum_add(request):
     Same contract as accounts.crud.form_view: a modal POST answers 201 with a
     one-line message, or 422 with the partial re-rendered.
     """
+    _, default_term = _curriculum_term(request)
     initial = {
         "program": curriculum_rules.normalise_program(request.GET.get("program", "")),
         "year_level": request.GET.get("year_level", "") or None,
-        "semester": request.GET.get("semester", "") or Term.Semester.FIRST,
+        "term": default_term.pk if default_term else None,
     }
     form = CurriculumAddForm(request.POST or None, initial=initial)
     modal = is_modal(request)
@@ -1442,10 +1339,10 @@ def curriculum_add(request):
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
         slot = curriculum_rules.slot_label(data["program"], data["year_level"],
-                                           data["semester"])
+                                           data["term"])
         added, already = curriculum_rules.add_subjects(
             program=data["program"], year_level=data["year_level"],
-            semester=data["semester"], subjects=list(data["subjects"]), user=request.user)
+            term=data["term"], subjects=list(data["subjects"]), user=request.user)
         if added:
             codes = ", ".join(s.code for s in added)
             log_activity(request.user, Action.CREATE, request=request,
@@ -1456,7 +1353,7 @@ def curriculum_add(request):
                 return HttpResponse(msg, status=201)
             messages.success(request, msg)
             return redirect(f"{reverse('scheduling:curriculum')}?"
-                            f"{urlencode({'program': data['program']})}")
+                            f"{urlencode({'program': data['program'], 'term': data['term'].pk})}")
         form.add_error("subjects", f"Every subject you picked is already in {slot}.")
 
     ctx = {
@@ -1493,13 +1390,14 @@ def _curriculum_subject_rows(form):
 @require_POST
 def curriculum_remove(request, pk):
     """Take a subject out of its slot. Archives the row; adding it back restores it."""
-    entry = get_object_or_404(CurriculumSubject.objects.select_related("subject"), pk=pk)
+    entry = get_object_or_404(CurriculumSubject.objects.select_related("subject", "term"), pk=pk)
     curriculum_rules.remove_subject(entry)
     log_activity(request.user, Action.UPDATE, obj=entry, request=request,
                  description=f"{entry.subject.code} removed from the "
                              f"{entry.slot_label} curriculum.")
     messages.success(request, f"{entry.subject.code} removed from {entry.slot_label}.")
-    back = f"{reverse('scheduling:curriculum')}?{urlencode({'program': entry.program})}"
+    back = (f"{reverse('scheduling:curriculum')}?"
+            f"{urlencode({'program': entry.program, 'term': entry.term_id})}")
     return redirect(post_redirect(request, back))
 
 
@@ -1516,9 +1414,11 @@ def offerable_subjects_api(request):
     section = pick(Section, "section")
     term = pick(Term, "term")
     offering = pick(SubjectOffering, "offering")
+    keep_subject = pick(Subject, "keep_subject")
+    keep_subject_id = offering.subject_id if offering else (keep_subject.pk if keep_subject else None)
     offer = curriculum_rules.offerable_subjects(
         section=section, term=term,
-        keep_subject_id=offering.subject_id if offering else None)
+        keep_subject_id=keep_subject_id)
     curriculum_url = reverse("scheduling:curriculum")
     if section:
         curriculum_url += "?" + urlencode({"program": section.program})
@@ -1573,13 +1473,7 @@ def section_timetable(request):
 
     timetable = get_section_timetable(section, term, include_groups=include_groups)
 
-    # 07:00 to 21:00 in half hours - the same grid as the room timetable.
-    time_slots = []
-    for i in range(28):
-        minute = 420 + i * 30
-        time_slots.append({"index": i, "row": i + 1, "minute": minute,
-                           "label": f"{minute // 60:02d}:{minute % 60:02d}",
-                           "is_hour": minute % 60 == 0})
+    time_slots = _time_slots()
     days = [{"code": d, "col": d + 2, "short": str(label)[:3], "name": str(label)}
             for d, label in list(ScheduleBlock.DayOfWeek.choices)[:6]]
 
@@ -1588,7 +1482,16 @@ def section_timetable(request):
         "term": term.pk if term else "",
         "groups": "1" if include_groups else "0",
     })
+    # Curriculum subjects for this section + semester, with placement progress.
+    subject_rows, subjects_restricted = placeable_subjects(section=section, term=term)
+    for r in subject_rows:
+        r["placed"] = r["scheduled"] > 0
+        r["complete"] = r["meetings"] > 0 and r["scheduled"] >= r["meetings"]
+    placed_count = sum(1 for r in subject_rows if r["placed"])
     return render(request, "scheduling/section_timetable.html", {
+        "subject_rows": subject_rows, "subjects_restricted": subjects_restricted,
+        "subjects_placed": placed_count,
+        "subjects_unplaced": len(subject_rows) - placed_count,
         "terms": terms, "selected_term": term,
         "sections": _section_options(sections), "selected_section": section,
         "include_groups": include_groups,
@@ -1596,6 +1499,9 @@ def section_timetable(request):
         "group_rows": section.groups() if section else [],
         "export_qs": export_qs,
         "swap_form": BlockSwapForm(term=term),
+        "default_room_id": (timetable["blocks"][0]["block"].room_id
+                            if timetable["blocks"] else ""),
+        **_class_modal_context(),
         # Targets for the empty states, which cannot call {% url %} through an
         # include's `with`.
         "sections_url": reverse("scheduling:section_list"),
@@ -1713,3 +1619,87 @@ def block_move_api(request, pk):
                   "end_time": f"{moved.end_time:%H:%M}",
                   "room": str(moved.room)},
     })
+
+
+def _parse_time(value):
+    from datetime import datetime
+    try:
+        return datetime.strptime(str(value)[:5], "%H:%M").time()
+    except ValueError:
+        raise PlaceError("Use HH:MM for the start and end time.")
+
+
+@api_role_required("ADMIN")
+def class_options_api(request):
+    """GET ?section=&term= - the curriculum subjects an admin may place for a
+    section (with how many meetings each already has), for the add modal."""
+    def pick(model, name):
+        raw = request.GET.get(name, "").strip()
+        return model.objects.filter(pk=int(raw)).first() if raw.isdigit() else None
+
+    section, term = pick(Section, "section"), pick(Term, "term")
+    rows, restricted = placeable_subjects(section=section, term=term)
+    if section is None:
+        message = "Pick a section to see the subjects of its curriculum."
+    elif restricted:
+        message = f"{curriculum_rules.slot_label(section.program, section.year_level, term)} curriculum."
+    else:
+        message = ("No curriculum is set for this program yet, so every subject is "
+                   "listed. Add one on the Curriculum page to narrow this list.")
+    return JsonResponse({"subjects": rows, "restricted": restricted, "message": message})
+
+
+@api_role_required("ADMIN")
+@require_POST
+def class_place_api(request):
+    """POST /api/scheduling/classes/ - place a class by hand.
+
+    {term, section, subject, room, day_of_week, start_time, end_time,
+    instructor?, repeat_days?}. Every meeting goes through
+    ``planner.place_class`` in one transaction: any clash rolls the lot back
+    and answers 422 with the reason."""
+    try:
+        data = read_body(request)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+    def get(model, key):
+        raw = data.get(key)
+        return model.objects.filter(pk=int(raw)).first() if str(raw or "").isdigit() else None
+
+    term, section = get(Term, "term"), get(Section, "section")
+    subject, room = get(Subject, "subject"), get(Room, "room")
+    instructor = get(Borrower, "instructor")
+    try:
+        start, end = _parse_time(data.get("start_time")), _parse_time(data.get("end_time"))
+        days = [int(data.get("day_of_week"))]
+        raw = data.get("repeat_days") or []
+        if hasattr(data, "getlist"):
+            raw = data.getlist("repeat_days")
+        days += sorted({int(d) for d in raw} - set(days))
+    except (TypeError, ValueError, PlaceError) as e:
+        return JsonResponse({"error": str(e) if isinstance(e, PlaceError)
+                             else "Pick a day."}, status=422)
+
+    placed = []
+    try:
+        with db_transaction.atomic():
+            for day in days:
+                placed.append(place_class(
+                    term=term, section=section, subject=subject, room=room,
+                    day_of_week=day, start_time=start, end_time=end,
+                    instructor=instructor, user=request.user))
+    except PlaceError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+    for block, offering, created in placed:
+        log_activity(request.user, Action.CREATE, obj=block, request=request,
+                     description=f"'{block.title}' placed on {block.get_day_of_week_display()} "
+                                 f"{block.start_time:%H:%M}-{block.end_time:%H:%M} in {block.room}"
+                                 + (f"; offering filed for {section.code}." if created else "."))
+    first = placed[0][1]
+    return JsonResponse({
+        "success": True, "created": len(placed),
+        "offering": {"id": first.pk, "scheduled": first.scheduled_count,
+                     "meetings": first.meetings_per_week},
+    }, status=201)

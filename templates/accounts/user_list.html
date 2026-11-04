@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Users &amp; Guards — KEYTRACK{% endblock %}
 {% block content %}
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
@@ -17,7 +18,7 @@
   </div>
 </div>
 
-<form method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter users" data-list-region-form="#user-list-region">
+<form data-auto-filter method="get" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter users" data-list-region-form="#user-list-region">
   <label for="user-q" class="sr-only">Search name, username, employee ID or email</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -33,20 +34,20 @@
     <option value="">All departments</option>
     {% for d in departments %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d }}</option>{% endfor %}
   </select>
-  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
   {% if q or role_filter or dept_filter %}<a href="{% url 'accounts:user_list' %}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
 <div id="user-list-region" data-list-region>
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">System users and guards</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">
           <th scope="col" class="p-3.5 font-semibold">Name</th>
           <th scope="col" class="p-3.5 font-semibold">Username</th>
           <th scope="col" class="p-3.5 font-semibold">Role</th>
-          <th scope="col" class="p-3.5 font-semibold">Department · Post</th>
+          <th scope="col" class="p-3.5 font-semibold">Department</th>
+          <th scope="col" class="p-3.5 font-semibold">Guard Post</th>
           <th scope="col" class="p-3.5 font-semibold">Status</th>
           <th scope="col" class="p-3.5 text-right font-semibold">Actions</th>
         </tr>
@@ -65,10 +66,28 @@
           </td>
           <td class="p-3.5 font-mono text-[12px] text-stone-600">{{ u.username }}</td>
           <td class="p-3.5">{% include "partials/status_pill.html" with status=u.role label=u.get_role_display %}{% if u.is_superuser %} <span class="text-[11px] text-stone-500">superuser</span>{% endif %}</td>
-          <td class="p-3.5 text-stone-600">{{ u.department.name|default:"—" }}{% if u.assigned_post %}<div class="text-[12px] text-stone-500 inline-flex items-center gap-1"><i data-lucide="shield" aria-hidden="true" class="w-3 h-3"></i>{{ u.assigned_post.name }}</div>{% endif %}</td>
+          <td class="p-3.5 text-stone-600">{% if u.department %}<span>{{ u.department.name }}</span>{% else %}<span class="text-stone-400">—</span>{% endif %}</td>
+          <td class="p-3.5 text-stone-600">
+            {% if u.assigned_post %}
+            <div class="text-[12px] text-stone-600 inline-flex items-center gap-1.5 font-medium">
+              <i data-lucide="shield" aria-hidden="true" class="w-3.5 h-3.5 text-stone-500"></i><span>{{ u.assigned_post.name }}</span>
+            </div>
+            {% else %}
+            <span class="text-stone-400">—</span>
+            {% endif %}
+          </td>
           <td class="p-3.5">
             {% if u.is_active %}{% include "partials/status_pill.html" with status="ACTIVE" label="Active" %}{% else %}{% include "partials/status_pill.html" with status="INACTIVE" label="Inactive" %}{% endif %}
             {% if u.on_duty %}<div class="mt-1">{% include "partials/status_pill.html" with status="ON_DUTY" label="On duty" %}</div>{% endif %}
+            {% if u.lock_seconds %}
+            <div class="mt-1">
+              <span data-lock-seconds="{{ u.lock_seconds }}" title="Too many wrong passwords. Unlocks on its own when the timer ends."
+                    class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
+                <i data-lucide="lock" aria-hidden="true" class="w-3 h-3"></i><span>Locked</span>
+                <span data-lock-timer class="font-mono tabular-nums" role="timer" aria-label="Time until unlock"></span>
+              </span>
+            </div>
+            {% endif %}
           </td>
           <td class="p-3.5 text-right whitespace-nowrap">
             <div class="inline-flex items-center justify-end gap-3">
@@ -102,7 +121,7 @@
           </td>
         </tr>
         {% empty %}
-        {% include "partials/empty_state.html" with colspan=6 icon="users" title="No users found" message="No accounts match these filters." %}
+        {% include "partials/empty_state.html" with colspan=7 icon="users" title="No users found" message="No accounts match these filters." %}
         {% endfor %}
       </tbody>
     </table>
@@ -113,3 +132,4 @@
 {% include "partials/ajax_modal_shell.html" with modal_id="user-modal" modal_label="User form" skeleton_fields=9 skeleton_cols="2" %}
 {% include "partials/ajax_modal_shell.html" with modal_id="password-modal" modal_size="md" modal_label="Reset password" skeleton_fields=2 %}
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/lock-countdown.js' %}"></script>{% endblock %}

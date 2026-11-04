@@ -1,11 +1,12 @@
-"""Program curricula: which subjects a section takes in which semester.
+"""Program curricula: which subjects a section takes in a term.
 
-A curriculum slot is (program, year level, semester), e.g. ``BSIT · 4th year ·
-1st Semester``, holding the subjects that year of the program takes that
-semester. A section knows its program and year level and a term knows its
-semester, so together they pick exactly one slot. That is what the offering
-form uses: ``offerable_subjects`` narrows the subject picker to the slot and
-drops what is already offered to the section that term.
+Every term owns its curriculum. A slot is (term, program, year level), e.g.
+``2026-2027 1st Semester / BSIT / 4th year``, holding the subjects that year of
+the program takes that term. A new term starts as a copy of the previous
+same-semester term's curriculum (``copy_curriculum``); after that each term is
+edited on its own, so adding or dropping a subject in one term never touches
+another. The offering form uses it: ``offerable_subjects`` narrows the subject
+picker to the section's slot in the term and drops what is already offered.
 
 Rules live here; views only translate HTTP.
 """
@@ -26,11 +27,10 @@ DEFAULT_YEAR_LEVELS = (1, 2, 3, 4)
 MAX_YEAR_LEVEL = 5
 
 
-def slot_label(program, year_level, semester):
-    sem = dict(SEMESTERS).get(semester, "")
+def slot_label(program, year_level, term=None):
     parts = [program, year_level_label(int(year_level))]
-    if sem:
-        parts.append(sem)
+    if term is not None:
+        parts.append(str(term))
     return " · ".join(parts)
 
 
@@ -46,20 +46,18 @@ def known_programs():
     return sorted(c for c in codes if c)
 
 
-def slot_entries(program, year_level, semester=None):
-    """Live curriculum rows of one slot. ``semester=None`` means every semester
-    of that year (a term filed before terms had a semester)."""
-    qs = CurriculumSubject.objects.filter(
-        program=normalise_program(program), year_level=year_level, is_active=True,
-        subject__is_active=True)
-    if semester:
-        qs = qs.filter(semester=semester)
-    return qs
+def slot_entries(program, year_level, term):
+    """Live curriculum rows of one slot of one term (none without a term)."""
+    if term is None:
+        return CurriculumSubject.objects.none()
+    return CurriculumSubject.objects.filter(
+        term=term, program=normalise_program(program), year_level=year_level,
+        is_active=True, subject__is_active=True)
 
 
 @transaction.atomic
-def add_subjects(*, program, year_level, semester, subjects, user=None):
-    """Put ``subjects`` into one curriculum slot.
+def add_subjects(*, program, year_level, term, subjects, user=None):
+    """Put ``subjects`` into one curriculum slot of ``term``.
 
     Returns ``(added, already)``: the subjects newly in the slot (a row created
     or an archived one restored) and the ones that were there already.
@@ -68,15 +66,14 @@ def add_subjects(*, program, year_level, semester, subjects, user=None):
     added, already = [], []
     existing = {
         row.subject_id: row for row in CurriculumSubject.objects.select_for_update().filter(
-            program=program, year_level=year_level, semester=semester,
-            subject__in=subjects)
+            term=term, program=program, year_level=year_level, subject__in=subjects)
     }
     for subject in subjects:
         row = existing.get(subject.pk)
         if row is None:
             CurriculumSubject.objects.create(
-                program=program, year_level=year_level, semester=semester,
-                subject=subject, created_by=user)
+                term=term, program=program, year_level=year_level,
+                semester=term.semester, subject=subject, created_by=user)
             added.append(subject)
         elif not row.is_active:
             row.is_active = True
@@ -99,6 +96,39 @@ def remove_subject(entry):
         entry.is_active = False
         entry.save(update_fields=["is_active", "updated_at"])
     return entry
+
+
+def previous_term(term):
+    """The term whose curriculum a new ``term`` starts from: the most recent
+    other term of the same semester that has a curriculum."""
+    if not term.semester:
+        return None
+    for other in (Term.objects.filter(semester=term.semester).exclude(pk=term.pk)
+                  .order_by("-start_date", "-pk")):
+        if other.curriculum.filter(is_active=True).exists():
+            return other
+    return None
+
+
+@transaction.atomic
+def copy_curriculum(source, target):
+    """Copy ``source``'s live curriculum into ``target``, skipping subjects the
+    target already has. Returns how many rows were added."""
+    have = set(target.curriculum.values_list("program", "year_level", "subject_id"))
+    rows = [
+        CurriculumSubject(term=target, program=e.program, year_level=e.year_level,
+                          semester=target.semester, subject_id=e.subject_id,
+                          created_by_id=e.created_by_id)
+        for e in source.curriculum.filter(is_active=True)
+        if (e.program, e.year_level, e.subject_id) not in have]
+    CurriculumSubject.objects.bulk_create(rows)
+    return len(rows)
+
+
+def seed_from_previous(term):
+    """Give a freshly created ``term`` the previous term's curriculum."""
+    source = previous_term(term)
+    return copy_curriculum(source, term) if source else 0
 
 
 @dataclass
@@ -133,9 +163,9 @@ class OfferableSubjects:
 def offerable_subjects(*, section, term, keep_subject_id=None):
     """The subjects that may still be offered to ``section`` in ``term``.
 
-    * Narrowed to the section's curriculum slot (its program + year level and
-      the term's semester) when that slot has any subjects; otherwise every
-      live subject, so a program without a curriculum is not locked out.
+    * Narrowed to the section's curriculum slot in that term (its program +
+      year level) when that slot has any subjects; otherwise every live
+      subject, so a program without a curriculum is not locked out.
     * Minus every subject already offered to the section that term, archived
       offerings included, since (term, subject, section) is unique.
     * ``keep_subject_id`` stays in the list regardless: the subject an existing
@@ -148,9 +178,9 @@ def offerable_subjects(*, section, term, keep_subject_id=None):
     semester = getattr(term, "semester", "") or ""
     result = OfferableSubjects(
         program=section.program, year_level=section.year_level, semester=semester,
-        slot=slot_label(section.program, section.year_level, semester))
+        slot=slot_label(section.program, section.year_level, term))
 
-    in_slot = set(slot_entries(section.program, section.year_level, semester or None)
+    in_slot = set(slot_entries(section.program, section.year_level, term)
                   .values_list("subject_id", flat=True))
     taken = set()
     if term is not None:
@@ -182,54 +212,50 @@ def subject_allowed(*, section, term, subject):
     if section is None or subject is None:
         return None
     semester = getattr(term, "semester", "") or ""
-    in_slot = slot_entries(section.program, section.year_level, semester or None)
+    in_slot = slot_entries(section.program, section.year_level, term)
     if in_slot.exists() and not in_slot.filter(subject=subject).exists():
-        slot = slot_label(section.program, section.year_level, semester)
+        slot = slot_label(section.program, section.year_level, term)
         return f"{subject.code} is not in the {slot} curriculum."
     return None
 
 
-def program_board(program, *, highlight_semester=""):
-    """The curriculum page for one program: a card per year level, a column
-    per semester. Summer only shows for a year that uses it (or while the
-    highlighted term is a summer term)."""
+def program_board(program, term):
+    """The curriculum page for one program in one term: a card per year level
+    holding the term's semester column."""
     program = normalise_program(program)
-    rows = list(CurriculumSubject.objects.filter(program=program, is_active=True)
+    if term is None:
+        return []
+    rows = list(CurriculumSubject.objects.filter(term=term, program=program, is_active=True)
                 .select_related("subject__department")
-                .order_by("year_level", "semester", "subject__code"))
+                .order_by("year_level", "subject__code"))
     years = set(DEFAULT_YEAR_LEVELS)
     years |= {r.year_level for r in rows}
     years |= set(Section.objects.filter(program=program, is_active=True)
                  .values_list("year_level", flat=True))
-    by_slot = {}
+    by_year = {}
     for r in rows:
-        by_slot.setdefault((r.year_level, r.semester), []).append(r)
+        by_year.setdefault(r.year_level, []).append(r)
 
+    label = dict(SEMESTERS).get(term.semester, str(term))
     board = []
     for year in sorted(years):
-        semesters = []
-        for code, label in SEMESTERS:
-            entries = by_slot.get((year, code), [])
-            if (code == Term.Semester.SUMMER and not entries
-                    and highlight_semester != Term.Semester.SUMMER):
-                continue
-            semesters.append({"code": code, "label": label, "entries": entries,
-                              "is_current": code == highlight_semester})
+        entries = by_year.get(year, [])
         board.append({"year": year, "label": year_level_label(year),
-                      "semesters": semesters,
-                      "count": sum(len(s["entries"]) for s in semesters)})
+                      "semesters": [{"code": term.semester, "label": label,
+                                     "entries": entries, "is_current": False}],
+                      "count": len(entries)})
     return board
 
 
 def subject_slots():
-    """``{subject_id: ["BSIT|4|1ST", ...]}``: every live slot each subject is in.
+    """``{subject_id: ["BSIT|4|<term pk>", ...]}``: every live slot each subject is in.
 
     The add modal uses it to grey out subjects already in the slot being
     edited, and to re-check that as the admin changes the slot fields.
     """
     out = {}
-    for sid, program, year, sem in (CurriculumSubject.objects.filter(is_active=True)
-                                    .values_list("subject_id", "program", "year_level",
-                                                 "semester")):
-        out.setdefault(sid, []).append(f"{program}|{year}|{sem}")
+    for sid, program, year, term_id in (CurriculumSubject.objects.filter(is_active=True)
+                                        .values_list("subject_id", "program", "year_level",
+                                                     "term_id")):
+        out.setdefault(sid, []).append(f"{program}|{year}|{term_id}")
     return out

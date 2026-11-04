@@ -366,8 +366,7 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Room Schedule")
         self.assertContains(res, reverse("scheduling:free_rooms"))
         self.assertContains(res, "Room Finder")
-        self.assertContains(res, reverse("scheduling:conflicts"))
-        self.assertContains(res, "Conflicts")
+        self.assertNotContains(res, "Schedule List")
 
         self.assertContains(res, reverse("keys:key_list"))
         self.assertContains(res, "Key Inventory")
@@ -412,7 +411,7 @@ class SidebarRoleSplitTests(TestCase):
 
         # Guard Navigation Links
         self.assertContains(res, reverse("transactions:borrow_dashboard"))
-        self.assertContains(res, "Key Transactions (POS)")
+        self.assertContains(res, "Key Transactions")
         self.assertContains(res, reverse("keys:key_availability"))
         self.assertContains(res, "Key Availability (read-only)")
         self.assertContains(res, reverse("accounts:borrower_lookup"))
@@ -425,8 +424,6 @@ class SidebarRoleSplitTests(TestCase):
         # Admin-only items MUST NOT appear for Guard
         self.assertNotContains(res, reverse("scheduling:room_timetable"))
         self.assertNotContains(res, "Room Schedule")
-        self.assertNotContains(res, reverse("scheduling:conflicts"))
-        self.assertNotContains(res, "Conflicts")
         self.assertNotContains(res, reverse("keys:category_list"))
         self.assertNotContains(res, "Key Categories")
         self.assertNotContains(res, reverse("facilities:building_list"))

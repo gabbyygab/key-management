@@ -18,7 +18,7 @@
   </div>
 </div>
 
-<form method="get" data-list-region-form="#borrower-list-region" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter borrowers">
+<form data-auto-filter method="get" data-list-region-form="#borrower-list-region" class="flex flex-wrap gap-2 mb-3" role="search" aria-label="Search and filter borrowers">
   <label for="borrower-q" class="sr-only">Search borrower name or ID number</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -42,7 +42,6 @@
     <option value="expired" {% if auth_filter == "expired" %}selected{% endif %}>Authorization expired</option>
     <option value="holding" {% if auth_filter == "holding" %}selected{% endif %}>Holding a key now</option>
   </select>
-  <button type="submit" class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold hover:bg-[#0F2E1F]">Filter</button>
   {% if q or type_filter or dept_filter or auth_filter %}<a href="{{ request.path }}" class="bg-white border border-stone-200 text-stone-700 px-3 py-2 rounded-lg text-[13px] font-medium hover:bg-stone-50 inline-flex items-center">Reset</a>{% endif %}
 </form>
 
@@ -51,7 +50,7 @@
      data-bulk-noun="borrower" data-bulk-noun-plural="borrowers">
   {% include "partials/bulk_bar.html" %}
   <div class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-x-auto">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Borrowers</caption>
       <thead>
         <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-200 bg-stone-50/60">

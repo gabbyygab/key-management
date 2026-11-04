@@ -28,7 +28,7 @@
   </div>
 </div>
 
-<form method="get" data-list-region-form="#subject-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter subjects">
+<form data-auto-filter method="get" data-list-region-form="#subject-list-region" class="mb-3 flex flex-wrap gap-2" role="search" aria-label="Search and filter subjects">
   <label for="subj-q" class="sr-only">Search subject code or title</label>
   <div class="flex min-w-[220px] flex-1 items-center rounded-lg border border-stone-200 bg-white px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="mr-2 h-4 w-4 shrink-0 text-stone-400"></i>
@@ -40,7 +40,6 @@
     <option value="">Any department</option>
     {% for d in departments %}<option value="{{ d.pk }}" {% if department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.code }} — {{ d.name }}</option>{% endfor %}
   </select>
-  <button type="submit" class="rounded-lg bg-[#14342A] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F]">Filter</button>
   {% if q or department %}
   <a href="{{ request.path }}" class="inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-2 text-[13px] font-medium text-stone-700 hover:bg-stone-50">Reset</a>
   {% endif %}
@@ -51,7 +50,7 @@
      data-bulk-noun="subject" data-bulk-noun-plural="subjects">
   {% include "partials/bulk_bar.html" %}
   <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-sm">
-    <table class="min-w-full text-[13px]">
+    <table data-sticky-actions class="min-w-full text-[13px]">
       <caption class="sr-only">Subject catalogue</caption>
       <thead>
         <tr class="border-b border-stone-200 bg-stone-50/60 text-left text-[11px] uppercase tracking-wide text-stone-500">

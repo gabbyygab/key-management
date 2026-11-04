@@ -7,7 +7,7 @@
 {% block extra_head %}
 <style>
   @media print {
-    aside, header, nav, .no-print, #schedule-form-modal, [data-modal-overlay] {
+    aside, header, nav, .no-print, #class-modal, [data-modal-overlay] {
       display: none !important;
     }
     body, html {
@@ -75,7 +75,7 @@
 <div class="no-print flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Room Timetable</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Weekly schedule and recurring class assignments for university rooms.</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">Weekly schedule of one room. Click a free slot to add a class, click a class to move it, or drag it to another day and time.</p>
   </div>
   <div class="flex items-center gap-2 flex-wrap">
     <button type="button" onclick="window.print()" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
@@ -84,11 +84,11 @@
     <a href="{% url 'scheduling:free_rooms' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
       <i data-lucide="search-check" class="w-4 h-4 text-stone-500"></i> Room Finder
     </a>
-    <a href="{% url 'scheduling:schedule_list' %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
-      <i data-lucide="list" class="w-4 h-4 text-stone-500"></i> Schedule List
+    <a href="{% url 'scheduling:section_timetable' %}{% if selected_term %}?term={{ selected_term.pk }}{% endif %}" class="bg-white border border-stone-200 px-3.5 py-2 rounded-lg text-[13px] font-medium text-stone-700 hover:bg-stone-50 shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="calendar-days" class="w-4 h-4 text-stone-500"></i> Section timetable
     </a>
-    <button type="button" id="top-add-block-btn" data-schedule-new data-day="0" data-start="09:00" data-end="10:30" class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shadow-xs inline-flex items-center gap-1.5">
-      <i data-lucide="plus" class="w-4 h-4"></i> Add Block
+    <button type="button" id="top-add-block-btn" data-class-new data-day="0" data-start="09:00" data-end="10:30"{% if selected_room %} data-room="{{ selected_room.pk }}"{% endif %} class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shadow-xs inline-flex items-center gap-1.5">
+      <i data-lucide="plus" class="w-4 h-4"></i> Add class
     </button>
   </div>
 </div>
@@ -120,7 +120,7 @@
         <label for="room-select" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5 flex items-center gap-1">
           <i data-lucide="door-open" class="w-3.5 h-3.5"></i> Room
         </label>
-        <select id="room-select" name="room" onchange="this.form.submit()" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] font-medium text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        <select id="room-select" name="room" data-searchable data-search-placeholder="Search room…" onchange="this.form.submit()" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] font-medium text-stone-800 focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
           {% for r in rooms %}
           <option value="{{ r.pk }}" {% if selected_room and r.pk == selected_room.pk %}selected{% endif %}>
             {{ r.building.code }} - {{ r.room_code }} ({{ r.get_room_type_display }})
@@ -191,7 +191,7 @@
     </div>
 
     <!-- Timetable Grid Body (28 rows x 7 cols) -->
-    <div data-schedule-grid class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
+    <div data-schedule-grid data-room="{{ selected_room.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
       
       <!-- Time Gutter Labels (Col 1) -->
       {% for slot in time_slots %}
@@ -211,8 +211,8 @@
         <div class="slot-cell border-r border-b border-stone-100 hover:bg-emerald-50/50 transition cursor-pointer group"
              style="grid-column: {{ day.col }}; grid-row: {{ slot.row }};"
              data-slot-day="{{ day.code }}"
-             data-slot-time="{{ slot.label }}"
-             title="Click to schedule on {{ day.name }} at {{ slot.label }}">
+             data-slot-time="{{ slot.hhmm }}"
+             title="Click to add a class on {{ day.name }} at {{ slot.label }}">
           <span class="hidden group-hover:inline-block text-[10px] text-emerald-700 font-medium pl-1.5 pt-0.5 select-none">+ Add</span>
         </div>
         {% endfor %}
@@ -220,7 +220,8 @@
 
       <!-- Scheduled Blocks -->
       {% for block in timetable.blocks %}
-      <div class="timetable-block z-10 m-0.5 p-2 rounded-lg border {{ block.palette.bg }} {{ block.palette.border }} {{ block.palette.border_accent }} text-[12px] shadow-xs hover:shadow-md cursor-pointer transition flex flex-col justify-between overflow-hidden group select-none"
+      <div class="timetable-block z-10 m-0.5 p-2 rounded-lg border {{ block.palette.bg }} {{ block.palette.border }} {{ block.palette.border_accent }} text-[12px] shadow-xs hover:shadow-md cursor-pointer transition flex flex-col justify-between overflow-hidden group select-none cursor-grab active:cursor-grabbing"
+           draggable="true"
            style="grid-column: {{ block.col }}; grid-row: {{ block.row_start }} / {{ block.row_end }};"
            data-block-id="{{ block.id }}"
            data-block='{{ block.json_data }}'
@@ -262,13 +263,13 @@
 </div>
 
 <!-- Include Modal Partial -->
-{% include "scheduling/_schedule_form_modal.html" %}
+{% include "scheduling/_class_modal.html" %}
 
 {% endif %}
 {% endblock %}
 
 {% block extra_js %}
 {# csrf/toast/modal/confirm already load from base.html; loading them again double-binds every listener. #}
-<script src="{% static 'js/schedule-grid.js' %}"></script>
-<script src="{% static 'js/schedule-modal.js' %}"></script>
+<script src="{% static 'js/class-modal.js' %}?v=3"></script>
+<script src="{% static 'js/schedule-dnd.js' %}?v=2"></script>
 {% endblock %}

@@ -18,7 +18,7 @@
   </button>
 </div>
 
-<form method="post" data-offering-form data-offerable-url="{% url 'scheduling:offerable_subjects_api' %}" data-offering-id="{{ form.instance.pk|default:'' }}" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Offering saved." class="flex min-h-0 flex-1 flex-col">
+<form method="post" data-offering-form data-offerable-url="{% url 'scheduling:offerable_subjects_api' %}" data-offering-id="{{ form.instance.pk|default:'' }}" action="{{ action_url }}" {% include "partials/edit_confirm_attrs.html" %} data-success-message="Offering saved." {% if form.errors %}data-form-error="{% if form.non_field_errors %}{{ form.non_field_errors.0|striptags }}{% else %}{% for field, errs in form.errors.items %}{% if forloop.first %}{{ errs.0|striptags }}{% endif %}{% endfor %}{% endif %}"{% endif %} class="flex min-h-0 flex-1 flex-col">
   {% csrf_token %}
   <div class="kt-modal-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
     {% if form.non_field_errors %}

@@ -1,7 +1,7 @@
 {% load keytrack %}
 {% comment %}
   Shared pagination footer: the default list design (guide.md §5 "List pages:
-  pagination"). Pages are 10 records (accounts.crud.LIST_PAGE_SIZE); wrap the
+  pagination"). Default 10 records (accounts.crud.LIST_PAGE_SIZE), switchable to 25/50 with the Rows per page select (?per_page=); wrap the
   table and this footer in a [data-list-region] for in-place paging with
   skeleton rows.
   Params: page_obj (Django Page), item_label ("keys", "rooms"…; default
@@ -10,8 +10,19 @@
 {% endcomment %}
 {% if page_obj and page_obj.paginator.count > 0 %}
 <nav aria-label="Pagination" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-stone-200 bg-white rounded-b-xl text-[13px]">
-  <div class="text-stone-500">
+  <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-stone-500">
+  <div>
     Showing <span class="font-semibold text-stone-800">{{ page_obj.start_index }}</span> to <span class="font-semibold text-stone-800">{{ page_obj.end_index }}</span> of <span class="font-semibold text-stone-800">{{ page_obj.paginator.count }}</span> {{ item_label|default:"results" }}
+  </div>
+  <label class="inline-flex items-center gap-2">
+    <span>Rows per page</span>
+    <select data-per-page aria-label="Rows per page"
+            class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[13px] text-stone-800 font-medium">
+      {% for size in "10 25 50"|make_list_sizes %}
+        <option value="{% per_page_url size %}"{% if page_obj.paginator.per_page == size %} selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+  </label>
   </div>
 
   {% if page_obj.has_other_pages %}

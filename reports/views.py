@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import render
 
+from accounts.cache_utils import remember
 from accounts.decorators import role_required
 from .services import (
     export_report,
@@ -70,13 +71,26 @@ def reports_index(request):
             )
         return HttpResponseBadRequest(f"Invalid export type: {export_param}")
 
-    # Fetch data for all reports
-    summary = get_summary_metrics(start_dt, end_dt)
-    key_utilisation = get_key_utilisation_report(start_dt, end_dt)
-    overdue_list = get_overdue_report(start_dt, end_dt)
-    guard_activity = get_guard_activity_report(start_dt, end_dt)
-    room_usage = get_room_usage_report(start_dt, end_dt)
-    borrower_frequency = get_borrower_frequency_report(start_dt, end_dt)
+    # Fetch data for all reports (cached; dropped when transactions, keys or
+    # rooms change).
+    def build():
+        return {
+            "summary": get_summary_metrics(start_dt, end_dt),
+            "key_utilisation": get_key_utilisation_report(start_dt, end_dt),
+            "overdue_list": get_overdue_report(start_dt, end_dt),
+            "guard_activity": get_guard_activity_report(start_dt, end_dt),
+            "room_usage": get_room_usage_report(start_dt, end_dt),
+            "borrower_frequency": get_borrower_frequency_report(start_dt, end_dt),
+        }
+
+    data = remember("reports", ["inventory", "txn", "shift"], build,
+                    parts=[date_filter["start_date_str"], date_filter["end_date_str"]])
+    summary = data["summary"]
+    key_utilisation = data["key_utilisation"]
+    overdue_list = data["overdue_list"]
+    guard_activity = data["guard_activity"]
+    room_usage = data["room_usage"]
+    borrower_frequency = data["borrower_frequency"]
 
     context = {
         "title": "Reports",

@@ -31,6 +31,7 @@ Rules live here; views only translate HTTP.
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass, field
 from datetime import time as dtime
 
@@ -39,7 +40,20 @@ from django.db.models import Count, F, Q
 from django.http import HttpResponse
 
 from facilities.models import Room
-from .models import ScheduleBlock, Section, SubjectOffering, Term
+from .models import ScheduleBlock, Section, Subject, SubjectOffering, Term
+
+
+def _fmt_time(t):
+    """Format a time object as 12-hour clock, e.g. '7:00 AM', '12:30 PM'."""
+    h = t.hour % 12 or 12
+    suffix = "AM" if t.hour < 12 else "PM"
+    return f"{h}:{t.minute:02d} {suffix}"
+
+
+def _fmt_time_range(start, end):
+    """Format a start-end pair as '7:00 AM – 8:30 AM'."""
+    return f"{_fmt_time(start)} – {_fmt_time(end)}"
+
 from .services import find_conflicts
 
 # The timetable window, shared with the grid in views.room_timetable: 07:00 to
@@ -254,7 +268,7 @@ class Placement:
 
     @property
     def time_display(self):
-        return f"{self.start_time:%H:%M}–{self.end_time:%H:%M}"
+        return _fmt_time_range(self.start_time, self.end_time)
 
 
 @dataclass
@@ -825,8 +839,21 @@ def move_block(block, *, day_of_week=None, start_time=None, end_time=None, room=
         locked.end_time = end_time
     if room is not None:
         locked.room = room
-    if minutes_of(locked.end_time) <= minutes_of(locked.start_time):
-        raise SwapError("End time must be after start time.")
+    from datetime import datetime
+    for attr in ("start_time", "end_time"):
+        value = getattr(locked, attr)
+        if isinstance(value, str):
+            try:
+                setattr(locked, attr, datetime.strptime(value[:5], "%H:%M").time())
+            except ValueError:
+                raise SwapError("Use HH:MM for the start and end time.")
+    try:
+        check_grid(locked.day_of_week, locked.start_time, locked.end_time)
+    except PlaceError as e:
+        raise SwapError(str(e)) from e
+    if room is not None and (not room.is_active or room.status in (
+            Room.Status.MAINTENANCE, Room.Status.INACTIVE)):
+        raise SwapError("Selected room is not usable for scheduling.")
     blockers = slot_blockers(
         term=locked.term, section=locked.section, instructor=locked.instructor,
         room=locked.room, day_of_week=locked.day_of_week,
@@ -837,6 +864,161 @@ def move_block(block, *, day_of_week=None, start_time=None, end_time=None, room=
         raise SwapError(f"'{locked.title}' cannot move there. " + blocker_summary(blockers))
     locked.save(update_fields=["day_of_week", "start_time", "end_time", "room", "updated_at"])
     return locked
+
+
+# ---------------------------------------------------------------------------
+# Manual placement (the hand-made twin of the auto-scheduler)
+# ---------------------------------------------------------------------------
+#
+# The section and room timetables let an admin place a class by hand. It goes
+# through the same objects the auto-scheduler writes - a SubjectOffering and a
+# ScheduleBlock linked to it - so the Subject Offerings page, both timetables
+# and the exports always agree. A subject can only be placed when it is in the
+# section's curriculum for the term (``curriculum.subject_allowed``).
+
+class PlaceError(ValueError):
+    """A manual placement was refused; the message says why."""
+
+
+def check_grid(day_of_week, start_time, end_time):
+    """The timetable grid is Mon-Sat, 07:00-21:00 in half-hour steps."""
+    if day_of_week is None or int(day_of_week) not in SCHEDULABLE_DAYS:
+        raise PlaceError("Pick a day from Monday to Saturday.")
+    if end_time <= start_time:
+        raise PlaceError("End time must be after start time.")
+    if start_time < DAY_START or end_time > DAY_END:
+        raise PlaceError("Classes run between 7:00 AM and 9:00 PM.")
+    if minutes_of(start_time) % SLOT_MINUTES or minutes_of(end_time) % SLOT_MINUTES:
+        raise PlaceError("Use half-hour times (for example 9:00 or 9:30).")
+
+
+def placeable_subjects(*, section, term):
+    """Subjects an admin may place for ``section`` in ``term``, with progress.
+
+    Narrowed to the curriculum slot (every live subject only when the program
+    has no curriculum yet). Unlike the offering form this keeps subjects that
+    are already offered: placing a second meeting is the normal case. It drops
+    the ones the family already takes as a shared class (or, for a whole
+    block, that a group took on its own), which would double the subject.
+    Returns ``(rows, restricted)``.
+    """
+    from .curriculum import slot_entries
+    if section is None or term is None:
+        return [], False
+    in_slot = set(slot_entries(section.program, section.year_level, term)
+                  .values_list("subject_id", flat=True))
+    subjects = Subject.objects.filter(is_active=True)
+    if in_slot:
+        subjects = subjects.filter(pk__in=in_slot)
+    offerings = {
+        o.subject_id: o for o in SubjectOffering.objects.filter(
+            term=term, section=section, is_active=True).select_related("instructor")}
+    family = (section.groups() if section.is_whole_block
+              else section.family().filter(group=""))
+    family_taken = set(SubjectOffering.objects.filter(term=term, is_active=True,
+                                                      section__in=family)
+                       .values_list("subject_id", flat=True))
+    rows = []
+    for s in subjects.order_by("code"):
+        if s.pk in family_taken and s.pk not in offerings:
+            continue
+        o = offerings.get(s.pk)
+        rows.append({
+            "id": s.pk, "code": s.code, "label": str(s),
+            "offering_id": o.pk if o else None,
+            "scheduled": o.scheduled_count if o else 0,
+            "meetings": o.meetings_per_week if o else 0,
+            "minutes": o.minutes_per_meeting if o else 90,
+            "instructor_id": o.instructor_id if o and o.instructor_id else "",
+            "instructor": o.instructor.full_name if o and o.instructor_id else "",
+            "lecture_lab": bool(o and o.is_lecture_lab),
+        })
+    return rows, bool(in_slot)
+
+
+@transaction.atomic
+def place_class(*, term, section, subject, room, day_of_week, start_time, end_time,
+                instructor=None, user=None):
+    """Put one meeting of ``subject`` on ``section``'s week, by hand.
+
+    Finds (or files) the section's offering for the term, links a new block to
+    it and validates all three clash dimensions plus the room and term rules.
+    Returns ``(block, offering, created_offering)``.
+    """
+    from .curriculum import subject_allowed
+    from .services import ScheduleConflictError, validate_block
+
+    if term is None or section is None or subject is None or room is None:
+        raise PlaceError("Pick a term, section, subject and room.")
+    if not section.is_active:
+        raise PlaceError(f"{section.code} is archived.")
+    if not subject.is_active:
+        raise PlaceError(f"{subject.code} is archived.")
+    reason = subject_allowed(section=section, term=term, subject=subject)
+    if reason:
+        raise PlaceError(reason)
+    check_grid(day_of_week, start_time, end_time)
+
+    offering = (SubjectOffering.objects.select_for_update()
+                .filter(term=term, subject=subject, section=section).first())
+    created = False
+    if offering is None:
+        if family_duplicates(term=term, subject=subject, section=section).exists():
+            raise PlaceError(f"{subject.code} is already taken by {section.code}'s "
+                             "block or groups. Edit it under Subject Offerings.")
+        offering = SubjectOffering(
+            term=term, subject=subject, section=section, instructor=instructor,
+            meetings_per_week=1,
+            minutes_per_meeting=minutes_of(end_time) - minutes_of(start_time),
+            created_by=user)
+        offering.save()
+        created = True
+    elif not offering.is_active:
+        blocker = restore_blocker(offering)
+        if blocker:
+            raise PlaceError(blocker)
+        offering.is_active = True
+        offering.archived_at = None
+        offering.save()
+
+    kind = ""
+    if offering.is_lecture_lab:
+        kind = (ScheduleBlock.MeetingKind.LAB if room.room_type == Room.RoomType.LABORATORY
+                else ScheduleBlock.MeetingKind.LECTURE)
+        if offering.scheduled_blocks().filter(meeting_kind=kind).exists():
+            raise PlaceError(
+                f"{subject.code} already has its "
+                f"{ScheduleBlock.MeetingKind(kind).label.lower()} placed. "
+                "Move that one, or remove it first.")
+    elif offering.scheduled_count >= (offering.meetings_per_week or 0) and not created:
+        # One more meeting than planned: the plan follows what was placed.
+        offering.meetings_per_week = offering.scheduled_count + 1
+        offering.save(update_fields=["meetings_per_week", "updated_at"])
+
+    teacher = offering.instructor
+    if teacher is None and instructor is not None:
+        offering.instructor = teacher = instructor
+        offering.save(update_fields=["instructor", "updated_at"])
+
+    label = f" ({ScheduleBlock.MeetingKind(kind).label})" if kind else ""
+    block = ScheduleBlock(
+        term=term, room=room, subject=subject, section=section, offering=offering,
+        title=f"{subject.code} · {section.code}{label}", instructor=teacher,
+        meeting_kind=kind, day_of_week=int(day_of_week), start_time=start_time,
+        end_time=end_time, is_active=True, created_by=user)
+    try:
+        validate_block(block)
+    except ScheduleConflictError as e:
+        raise PlaceError("Room busy - " + describe_conflicts(e.conflicts)) from e
+    except ValueError as e:
+        raise PlaceError(str(e)) from e
+    blockers = slot_blockers(
+        term=term, section=section, instructor=teacher, room=None,
+        day_of_week=block.day_of_week, start_time=start_time, end_time=end_time)
+    if blockers:
+        raise PlaceError(blocker_summary(blockers))
+    block.save()
+    return block, offering, created
 
 
 # ---------------------------------------------------------------------------
@@ -944,13 +1126,28 @@ def get_section_timetable(section, term, *, include_groups=True):
             "day_label": block.get_day_of_week_display(),
             "start_time_str": f"{block.start_time:%H:%M}",
             "end_time_str": f"{block.end_time:%H:%M}",
-            "time_display": f"{block.start_time:%H:%M} – {block.end_time:%H:%M}",
+            "time_display": _fmt_time_range(block.start_time, block.end_time),
             "row_start": row_start,
             "row_end": row_end,
             "span": max(1, row_end - row_start),
             "col": block.day_of_week + 2,
             "lane": lane_index,
             "palette": palette,
+            "json": json.dumps({
+                "id": block.pk, "title": block.title,
+                "subject_id": block.subject_id or "",
+                "subject_code": block.subject.code if block.subject_id else "",
+                "section_id": block.section_id or "",
+                "section_code": block.section.code if block.section_id else "",
+                "offering_id": block.offering_id or "",
+                "instructor_id": block.instructor_id or "",
+                "instructor": (block.instructor.full_name if block.instructor_id else ""),
+                "room_id": block.room_id, "term_id": block.term_id,
+                "day_of_week": block.day_of_week,
+                "start_time": f"{block.start_time:%H:%M}",
+                "end_time": f"{block.end_time:%H:%M}",
+                "is_active": block.is_active,
+            }),
         })
 
     # How many lanes each day needs, so the template can split the column.

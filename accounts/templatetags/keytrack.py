@@ -24,6 +24,27 @@ def page_url(context, number):
 
 
 @register.filter
+def make_list_sizes(_value):
+    """The page sizes offered by the Rows per page select."""
+    from accounts.crud import PAGE_SIZE_CHOICES
+    return PAGE_SIZE_CHOICES
+
+
+@register.simple_tag(takes_context=True)
+def per_page_url(context, size):
+    """``?<current filters>&per_page=N`` (back on page 1) for the page-size select."""
+    qs = context.get("querystring")
+    if qs is not None:
+        params = QueryDict(qs, mutable=True)
+    else:
+        request = context.get("request")
+        params = request.GET.copy() if request is not None else QueryDict(mutable=True)
+    params.pop("page", None)
+    params["per_page"] = size
+    return "?" + params.urlencode()
+
+
+@register.filter
 def nav_key(url_name):
     """The sidebar key for a view name.
 

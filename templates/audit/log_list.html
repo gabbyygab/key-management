@@ -8,7 +8,7 @@
   </div>
 </div>
 
-<form method="get" class="flex flex-wrap gap-2 items-end" role="search" aria-label="Filter audit log">
+<form data-auto-filter data-page-skeleton="table" method="get" class="flex flex-wrap gap-2 items-end" role="search" aria-label="Filter audit log">
   <label for="audit-q" class="sr-only">Search description or target</label>
   <div class="flex items-center flex-1 min-w-[200px] bg-white border border-stone-200 rounded-lg px-3 focus-within:border-[#1E6B4A]">
     <i data-lucide="search" aria-hidden="true" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
@@ -45,7 +45,6 @@
     {% include "partials/date_range_picker.html" with start_date=start_date end_date=end_date input_bg="bg-white" %}
   </div>
 
-  <button class="bg-[#14342A] text-white px-4 py-2 rounded-lg text-[13px] font-semibold shrink-0">Filter</button>
 
   {% if q or action or user_filter or model_filter or start_date or end_date %}
     <a href="{% url 'audit:log_list' %}" class="px-3 py-2 text-[13px] text-stone-500 hover:text-stone-800 font-medium shrink-0">Reset</a>

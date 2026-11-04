@@ -91,11 +91,10 @@
 
 <template id="free-room-card-template">{% include "scheduling/_free_room_card.html" with room=None %}</template>
 
-{# "Schedule this" opens the shared block editor pre-filled with the room and slot. #}
-{% include "scheduling/_schedule_form_modal.html" %}
+{# "Schedule this" opens the add-class dialog pre-filled with the room and slot. #}
+{% include "scheduling/_class_modal.html" %}
 {% endblock %}
 {% block extra_js %}
-<script src="{% static 'js/schedule-grid.js' %}"></script>
-<script src="{% static 'js/schedule-modal.js' %}"></script>
+<script src="{% static 'js/class-modal.js' %}?v=3"></script>
 <script src="{% static 'js/free_rooms.js' %}"></script>
 {% endblock %}

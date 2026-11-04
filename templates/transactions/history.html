@@ -21,7 +21,7 @@
 </div>
 
 {# Filter Toolbar #}
-<form id="history-filter-form" method="get" action="{% url 'transactions:history' %}"
+<form data-auto-filter data-page-skeleton="table" id="history-filter-form" method="get" action="{% url 'transactions:history' %}"
       class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4"
       role="search" aria-label="Filter transaction history"
       data-list-region-form="#transaction-history-region">
@@ -104,11 +104,6 @@
          class="px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-[13px] font-medium text-stone-700 hover:bg-stone-50 transition-colors">
         Reset
       </a>
-      <button type="submit"
-              class="bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors">
-        <i data-lucide="filter" class="w-3.5 h-3.5"></i>
-        <span>Apply Filters</span>
-      </button>
     </div>
   </div>
 </form>
@@ -116,7 +111,7 @@
 {# Transactions Table #}
 <div id="transaction-history-region" data-list-region>
 <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-x-auto">
-  <table id="transaction-history-table" class="min-w-full text-[13px]">
+  <table data-sticky-actions id="transaction-history-table" class="min-w-full text-[13px]">
     <caption class="sr-only">Key checkout and return transaction history, newest first</caption>
     <thead>
       <tr class="text-left text-[11px] uppercase tracking-wide text-stone-500 bg-stone-50/70 border-b border-stone-200">

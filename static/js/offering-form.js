@@ -103,6 +103,7 @@
       section: section.value,
       term: term ? term.value : "",
       offering: form.getAttribute("data-offering-id") || "",
+      keep_subject: subject.value || "",
     });
     fetch(url + "?" + params.toString(), {
       headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
