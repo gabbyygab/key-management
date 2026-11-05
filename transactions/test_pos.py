@@ -93,6 +93,19 @@ class PosBorrowScheduleTests(PosFixture):
                          now=MONDAY_10AM)
         self.assertEqual(txn.status, BorrowTransaction.Status.ACTIVE)
 
+    @override_settings(SCHEDULE_ENFORCEMENT="off")
+    def test_second_key_of_occupied_room_warns_then_allows_with_reason(self):
+        evening = MONDAY_10AM.replace(hour=19)
+        pos_borrow(key_id=self.key.pk, borrower=self.instructor, guard=self.guard, now=evening)
+        with self.assertRaises(ScheduleWarning) as ctx:
+            pos_borrow(key_id=self.key2.pk, borrower=self.other, guard=self.guard, now=evening)
+        self.assertIn("occupied", str(ctx.exception))
+        self.key2.refresh_from_db()
+        self.assertEqual(self.key2.status, Key.Status.AVAILABLE)
+        txn = pos_borrow(key_id=self.key2.pk, borrower=self.other, guard=self.guard,
+                         override_reason="Second copy for the TA", now=evening)
+        self.assertEqual(txn.remarks, "Override: Second copy for the TA")
+
     def test_free_room_needs_no_override(self):
         evening = MONDAY_10AM.replace(hour=19)
         txn = pos_borrow(key_id=self.key.pk, borrower=self.other, guard=self.guard, now=evening)
@@ -181,13 +194,19 @@ class BorrowApiTests(PosFixture):
         self.assertEqual(res.status_code, 422)
         self.assertIn("error", res.json())
 
-    def test_anonymous_and_admin_get_403_json(self):
+    def test_anonymous_gets_403_json(self):
         res = self.post(borrower_id=self.other.pk, key_id=self.key.pk)
         self.assertEqual(res.status_code, 403)
+
+    def test_admin_can_release_without_a_guard_shift(self):
         admin = User.objects.create_user(username="adm", email="a@example.com",
                                          password="pw-12345-long", role=User.Role.ADMIN)
         self.client.force_login(admin)
-        self.assertEqual(self.post(borrower_id=self.other.pk, key_id=self.key.pk).status_code, 403)
+        res = self.post(borrower_id=self.other.pk, key_id=self.key.pk)
+        self.assertEqual(res.status_code, 201, res.content)
+        txn = BorrowTransaction.objects.get(borrower=self.other)
+        self.assertIsNone(txn.guard_shift)
+        self.assertEqual(txn.released_by, admin)
 
     def test_get_not_allowed(self):
         self.client.force_login(self.guard)
@@ -215,6 +234,12 @@ class SearchApiTests(PosFixture):
         res = self.client.get(reverse("keys_api:search"), {"q": "CCS-101"})
         codes = [k["key_code"] for k in res.json()["results"]]
         self.assertEqual(codes, ["CCS-101-1"])
+        # The remaining copy is flagged: its room already has a key out.
+        holder = res.json()["results"][0]["room_holder"]
+        self.assertEqual(holder["key_code"], "CCS-101-2")
+        self.assertEqual(holder["borrower"], self.other.full_name)
+        detail = self.client.get(reverse("keys_api:detail", args=[self.key.pk]))
+        self.assertEqual(detail.json()["room_holder"]["key_code"], "CCS-101-2")
 
     def test_key_detail_includes_schedule_and_enforcement(self):
         self.client.force_login(self.guard)
@@ -225,12 +250,86 @@ class SearchApiTests(PosFixture):
         self.assertIn("enforcement", body["schedule"])
         self.assertNotIn("_expected_return_dt", body["schedule"])
 
-    def test_admin_gets_403_on_guard_apis(self):
+    def test_admin_can_use_guard_apis(self):
         admin = User.objects.create_user(username="adm", email="a@example.com",
                                          password="pw-12345-long", role=User.Role.ADMIN)
         self.client.force_login(admin)
-        self.assertEqual(self.client.get(reverse("accounts_api:borrower_search")).status_code, 403)
-        self.assertEqual(self.client.get(reverse("keys_api:search")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("accounts_api:borrower_search")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("keys_api:search")).status_code, 200)
+        self.assertEqual(
+            self.client.get(reverse("keys_api:detail", args=[self.key.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("transactions:borrow_dashboard")).status_code, 200)
+
+
+class PosSnapshotTests(PosFixture):
+    """The embedded POS snapshot must agree with the per-key API it replaces."""
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()  # remember() is keyed by versions that survive rollbacks
+
+    def _snapshot(self, when=MONDAY_10AM):
+        from .pos_snapshot import build_snapshot
+        return build_snapshot(when=timezone.localtime(when))
+
+    def test_rooms_today_blocks_matches_room_schedule(self):
+        from scheduling.models import ScheduleException
+        from scheduling.services import get_room_today_schedule, rooms_today_blocks
+        other_room = Room.objects.create(building=self.room.building, room_code="102")
+        moved = ScheduleBlock.objects.create(
+            term=self.term, room=other_room, title="CS 102", instructor=self.other,
+            day_of_week=0, start_time=time(13, 0), end_time=time(14, 0))
+        cancelled = ScheduleBlock.objects.create(
+            term=self.term, room=self.room, title="CS 103",
+            day_of_week=0, start_time=time(15, 0), end_time=time(16, 0))
+        day = MONDAY_10AM.date()
+        ScheduleException.objects.create(schedule_block=moved, date=day,
+                                         exception_type="ROOM_CHANGE", replacement_room=self.room)
+        ScheduleException.objects.create(schedule_block=cancelled, date=day,
+                                         exception_type="CANCELLED")
+        when = timezone.localtime(MONDAY_10AM)
+        bulk = rooms_today_blocks(when=when)
+        for room in (self.room, other_room):
+            expected = [b["id"] for b in get_room_today_schedule(room, when=when)["all_blocks"]]
+            self.assertEqual([b["id"] for b in bulk.get(room.pk, [])], expected)
+        self.assertEqual([b["id"] for b in bulk[self.room.pk]], [self.block.pk, moved.pk])
+
+    def test_snapshot_carries_keys_blocks_and_borrowers(self):
+        snap = self._snapshot()
+        self.assertEqual(snap["today"], "2026-09-07")
+        self.assertEqual(snap["now_minutes"], 600)
+        self.assertEqual({k["key_code"] for k in snap["keys"]}, {"CCS-101-1", "CCS-101-2"})
+        self.assertEqual(snap["keys"][0]["room_code"], "101")
+        block = snap["rooms"][str(self.room.pk)][0]
+        self.assertEqual((block["start"], block["end"]), (540, 660))
+        self.assertEqual(block["instructor_id"], self.instructor.pk)
+        self.assertTrue(block["end_iso"].startswith("2026-09-07T11:00"))
+        self.assertEqual(snap["term"], "2026 Fall")
+        self.assertFalse(snap["no_timetable"])
+        self.assertIn(snap["enforcement"], {"off", "warn", "block"})
+        self.assertEqual({b["id_number"] for b in snap["borrowers"]}, {"F-1", "F-2"})
+
+    def test_release_is_reflected_after_the_save(self):
+        self._snapshot()  # warm the cache
+        pos_borrow(key_id=self.key2.pk, borrower=self.other, guard=self.guard,
+                   now=MONDAY_10AM.replace(hour=19))
+        snap = self._snapshot()
+        self.assertEqual([k["key_code"] for k in snap["keys"]], ["CCS-101-1"])
+        self.assertEqual(snap["keys"][0]["room_holder"]["key_code"], "CCS-101-2")
+        rows = {b["id_number"]: b for b in snap["borrowers"]}
+        self.assertEqual(rows["F-2"]["active_transaction"]["key_code"], "CCS-101-2")
+
+    def test_snapshot_api_and_page_embed(self):
+        url = reverse("transactions_api:pos_snapshot")
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.client.force_login(self.guard)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("keys", res.json())
+        page = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertContains(page, 'id="pos-snapshot"')
+        self.assertContains(page, "data-snapshot-url=")
 
 
 class GuardPostShiftTests(TestCase):

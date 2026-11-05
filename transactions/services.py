@@ -23,6 +23,14 @@ def get_active_shift(guard):
     return GuardShift.objects.filter(guard=guard, is_on_duty=True).first()
 
 
+def request_active_shift(request):
+    """get_active_shift(request.user), looked up once per request (the view
+    and the navbar both need it)."""
+    if not hasattr(request, "_kt_active_shift"):
+        request._kt_active_shift = get_active_shift(request.user)
+    return request._kt_active_shift
+
+
 def borrower_has_active_key(borrower):
     return BorrowTransaction.objects.filter(
         borrower=borrower, status=BorrowTransaction.Status.ACTIVE).exists()
@@ -31,7 +39,9 @@ def borrower_has_active_key(borrower):
 @db_transaction.atomic
 def borrow_key(*, key_id, borrower, guard, purpose="", request=None):
     shift = get_active_shift(guard)
-    if not shift:
+    # Guard shifts are guard-only, but an admin may run the POS without one.
+    # The transaction is still stamped with the admin's account and audited.
+    if not shift and not getattr(guard, "is_admin_role", False):
         raise BorrowError("You must start a shift before releasing keys.")
     if not borrower.can_borrow:
         raise BorrowError("This borrower is not authorized to borrow keys.")
@@ -58,7 +68,8 @@ def borrow_key(*, key_id, borrower, guard, purpose="", request=None):
 @db_transaction.atomic
 def return_key(*, transaction_id, guard, remarks=""):
     shift = get_active_shift(guard)
-    if not shift:
+    # Same exception as borrow_key: admins can receive keys without a shift.
+    if not shift and not getattr(guard, "is_admin_role", False):
         raise BorrowError("You must have an active shift to receive keys.")
 
     txn = BorrowTransaction.objects.select_for_update().get(pk=transaction_id)
@@ -216,13 +227,27 @@ def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
     txn = borrow_key(key_id=key_id, borrower=borrower, guard=guard,
                      purpose=purpose, request=request)
 
+    # Room already occupied: another copy of this room's key is out with someone
+    # else. A second key is still lendable, but only with a typed reason (same
+    # warn-then-confirm flow as the schedule check, independent of its mode).
+    holder = (BorrowTransaction.objects
+              .filter(room_id=txn.room_id, status__in=_open_statuses())
+              .exclude(pk=txn.pk).select_related("key", "borrower")
+              .order_by("borrowed_at").first())
+    room_occupied = holder is not None
+    if room_occupied and not override_reason:
+        raise ScheduleWarning(
+            f"Room {txn.room} is occupied right now: {holder.key.key_code} is with "
+            f"{holder.borrower.full_name}. Enter a reason to release another key.",
+            schedule=None)
+
     cfg = get_schedule_settings()
     mode = cfg.enforcement
     check = {"state": "free", "current": None}
     if mode != "off":
         check = schedule_check_for_room(txn.room, borrower_id=borrower.pk,
                                         when=timezone.localtime(now))
-    overridden = False
+    overridden = room_occupied
     off_schedule = False
     public = {k: v for k, v in check.items() if not k.startswith("_")}
     if check["state"] == "other":
@@ -265,7 +290,8 @@ def pos_borrow(*, key_id, borrower, guard, purpose="", expected_return_at=None,
         cur = check["current"] or {}
         log_activity(guard, Action.OVERRIDE, obj=txn, request=request,
                      description=override_reason,
-                     changes={"scheduled_block": cur.get("id"),
+                     changes={"room_occupied_by": holder.key.key_code if holder else None,
+                              "scheduled_block": cur.get("id"),
                               "scheduled_to": cur.get("instructor"),
                               "block_time": cur.get("time_display")})
     return txn

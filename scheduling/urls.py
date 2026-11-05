@@ -9,6 +9,7 @@ urlpatterns = [
     path("scheduling/", views.schedule_legacy),
     path("scheduling/conflicts/", views.schedule_legacy),
     path("scheduling/blocks/<int:pk>/exception/", views.exception_create, name="exception_create"),
+    path("scheduling/default-term/", views.set_default_term, name="set_default_term"),
     path("scheduling/timetable/", views.room_timetable, name="room_timetable"),
     path("scheduling/free-rooms/", views.free_rooms, name="free_rooms"),
 
@@ -74,6 +75,7 @@ urlpatterns = [
     path("scheduling/blocks/swap/", views.block_swap, name="block_swap"),
 
     path("api/scheduling/free-rooms/", views.free_rooms_api, name="free_rooms_api"),
+    path("api/scheduling/room-finder/", views.room_finder_api, name="room_finder_api"),
     path("api/scheduling/offerable-subjects/", views.offerable_subjects_api,
          name="offerable_subjects_api"),
     path("api/scheduling/class-options/", views.class_options_api, name="class_options"),
@@ -82,5 +84,6 @@ urlpatterns = [
     path("api/scheduling/blocks/", views.schedule_block_save_api, name="schedule_block_save"),
     path("api/scheduling/blocks/<int:pk>/delete/", views.schedule_block_delete_api, name="schedule_block_delete"),
     path("api/scheduling/blocks/<int:pk>/move/", views.block_move_api, name="block_move"),
+    path("api/scheduling/busy/", views.busy_slots_api, name="busy_slots"),
     path("api/scheduling/rooms/<int:pk>/today/", views.room_today_schedule_api, name="room_today_schedule_api"),
 ]

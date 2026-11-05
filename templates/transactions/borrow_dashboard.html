@@ -10,7 +10,7 @@
   building chips, schedule check, typed override and expected return.
 {% endcomment %}
 <div data-pos-root
-     data-shift-active="{% if shift %}1{% else %}0{% endif %}"
+     data-shift-active="{% if can_transact %}1{% else %}0{% endif %}"
      data-selected-borrower="{% if selected %}1{% else %}0{% endif %}"
      data-selected-borrower-id="{% if selected %}{{ selected.pk }}{% endif %}"
      data-enforcement="{{ schedule_enforcement }}"
@@ -18,6 +18,7 @@
      data-key-search-url="{% url 'keys_api:search' %}"
      data-key-detail-url="{% url 'keys_api:detail' 0 %}"
      data-borrow-url="{% url 'transactions_api:borrow' %}"
+     data-snapshot-url="{% url 'transactions_api:pos_snapshot' %}"
      class="flex h-[calc(100dvh-9rem)] min-h-0 flex-col gap-3 overflow-hidden md:h-[calc(100dvh-6.5rem)]">
   <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
     <div>
@@ -29,6 +30,8 @@
       <div id="shift" role="status">
         {% if shift %}
           <span class="inline-block rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">● On duty: {{ shift.post }} · since {{ shift.shift_start|date:"H:i" }} · ends on logout</span>
+        {% elif is_admin %}
+          <span class="inline-block rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">● Admin access · transactions are recorded to your account</span>
         {% else %}
           <span class="inline-block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">No active shift — log out and back in to start one.</span>
         {% endif %}
@@ -41,7 +44,7 @@
     </div>
   </div>
 
-  {% if not shift %}
+  {% if not can_transact %}
   <p data-pos-blocked-notice role="alert" class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
     <b>Releasing is blocked.</b> Every key release is recorded against your shift, and you don't have one open. Log out and back in to start it. Returns still work.
   </p>
@@ -150,50 +153,6 @@
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-3">
-            {# Confirm panel (F3.5): shown once a key is picked #}
-            <div data-pos-confirm class="hidden mb-3 rounded-xl border-2 border-[#1E6B4A] bg-emerald-50/30 p-4" aria-labelledby="pos-confirm-title">
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <h3 id="pos-confirm-title" class="text-[13px] font-semibold uppercase tracking-wider text-stone-500">Releasing</h3>
-                  <p class="mt-0.5 text-[15px]"><b class="font-mono" data-confirm-key></b> <span class="text-stone-500" data-confirm-room></span></p>
-                  <p class="text-[13px] text-stone-600">to <b data-confirm-borrower></b></p>
-                </div>
-                <button type="button" data-pos-unselect-key class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50">Change key</button>
-              </div>
-
-              <div data-confirm-schedule class="mt-3 hidden rounded-lg border px-3 py-2 text-[13px]" role="status"></div>
-
-              <form data-pos-confirm-form class="mt-3 space-y-3" novalidate>
-                <div>
-                  <label for="pos-purpose" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Purpose <span class="font-normal normal-case text-stone-400">(optional)</span></label>
-                  <input id="pos-purpose" name="purpose" maxlength="255" placeholder="e.g. Class, meeting, cleaning"
-                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
-                </div>
-                <div>
-                  <label for="pos-due" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Expected return <span class="font-normal normal-case text-stone-400">(optional)</span></label>
-                  <input id="pos-due" name="expected_return_at" type="datetime-local" aria-describedby="pos-due-help"
-                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
-                  <p id="pos-due-help" class="mt-1 text-[12px] text-stone-500">Pre-filled with the end of the borrower's scheduled class when there is one. Keys past this time show as overdue.</p>
-                </div>
-
-                {# F3.6 schedule warning + typed override #}
-                <div data-confirm-override class="hidden rounded-lg border border-amber-300 bg-amber-50 p-3">
-                  <p class="text-[13px] font-semibold text-amber-900" data-override-message></p>
-                  <label for="pos-override" class="mt-2 mb-1 block text-[12px] font-semibold uppercase tracking-wider text-amber-900">Reason for override <span class="text-red-600" aria-hidden="true">*</span></label>
-                  <textarea id="pos-override" name="override_reason" rows="2" minlength="5" aria-describedby="pos-override-help"
-                            class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px] focus:border-amber-600 focus:ring-1 focus:ring-amber-600"></textarea>
-                  <p id="pos-override-help" class="mt-1 text-[12px] text-amber-800">Required. Recorded on the transaction and in the audit log.</p>
-                </div>
-
-                <p data-confirm-error role="alert" class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"></p>
-
-                <button type="submit" data-pos-release
-                        class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#14342A] px-3 py-2.5 text-[14px] font-semibold text-white hover:bg-[#0F2E1F] disabled:cursor-not-allowed disabled:opacity-50">
-                  <i data-lucide="check" aria-hidden="true" class="h-4 w-4"></i><span data-release-label>Confirm release</span>
-                </button>
-              </form>
-            </div>
-
             <div id="pos-key-results-js" class="space-y-2" role="region" aria-label="Available keys" aria-live="polite" data-pos-key-results-js></div>
           </div>
         </div>
@@ -269,7 +228,7 @@
                 <input id="pos-override-{{ k.pk }}" name="override_reason"
                        class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px]">
                 {% endif %}
-                <button type="submit" {% if not shift %}disabled{% endif %} class="mt-2 w-full rounded-lg bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] disabled:opacity-50">
+                <button type="submit" {% if not can_transact %}disabled{% endif %} class="mt-2 w-full rounded-lg bg-[#14342A] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0F2E1F] disabled:opacity-50">
                   Confirm release<span class="sr-only"> of {{ k.key_code }} to {{ selected.full_name }}</span>
                 </button>
               </form>
@@ -308,6 +267,56 @@
 </div>
 
 {{ selected_json|json_script:"pos-selected-borrower" }}
+{{ pos_snapshot|json_script:"pos-snapshot" }}
+
+{# Release confirmation: opens when a key is picked #}
+<div id="pos-release-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="pos-confirm-title">
+  <div data-modal-overlay class="absolute inset-0 bg-stone-900/60"></div>
+  <div data-pos-confirm class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+    <div class="kt-modal-scroll min-h-0 flex-1 overflow-y-auto p-5">
+<div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <h2 id="pos-confirm-title" class="text-[13px] font-semibold uppercase tracking-wider text-stone-500">Releasing</h2>
+                  <p class="mt-0.5 text-[15px]"><b class="font-mono" data-confirm-key></b> <span class="text-stone-500" data-confirm-room></span></p>
+                  <p class="text-[13px] text-stone-600">to <b data-confirm-borrower></b></p>
+                </div>
+                <button type="button" data-modal-close data-pos-unselect-key class="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[12px] text-stone-600 hover:bg-stone-50">Change key</button>
+              </div>
+
+              <div data-confirm-schedule class="mt-3 hidden rounded-lg border px-3 py-2 text-[13px]" role="status"></div>
+
+              <form data-pos-confirm-form class="mt-3 space-y-3" novalidate>
+                <div>
+                  <label for="pos-purpose" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Purpose <span class="font-normal normal-case text-stone-400">(optional)</span></label>
+                  <input id="pos-purpose" name="purpose" maxlength="255" placeholder="e.g. Class, meeting, cleaning"
+                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
+                </div>
+                <div>
+                  <label for="pos-due" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Expected return <span class="font-normal normal-case text-stone-400">(optional)</span></label>
+                  <input id="pos-due" name="expected_return_at" type="datetime-local" aria-describedby="pos-due-help"
+                         class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A] focus:ring-1 focus:ring-[#1E6B4A]">
+                  <p id="pos-due-help" class="mt-1 text-[12px] text-stone-500">Pre-filled with the end of the borrower's scheduled class when there is one. Keys past this time show as overdue.</p>
+                </div>
+
+                {# F3.6 schedule warning + typed override #}
+                <div data-confirm-override class="hidden rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p class="text-[13px] font-semibold text-amber-900" data-override-message></p>
+                  <label for="pos-override" class="mt-2 mb-1 block text-[12px] font-semibold uppercase tracking-wider text-amber-900">Reason to continue <span class="text-red-600" aria-hidden="true">*</span></label>
+                  <textarea id="pos-override" name="override_reason" rows="2" minlength="5" aria-describedby="pos-override-help"
+                            class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-[13px] focus:border-amber-600 focus:ring-1 focus:ring-amber-600"></textarea>
+                  <p id="pos-override-help" class="mt-1 text-[12px] text-amber-800">Required. Recorded on the transaction and in the audit log.</p>
+                </div>
+
+                <p data-confirm-error role="alert" class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"></p>
+
+                <button type="submit" data-pos-release
+                        class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#14342A] px-3 py-2.5 text-[14px] font-semibold text-white hover:bg-[#0F2E1F] disabled:cursor-not-allowed disabled:opacity-50">
+                  <i data-lucide="check" aria-hidden="true" class="h-4 w-4"></i><span data-release-label>Confirm release</span>
+                </button>
+              </form>
+    </div>
+  </div>
+</div>
 
 {# F3.9 shortcut reference #}
 <div id="pos-help-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="pos-help-title">

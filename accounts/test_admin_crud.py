@@ -49,6 +49,23 @@ class LoginHardeningTests(TestCase):
         self.assertEqual(res.status_code, 429)
         self.assertContains(res, "Too many failed sign-in attempts", status_code=429)
 
+    def test_deactivated_account_gets_its_own_message(self):
+        self.guard.is_active = False
+        self.guard.save()
+        url = reverse("accounts:login")
+        for ident in ("guard", "GUARD@example.com"):
+            res = self.client.post(url, {"username": ident, "password": "pw-Strong-12345"})
+            self.assertContains(res, "deactivated by an administrator", status_code=403)
+            self.assertNotContains(res, "Invalid credentials", status_code=403)
+
+    def test_deactivated_account_with_wrong_password_stays_generic(self):
+        # Without the right password the page must not reveal the account state.
+        self.guard.is_active = False
+        self.guard.save()
+        res = self.client.post(reverse("accounts:login"), {"username": "guard", "password": "wrong"})
+        self.assertContains(res, "Invalid credentials")
+        self.assertNotContains(res, "deactivated")
+
     def test_login_and_logout_are_audited(self):
         self.client.post(reverse("accounts:login"),
                          {"username": "guard", "password": "pw-Strong-12345"})

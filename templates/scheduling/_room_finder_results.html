@@ -1,0 +1,230 @@
+{% comment %}
+Room finder, subject tab: the results region. Rendered by the page (no-JS and
+after a reload) and by GET /api/scheduling/room-finder/ (live search), so the
+two never drift. Needs: finder (room_finder.FinderResult), page_obj (the
+rooms, ROOMS_PER_PAGE to a page), querystring, meeting_options, ticks,
+selected_term. With no finder it shows the start/empty state.
+{% endcomment %}
+{% if not finder %}
+  {% if offering_choices is not None and not offering_choices %}
+  <div class="bg-white rounded-xl border border-dashed border-stone-300 p-10 text-center">
+    <i data-lucide="book-x" aria-hidden="true" class="w-8 h-8 mx-auto text-stone-400"></i>
+    <p class="text-[15px] font-semibold text-stone-700 mt-2">No subject offerings in {{ selected_term.name|default:"this term" }}</p>
+    <p class="text-[13px] text-stone-500 mt-1">The finder works from Subject Offerings: the subject, the section and the professor decide the room it needs.</p>
+    <a href="{% url 'scheduling:offering_list' %}" class="inline-flex items-center gap-1.5 mt-4 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-4 py-2 rounded-lg text-[13px] font-semibold">
+      <i data-lucide="list-plus" aria-hidden="true" class="w-4 h-4"></i> Go to Subject Offerings
+    </a>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-dashed border-stone-300 p-10 text-center">
+    <div class="w-12 h-12 mx-auto rounded-2xl bg-[#1E6B4A]/10 text-[#1E6B4A] flex items-center justify-center">
+      <i data-lucide="search-check" aria-hidden="true" class="w-6 h-6"></i>
+    </div>
+    <p class="text-[15px] font-semibold text-stone-800 mt-3">Pick a subject to see the rooms that fit it</p>
+    <p class="text-[13px] text-stone-500 mt-1 max-w-md mx-auto">Rooms are matched on type, seats and department, and every free window is checked against the room, the section and the professor.</p>
+  </div>
+  {% endif %}
+{% else %}
+{% with req=finder.requirement %}
+{# --- What the class needs ------------------------------------------------ #}
+<section aria-labelledby="finder-req-title" class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-stone-500">What this class needs</p>
+      <h2 id="finder-req-title" class="text-[15px] font-bold text-stone-900 mt-0.5">
+        <span class="font-mono">{{ req.offering.subject.code }}</span> · {{ req.offering.subject.title }}
+      </h2>
+      <p class="text-[13px] text-stone-500 mt-0.5">
+        {{ req.offering.section.code }}{% if req.offering.instructor %} · {{ req.offering.instructor.full_name }}{% else %} · <span class="italic">no professor yet</span>{% endif %} · {{ req.offering.term.name }}
+      </p>
+    </div>
+    {% if meeting_options|length > 1 %}
+    <fieldset class="shrink-0">
+      <legend class="sr-only">Which meeting</legend>
+      <div class="inline-flex rounded-lg border border-stone-300 p-0.5 bg-stone-50">
+        {% for opt in meeting_options %}
+        <label class="cursor-pointer">
+          <input type="radio" name="kind" value="{{ opt.kind }}" form="room-finder-form" class="peer sr-only" {% if opt.kind == req.kind %}checked{% endif %}>
+          <span class="block px-3 py-1.5 rounded-md text-[13px] font-semibold text-stone-600 peer-checked:bg-white peer-checked:text-[#0F2E1F] peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A]">
+            {{ opt.label }} <span class="font-normal text-stone-500">· {{ opt.duration_label }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endif %}
+  </div>
+
+  <ul class="flex flex-wrap gap-1.5 mt-3 text-[12px]" aria-label="Requirements">
+    <li class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-medium">
+      <i data-lucide="{% if req.room_type == 'LABORATORY' %}flask-conical{% else %}presentation{% endif %}" aria-hidden="true" class="w-3.5 h-3.5"></i>{{ req.room_type_label }}
+    </li>
+    <li class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-medium">
+      <i data-lucide="users" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if req.seats %}{{ req.seats }}+ seats{% else %}Any size <span class="font-normal text-stone-500">(no head count)</span>{% endif %}
+    </li>
+    <li class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-medium">
+      <i data-lucide="clock" aria-hidden="true" class="w-3.5 h-3.5"></i>{{ req.duration_label }} {{ req.kind_label|lower }}
+    </li>
+    <li class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-medium">
+      <i data-lucide="building-2" aria-hidden="true" class="w-3.5 h-3.5"></i>{% if req.department %}{{ req.department.code }} rooms, then shared{% else %}Any department's room{% endif %}
+    </li>
+    <li class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-medium">
+      <i data-lucide="calendar-check" aria-hidden="true" class="w-3.5 h-3.5"></i>{{ req.offering.scheduled_count }} of {{ req.offering.meetings_per_week }} meeting{{ req.offering.meetings_per_week|pluralize }} placed
+    </li>
+  </ul>
+
+  {% if req.notice %}
+  <p class="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[13px] flex items-start gap-2">
+    <i data-lucide="info" aria-hidden="true" class="w-4 h-4 mt-0.5 shrink-0"></i><span>{{ req.notice }}</span>
+  </p>
+  {% endif %}
+
+  {% if finder.people_busy %}
+  <details class="mt-3 group">
+    <summary class="cursor-pointer list-none inline-flex items-center gap-1.5 text-[13px] text-stone-600 hover:text-stone-900">
+      <i data-lucide="chevron-right" aria-hidden="true" class="w-4 h-4 transition-transform group-open:rotate-90"></i>
+      Working around {{ finder.people_busy|length }} class{{ finder.people_busy|length|pluralize:"es" }} the section or professor already has
+    </summary>
+    <ul class="mt-2 ml-5 space-y-1 text-[12px] text-stone-600">
+      {% for b in finder.people_busy %}
+      <li class="flex flex-wrap gap-x-2"><span class="font-semibold text-stone-700 w-24 shrink-0">{{ b.name }}</span><span class="tabular-nums">{{ b.time }}</span><span class="text-stone-500">{{ b.label }} · {{ b.room }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</section>
+
+{# --- Summary + legend ---------------------------------------------------- #}
+<div class="flex items-end justify-between gap-3 flex-wrap mb-3">
+  <div>
+    <h2 data-finder-summary class="text-[15px] font-bold text-stone-900" aria-live="polite">
+      {{ finder.rooms|length }} room{{ finder.rooms|length|pluralize }} can take it
+      {% if finder.full_rooms %}<span class="font-normal text-stone-500">· {{ finder.full_rooms|length }} more fit but are booked</span>{% endif %}
+    </h2>
+    <p class="text-[12px] text-stone-500 mt-0.5">
+      {% if finder.days|length == 6 %}Mon–Sat{% else %}{% for d in finder.days %}{{ d.name|slice:":3" }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %},
+      {{ finder.window_start|time:"g:i A" }} – {{ finder.window_end|time:"g:i A" }}
+      {% if finder.hidden %}· Not listed: {% for h in finder.hidden %}{{ h.count }} {{ h.label }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+    </p>
+  </div>
+  <ul class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-stone-600" aria-label="Legend">
+    <li class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-emerald-500"></span>Free, fits</li>
+    <li class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-200"></span>Too short</li>
+    <li class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-stone-300"></span>Room booked</li>
+    <li class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-amber-300"></span>Section / prof busy</li>
+  </ul>
+</div>
+
+{# --- Rooms --------------------------------------------------------------- #}
+{% if finder.rooms %}
+<div id="room-finder-cards" class="grid gap-3 lg:grid-cols-2 scroll-mt-24">
+  {% for r in page_obj %}
+  <article class="bg-white rounded-xl border {% if r.fit == 'preferred' %}border-[#1E6B4A]/50{% else %}border-stone-200{% endif %} shadow-sm p-4 flex flex-col gap-3" aria-label="{{ r.room }}">
+    <header class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 flex items-center justify-center shrink-0 text-[#1E6B4A]">
+        <i data-lucide="{% if r.room.room_type == 'LABORATORY' %}flask-conical{% else %}presentation{% endif %}" aria-hidden="true" class="w-5 h-5"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="text-[15px] font-bold font-mono text-stone-900">{{ r.room.building.code }}-{{ r.room.room_code }}</h3>
+          {% if r.fit == 'preferred' %}<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1E6B4A] text-white text-[11px] font-semibold"><i data-lucide="star" aria-hidden="true" class="w-3 h-3"></i>Preferred</span>
+          {% elif r.fit == 'department' %}<span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold">{{ req.department.code }} room</span>
+          {% elif r.fit == 'shared' %}<span class="px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 text-[11px] font-semibold">Shared</span>{% endif %}
+        </div>
+        <p class="text-[13px] text-stone-500 truncate">{{ r.room.building.name }}{% if r.room.name %} · {{ r.room.name }}{% endif %}{% if r.room.floor is not None %} · Floor {{ r.room.floor }}{% endif %}</p>
+      </div>
+      <div class="text-right shrink-0">
+        <p class="text-[13px] font-semibold text-stone-800 tabular-nums">{% if r.room.capacity %}{{ r.room.capacity }} seats{% else %}<span class="text-stone-500 font-normal">Capacity n/a</span>{% endif %}</p>
+        {% if r.spare_seats is not None %}<p class="text-[11px] text-stone-500">{{ r.spare_seats }} spare</p>{% endif %}
+      </div>
+    </header>
+
+    {# Week timeline: one bar per day across the search window. #}
+    <div class="grid grid-cols-[2.25rem_1fr] gap-x-2 gap-y-1.5 items-center">
+      <span></span>
+      <div class="relative h-3.5 text-[10px] text-stone-400 tabular-nums" aria-hidden="true">
+        {% for t in ticks %}<span class="absolute -translate-x-1/2 {% if forloop.first %}translate-x-0{% elif forloop.last %}-translate-x-full{% endif %}" style="left: {{ t.left }}%">{{ t.label }}</span>{% endfor %}
+      </div>
+      {% for day in r.days %}
+      <span class="text-[12px] font-semibold text-stone-600">{{ day.short }}</span>
+      <div class="relative h-6 rounded-md bg-stone-100 overflow-hidden" role="group" aria-label="{{ day.name }}: {% if day.windows %}{{ day.windows|length }} free window{{ day.windows|length|pluralize }}{% else %}no free window{% endif %}">
+        {% for s in day.segments %}
+          {% if s.state == 'free' %}
+          <button type="button" data-finder-slot data-room-id="{{ r.room.pk }}" data-room-label="{{ r.room }}" data-day="{{ day.day }}" data-start="{{ s.book_start }}" data-end="{{ s.book_end }}"
+                  title="Free {{ s.window_display }} — click to schedule {{ s.book_display }}"
+                  aria-label="Schedule in {{ r.room }} on {{ day.name }}, {{ s.book_display }} (free {{ s.window_display }})"
+                  class="absolute inset-y-0 bg-emerald-500 hover:bg-emerald-600 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0F2E1F] border-x border-white/60 transition-colors cursor-pointer"
+                  style="left: {{ s.left }}%; width: {{ s.width }}%"></button>
+          {% elif s.state == 'short' %}
+          <span class="absolute inset-y-0 bg-emerald-100" style="left: {{ s.left }}%; width: {{ s.width }}%" title="Free {{ s.time_display }}, too short for {{ req.duration_label }}"></span>
+          {% elif s.state == 'room' %}
+          <span class="absolute inset-y-0 bg-stone-300 border-x border-white/70" style="left: {{ s.left }}%; width: {{ s.width }}%" title="{{ s.time_display }} · {{ s.label }}"></span>
+          {% else %}
+          <span class="absolute inset-y-0 bg-amber-300 border-x border-white/70" style="left: {{ s.left }}%; width: {{ s.width }}%" title="{{ s.time_display }} · {{ s.label }}"></span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <footer class="mt-auto pt-3 border-t border-stone-100 flex items-center justify-between gap-3 flex-wrap">
+      <div class="text-[12px] text-stone-500 min-w-0">
+        <p class="text-stone-700"><span class="text-stone-500">Earliest:</span> <span class="font-semibold">{{ r.earliest.name|slice:":3" }} {{ r.earliest.book_display }}</span></p>
+        <p>{{ r.windows|length }} window{{ r.windows|length|pluralize }} · {{ r.free_display }} free</p>
+      </div>
+      <button type="button" data-finder-slot data-room-id="{{ r.room.pk }}" data-room-label="{{ r.room }}" data-day="{{ r.earliest.day }}" data-start="{{ r.earliest.start }}" data-end="{{ r.earliest.book_end }}"
+              class="inline-flex items-center gap-2 bg-[#14342A] hover:bg-[#0F2E1F] text-white px-3.5 py-2 rounded-lg text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E6B4A] focus-visible:ring-offset-2">
+        <i data-lucide="calendar-plus" aria-hidden="true" class="w-4 h-4"></i> Schedule earliest
+      </button>
+    </footer>
+
+    <details class="group -mt-1">
+      <summary class="cursor-pointer list-none inline-flex items-center gap-1 text-[12px] font-medium text-[#1E6B4A] hover:underline">
+        <i data-lucide="chevron-right" aria-hidden="true" class="w-3.5 h-3.5 transition-transform group-open:rotate-90"></i> All free windows
+      </summary>
+      <dl class="mt-2 space-y-1.5">
+        {% for day in r.days %}{% if day.windows %}
+        <div class="flex items-start gap-2">
+          <dt class="w-9 shrink-0 text-[12px] font-semibold text-stone-600 pt-1">{{ day.short }}</dt>
+          <dd class="flex flex-wrap gap-1.5">
+            {% for w in day.windows %}
+            <button type="button" data-finder-slot data-room-id="{{ r.room.pk }}" data-room-label="{{ r.room }}" data-day="{{ w.day }}" data-start="{{ w.start }}" data-end="{{ w.book_end }}"
+                    title="Schedule {{ w.book_display }}"
+                    class="px-2 py-1 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 text-[12px] font-medium tabular-nums hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E6B4A]">{{ w.time_display }}</button>
+            {% endfor %}
+          </dd>
+        </div>
+        {% endif %}{% endfor %}
+      </dl>
+    </details>
+  </article>
+  {% endfor %}
+</div>
+{# The shared footer, in its own card under the grid (its top rule is the card's edge). #}
+<div class="mt-3 rounded-xl border border-stone-200 shadow-sm overflow-hidden [&>nav]:border-t-0 [&>div]:border-t-0" data-finder-pagination>
+  {% include "partials/pagination.html" with item_label="rooms" fixed_page_size=True %}
+</div>
+{% else %}
+<div class="bg-white rounded-xl border border-dashed border-stone-300 p-8 text-center">
+  <i data-lucide="calendar-x" aria-hidden="true" class="w-8 h-8 mx-auto text-stone-400"></i>
+  <p class="text-[15px] font-semibold text-stone-700 mt-2">No room has a free {{ req.duration_label }} window here</p>
+  <p class="text-[13px] text-stone-500 mt-1">
+    {% if finder.full_rooms %}{{ finder.full_rooms|length }} room{{ finder.full_rooms|length|pluralize }} fit{{ finder.full_rooms|length|pluralize:"s," }} but {{ finder.full_rooms|length|pluralize:"is,are" }} booked, or the section or professor is busy, during these hours. Widen the hours or add days.
+    {% else %}No room matches the type, seats and department rules{% if finder.hidden %} ({% for h in finder.hidden %}{{ h.count }} {{ h.label }}{% if not forloop.last %}, {% endif %}{% endfor %}){% endif %}. Check the offering's room type or the section's head count.{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if finder.full_rooms and finder.rooms %}
+<details class="mt-3 group">
+  <summary class="cursor-pointer list-none inline-flex items-center gap-1.5 text-[13px] text-stone-600 hover:text-stone-900">
+    <i data-lucide="chevron-right" aria-hidden="true" class="w-4 h-4 transition-transform group-open:rotate-90"></i>
+    {{ finder.full_rooms|length }} room{{ finder.full_rooms|length|pluralize }} fit but have no free window in these hours
+  </summary>
+  <p class="mt-2 ml-5 flex flex-wrap gap-1.5">
+    {% for r in finder.full_rooms %}<span class="px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 text-[12px] font-mono">{{ r.room }}</span>{% endfor %}
+  </p>
+</details>
+{% endif %}
+{% endwith %}
+{% endif %}

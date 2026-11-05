@@ -158,6 +158,55 @@ def blocker_summary(blockers):
                      for dim, blocks in blockers.items())
 
 
+def busy_slots(*, term, room=None, instructor=None, section=None, exclude_block_id=None):
+    """Every booked interval of the week that ``slot_blockers`` would refuse.
+
+    The timetables grey these out while a class is dragged or edited, so the
+    admin sees where it cannot go before trying. It is the same three
+    dimensions over the same rows as :func:`slot_blockers` (active blocks of
+    the term; the section through ``clashing_section_ids``), so the grey cells
+    and the server's 422 always agree. One row per block, with ``kinds``
+    naming each dimension it blocks: ``room``, ``instructor`` or ``section``.
+    """
+    if term is None:
+        return []
+    section_ids = section.clashing_section_ids() if section is not None else set()
+    q = Q()
+    if room is not None:
+        q |= Q(room=room)
+    if instructor is not None:
+        q |= Q(instructor=instructor)
+    if section_ids:
+        q |= Q(section_id__in=section_ids)
+    if not q:
+        return []
+    qs = (ScheduleBlock.objects.filter(q, term=term, is_active=True,
+                                       day_of_week__in=SCHEDULABLE_DAYS)
+          .select_related("room__building", "section", "instructor", "subject")
+          .order_by("day_of_week", "start_time"))
+    if exclude_block_id:
+        qs = qs.exclude(pk=exclude_block_id)
+    rows = []
+    for b in qs:
+        kinds = []
+        if room is not None and b.room_id == room.pk:
+            kinds.append("room")
+        if instructor is not None and b.instructor_id == instructor.pk:
+            kinds.append("instructor")
+        if b.section_id in section_ids:
+            kinds.append("section")
+        rows.append({
+            "id": b.pk, "day": b.day_of_week,
+            "start": f"{b.start_time:%H:%M}", "end": f"{b.end_time:%H:%M}",
+            "time_display": _fmt_time_range(b.start_time, b.end_time),
+            "kinds": kinds, "title": b.title,
+            "room": str(b.room) if b.room_id else "",
+            "section": b.section.code if b.section_id else "",
+            "instructor": b.instructor.full_name if b.instructor_id else "",
+        })
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Candidate slots and rooms
 # ---------------------------------------------------------------------------
@@ -773,6 +822,20 @@ def file_offering(*, offering, share_with_groups=False, user=None):
 # Swapping
 # ---------------------------------------------------------------------------
 
+def _locked_block(pk):
+    """One block, row-locked, with its room, section, professor and term.
+
+    ``of=("self",)`` locks only the block row. ``section`` and ``instructor``
+    are nullable, so ``select_related`` joins them with LEFT OUTER JOIN, and
+    Postgres refuses ``FOR UPDATE`` on the nullable side of an outer join
+    (SQLite ignores the lock, which is why the test suite never saw it). A
+    plain ``select_for_update()`` made every move and swap a 500 on Postgres.
+    """
+    return (ScheduleBlock.objects.select_for_update(of=("self",))
+            .select_related("room__building", "section", "instructor", "term")
+            .get(pk=pk))
+
+
 class SwapError(ValueError):
     """A swap was refused because one of the two blocks would clash after it."""
 
@@ -792,10 +855,8 @@ def swap_blocks(block_a, block_b, *, include_rooms=False, user=None):
     if block_a.term_id != block_b.term_id:
         raise SwapError("Both blocks must be in the same term.")
 
-    a = ScheduleBlock.objects.select_for_update().select_related(
-        "room__building", "section", "instructor", "term").get(pk=block_a.pk)
-    b = ScheduleBlock.objects.select_for_update().select_related(
-        "room__building", "section", "instructor", "term").get(pk=block_b.pk)
+    a = _locked_block(block_a.pk)
+    b = _locked_block(block_b.pk)
 
     a.day_of_week, b.day_of_week = b.day_of_week, a.day_of_week
     a.start_time, b.start_time = b.start_time, a.start_time
@@ -828,8 +889,7 @@ def swap_blocks(block_a, block_b, *, include_rooms=False, user=None):
 @transaction.atomic
 def move_block(block, *, day_of_week=None, start_time=None, end_time=None, room=None):
     """Move one block to a new day/time/room, all three dimensions validated."""
-    locked = ScheduleBlock.objects.select_for_update().select_related(
-        "room__building", "section", "instructor", "term").get(pk=block.pk)
+    locked = _locked_block(block.pk)
     if day_of_week is not None:
         locked.day_of_week = int(day_of_week)
     if start_time is not None:
@@ -894,34 +954,21 @@ def check_grid(day_of_week, start_time, end_time):
 def placeable_subjects(*, section, term):
     """Subjects an admin may place for ``section`` in ``term``, with progress.
 
-    Narrowed to the curriculum slot (every live subject only when the program
-    has no curriculum yet). Unlike the offering form this keeps subjects that
-    are already offered: placing a second meeting is the normal case. It drops
-    the ones the family already takes as a shared class (or, for a whole
-    block, that a group took on its own), which would double the subject.
-    Returns ``(rows, restricted)``.
+    Only subjects that already have an active Subject Offering for this exact
+    section and term: the timetables place meetings of an existing offering,
+    they never file new ones (do that under Subject Offerings). Returns
+    ``(rows, True)``; the flag is kept for the callers' hint text.
     """
-    from .curriculum import slot_entries
     if section is None or term is None:
         return [], False
-    in_slot = set(slot_entries(section.program, section.year_level, term)
-                  .values_list("subject_id", flat=True))
-    subjects = Subject.objects.filter(is_active=True)
-    if in_slot:
-        subjects = subjects.filter(pk__in=in_slot)
     offerings = {
         o.subject_id: o for o in SubjectOffering.objects.filter(
             term=term, section=section, is_active=True).select_related("instructor")}
-    family = (section.groups() if section.is_whole_block
-              else section.family().filter(group=""))
-    family_taken = set(SubjectOffering.objects.filter(term=term, is_active=True,
-                                                      section__in=family)
-                       .values_list("subject_id", flat=True))
+    subjects = Subject.objects.filter(is_active=True, pk__in=list(offerings))
+    in_slot = True
     rows = []
     for s in subjects.order_by("code"):
-        if s.pk in family_taken and s.pk not in offerings:
-            continue
-        o = offerings.get(s.pk)
+        o = offerings[s.pk]
         rows.append({
             "id": s.pk, "code": s.code, "label": str(s),
             "offering_id": o.pk if o else None,
@@ -932,7 +979,7 @@ def placeable_subjects(*, section, term):
             "instructor": o.instructor.full_name if o and o.instructor_id else "",
             "lecture_lab": bool(o and o.is_lecture_lab),
         })
-    return rows, bool(in_slot)
+    return rows, in_slot
 
 
 @transaction.atomic
@@ -940,11 +987,11 @@ def place_class(*, term, section, subject, room, day_of_week, start_time, end_ti
                 instructor=None, user=None):
     """Put one meeting of ``subject`` on ``section``'s week, by hand.
 
-    Finds (or files) the section's offering for the term, links a new block to
-    it and validates all three clash dimensions plus the room and term rules.
-    Returns ``(block, offering, created_offering)``.
+    Needs the section's existing Subject Offering for the term (it never files
+    one); links a new block to it and validates all three clash dimensions plus
+    the room and term rules. Returns ``(block, offering, False)``; the third
+    item is kept so callers need not change.
     """
-    from .curriculum import subject_allowed
     from .services import ScheduleConflictError, validate_block
 
     if term is None or section is None or subject is None or room is None:
@@ -953,32 +1000,15 @@ def place_class(*, term, section, subject, room, day_of_week, start_time, end_ti
         raise PlaceError(f"{section.code} is archived.")
     if not subject.is_active:
         raise PlaceError(f"{subject.code} is archived.")
-    reason = subject_allowed(section=section, term=term, subject=subject)
-    if reason:
-        raise PlaceError(reason)
     check_grid(day_of_week, start_time, end_time)
 
     offering = (SubjectOffering.objects.select_for_update()
-                .filter(term=term, subject=subject, section=section).first())
+                .filter(term=term, subject=subject, section=section,
+                        is_active=True).first())
     created = False
     if offering is None:
-        if family_duplicates(term=term, subject=subject, section=section).exists():
-            raise PlaceError(f"{subject.code} is already taken by {section.code}'s "
-                             "block or groups. Edit it under Subject Offerings.")
-        offering = SubjectOffering(
-            term=term, subject=subject, section=section, instructor=instructor,
-            meetings_per_week=1,
-            minutes_per_meeting=minutes_of(end_time) - minutes_of(start_time),
-            created_by=user)
-        offering.save()
-        created = True
-    elif not offering.is_active:
-        blocker = restore_blocker(offering)
-        if blocker:
-            raise PlaceError(blocker)
-        offering.is_active = True
-        offering.archived_at = None
-        offering.save()
+        raise PlaceError(f"{subject.code} is not in {section.code}'s Subject "
+                         "Offerings for this term. Add it under Subject Offerings first.")
 
     kind = ""
     if offering.is_lecture_lab:
@@ -994,10 +1024,9 @@ def place_class(*, term, section, subject, room, day_of_week, start_time, end_ti
         offering.meetings_per_week = offering.scheduled_count + 1
         offering.save(update_fields=["meetings_per_week", "updated_at"])
 
+    # The professor is the offering's; a placement never assigns or changes it
+    # (``instructor`` is accepted only so existing callers keep working).
     teacher = offering.instructor
-    if teacher is None and instructor is not None:
-        offering.instructor = teacher = instructor
-        offering.save(update_fields=["instructor", "updated_at"])
 
     label = f" ({ScheduleBlock.MeetingKind(kind).label})" if kind else ""
     block = ScheduleBlock(

@@ -5,17 +5,36 @@
 <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Room Finder</h1>
-    <p class="text-[13px] text-stone-500 mt-0.5">Pick a day and time to see which rooms are free, then schedule one.</p>
+    <p class="text-[13px] text-stone-500 mt-0.5">
+      {% if mode == "time" %}Pick a day and time to see which rooms are free, then schedule one.
+      {% else %}Pick a subject to see every room that fits it and when it is free this week.{% endif %}
+    </p>
   </div>
+  {% if selected_term %}
+  <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-[12px] text-stone-600">
+    <i data-lucide="calendar-range" aria-hidden="true" class="w-3.5 h-3.5"></i>{{ selected_term.name }}
+  </span>
+  {% endif %}
 </div>
 
-<div class="mb-4 px-4 py-2.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 text-[13px] flex items-start gap-2">
-  <i data-lucide="flask-conical" aria-hidden="true" class="w-4 h-4 mt-0.5 shrink-0"></i>
-  <span><b>Preview:</b> class schedules aren't stored yet, so every bookable room that matches your filters is listed. Booked rooms will drop out once scheduling ships.</span>
-</div>
+{# Two tabs, each a real link so a reload or a shared URL lands on the same one. #}
+<nav class="mb-4 inline-flex rounded-xl border border-stone-200 bg-white p-1 shadow-sm" aria-label="Room finder mode">
+  {% with tq=selected_term.pk|default:"" %}
+  <a href="{% url 'scheduling:free_rooms' %}{% if tq %}?term={{ tq }}{% endif %}" {% if mode != "time" %}aria-current="page"{% endif %}
+     class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold {% if mode != 'time' %}bg-[#0F2E1F] text-white{% else %}text-stone-600 hover:bg-stone-50{% endif %}">
+    <i data-lucide="book-open" aria-hidden="true" class="w-4 h-4"></i> For a subject
+  </a>
+  <a href="{% url 'scheduling:free_rooms' %}?mode=time{% if tq %}&amp;term={{ tq }}{% endif %}" {% if mode == "time" %}aria-current="page"{% endif %}
+     class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold {% if mode == 'time' %}bg-[#0F2E1F] text-white{% else %}text-stone-600 hover:bg-stone-50{% endif %}">
+    <i data-lucide="clock" aria-hidden="true" class="w-4 h-4"></i> By time slot
+  </a>
+  {% endwith %}
+</nav>
 
+{% if mode == "time" %}
 <form id="free-room-form" method="get" action="{% url 'scheduling:free_rooms' %}" data-api-url="{% url 'scheduling:free_rooms_api' %}" novalidate
       class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-5 space-y-4">
+  {% if selected_term %}<input type="hidden" name="term" value="{{ selected_term.pk }}">{% endif %}
   <fieldset>
     <legend class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Day</legend>
     <div class="flex flex-wrap gap-1.5">
@@ -91,10 +110,75 @@
 
 <template id="free-room-card-template">{% include "scheduling/_free_room_card.html" with room=None %}</template>
 
+{% else %}
+{# ---------------------------------------------------------------- subject #}
+<form id="room-finder-form" method="get" action="{% url 'scheduling:free_rooms' %}" data-api-url="{% url 'scheduling:room_finder_api' %}" novalidate
+      class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-5 space-y-4">
+  <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem] items-start">
+    <div>
+      <label for="rf-offering" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Subject</label>
+      <select id="rf-offering" name="offering" data-searchable data-search-placeholder="Search code, title or section…"
+              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px]" {% if not offering_choices %}disabled{% endif %}>
+        <option value="">{% if offering_choices %}Choose a subject…{% else %}No subject offerings this term{% endif %}</option>
+        {% for o in offering_choices %}
+        <option value="{{ o.id }}" data-section="{{ o.section_id }}" data-subject="{{ o.subject_id }}"
+                {% if finder_form.offering.value|stringformat:"s" == o.id|stringformat:"s" %}selected{% endif %}>{{ o.code }} · {{ o.section }} — {{ o.title }}{% if o.lecture_lab %} (lecture + lab){% endif %}</option>
+        {% endfor %}
+      </select>
+      <p data-error-for="offering" class="{% if not finder_form.offering.errors %}hidden {% endif %}text-[12px] text-red-600 mt-1">{{ finder_form.offering.errors|join:" " }}</p>
+    </div>
+    <div>
+      <label for="rf-term" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Term</label>
+      <select id="rf-term" name="term" data-term-select class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-[14px] focus:border-[#1E6B4A] focus:ring-[#1E6B4A]">
+        {% for t in terms %}<option value="{{ t.pk }}" {% if t.pk == selected_term.pk %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="grid gap-3 pt-3 border-t border-stone-100 grid-cols-2 lg:grid-cols-[auto_8.5rem_8.5rem_minmax(10rem,1fr)_auto] items-end">
+    <fieldset class="col-span-2 lg:col-span-1">
+      <legend class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Days <span class="normal-case font-normal text-stone-500">(none = whole week)</span></legend>
+      <div class="flex flex-wrap gap-1.5">
+        {% for value, label in finder_days %}
+        <label class="cursor-pointer">
+          <input type="checkbox" name="days" value="{{ value }}" class="peer sr-only" {% if value in picked_days %}checked{% endif %}>
+          <span class="block px-3 py-1.5 rounded-lg border border-stone-300 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 peer-checked:bg-[#0F2E1F] peer-checked:border-[#0F2E1F] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-[#1E6B4A] peer-focus-visible:ring-offset-1">{{ label|slice:":3" }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div>
+      <label for="{{ finder_form.window_start.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">From</label>
+      {{ finder_form.window_start }}
+    </div>
+    <div>
+      <label for="{{ finder_form.window_end.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">To</label>
+      {{ finder_form.window_end }}
+    </div>
+    <div class="col-span-2 lg:col-span-1">
+      <label for="{{ finder_form.building.id_for_label }}" class="block text-[12px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">Building</label>
+      {{ finder_form.building }}
+    </div>
+    <button type="submit" data-submit
+            class="col-span-2 lg:col-span-1 inline-flex items-center justify-center gap-2 bg-[#14342A] hover:bg-[#0F2E1F] disabled:opacity-60 text-white px-5 py-2.5 rounded-lg text-[13px] font-semibold">
+      <i data-lucide="search" aria-hidden="true" class="w-4 h-4"></i> Find rooms
+    </button>
+  </div>
+  <p data-error-for="window_start" class="{% if not finder_form.window_start.errors %}hidden {% endif %}text-[12px] text-red-600 -mt-2">{{ finder_form.window_start.errors|join:" " }}</p>
+  <p data-error-for="window_end" class="{% if not finder_form.window_end.errors %}hidden {% endif %}text-[12px] text-red-600 -mt-2">{{ finder_form.window_end.errors|join:" " }}</p>
+  <p data-error-for="__all__" class="hidden text-[13px] text-red-600"></p>
+</form>
+
+<div id="room-finder-results">
+  {% include "scheduling/_room_finder_results.html" %}
+</div>
+{% endif %}
+
 {# "Schedule this" opens the add-class dialog pre-filled with the room and slot. #}
 {% include "scheduling/_class_modal.html" %}
 {% endblock %}
 {% block extra_js %}
-<script src="{% static 'js/class-modal.js' %}?v=3"></script>
-<script src="{% static 'js/free_rooms.js' %}"></script>
+<script src="{% static 'js/class-modal.js' %}?v=7"></script>
+{% if mode == "time" %}<script src="{% static 'js/free_rooms.js' %}"></script>
+{% else %}<script src="{% static 'js/room-finder.js' %}"></script>{% endif %}
 {% endblock %}

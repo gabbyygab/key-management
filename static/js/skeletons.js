@@ -291,6 +291,50 @@
     );
   }
 
+  /* Room finder, subject tab: the requirement card, then room cards that each
+     carry a week of timeline bars (matches _room_finder_results.html). */
+  function roomFinder(count) {
+    var n = count || 4;
+    var bars = "";
+    for (var d = 0; d < 6; d++) {
+      bars +=
+        '<div class="flex items-center gap-2">' +
+          '<div class="h-3 bg-stone-100 rounded w-7"></div>' +
+          '<div class="h-6 bg-stone-100 rounded-md flex-1"></div>' +
+        '</div>';
+    }
+    var cards = [];
+    for (var i = 0; i < n; i++) {
+      cards.push(
+        '<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 animate-pulse space-y-3">' +
+          '<div class="flex items-start gap-3">' +
+            '<div class="w-10 h-10 rounded-xl bg-stone-100"></div>' +
+            '<div class="flex-1 space-y-1.5"><div class="h-4 bg-stone-200 rounded w-24"></div><div class="h-3 bg-stone-100 rounded w-40"></div></div>' +
+            '<div class="h-4 bg-stone-100 rounded w-14"></div>' +
+          '</div>' +
+          '<div class="space-y-1.5">' + bars + '</div>' +
+          '<div class="flex items-center justify-between pt-3 border-t border-stone-100">' +
+            '<div class="h-3 bg-stone-100 rounded w-32"></div><div class="h-8 bg-stone-200 rounded-lg w-36"></div>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+    return (
+      '<div role="status" aria-label="Finding rooms...">' +
+        '<div class="bg-white rounded-xl border border-stone-200 shadow-sm p-4 mb-4 animate-pulse space-y-2">' +
+          '<div class="h-2.5 bg-stone-100 rounded w-28"></div><div class="h-4 bg-stone-200 rounded w-72 max-w-full"></div>' +
+          '<div class="flex flex-wrap gap-1.5 pt-1">' +
+            '<div class="h-6 bg-stone-100 rounded-full w-24"></div><div class="h-6 bg-stone-100 rounded-full w-20"></div>' +
+            '<div class="h-6 bg-stone-100 rounded-full w-28"></div><div class="h-6 bg-stone-100 rounded-full w-32"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="h-4 bg-stone-200 rounded w-48 mb-3 animate-pulse"></div>' +
+        '<div class="grid gap-3 lg:grid-cols-2">' + cards.join("") + '</div>' +
+        '<span class="sr-only">Finding rooms...</span>' +
+      '</div>'
+    );
+  }
+
   /* Render chosen skeleton into a container and mark aria-busy */
   function render(target, type, options) {
     var el = resolveElement(target);
@@ -318,6 +362,9 @@
       case "room-cards":
       case "cards":
         html = roomCards(count);
+        break;
+      case "room-finder":
+        html = roomFinder(count);
         break;
       case "form":
         html = form(opts);
@@ -357,6 +404,10 @@
     roomCards: function (target, count) {
       if (!target) return roomCards(count);
       render(target, "room-cards", count);
+    },
+    roomFinder: function (target, count) {
+      if (!target) return roomFinder(count);
+      render(target, "room-finder", count);
     },
     form: function (target, opts) {
       if (!target) return form(opts);

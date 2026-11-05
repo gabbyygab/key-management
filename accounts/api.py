@@ -71,7 +71,7 @@ def serialize_borrower(b, *, active=None):
     }
 
 
-@api_role_required("GUARD")
+@api_role_required("GUARD", "ADMIN")
 def borrower_search(request):
     """GET /api/borrowers/search/?q= — B3.4. Active borrowers only, max 20."""
     from transactions.models import BorrowTransaction

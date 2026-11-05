@@ -15,9 +15,14 @@ class KeyCategory(ArchiveClockMixin):
         verbose_name_plural = "key categories"
         ordering = ["name"]
 
+    # Views annotate these (Count) so a list costs one query. The fallback
+    # count must only run when the annotation is missing: a dict.get() default
+    # would be evaluated, and hit the database, on every access.
     @property
     def key_count(self):
-        return self.__dict__.get("key_count", self.keys.count())
+        if "key_count" not in self.__dict__:
+            self.__dict__["key_count"] = self.keys.count()
+        return self.__dict__["key_count"]
 
     @key_count.setter
     def key_count(self, value):
@@ -25,10 +30,10 @@ class KeyCategory(ArchiveClockMixin):
 
     @property
     def borrowed_count(self):
-        return self.__dict__.get(
-            "borrowed_count",
-            self.keys.filter(status__in=[Key.Status.BORROWED, Key.Status.OVERDUE]).count(),
-        )
+        if "borrowed_count" not in self.__dict__:
+            self.__dict__["borrowed_count"] = self.keys.filter(
+                status__in=[Key.Status.BORROWED, Key.Status.OVERDUE]).count()
+        return self.__dict__["borrowed_count"]
 
     @borrowed_count.setter
     def borrowed_count(self, value):

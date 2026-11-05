@@ -86,7 +86,7 @@ class FreeRoomsTests(TestCase):
     # --- page ---
     def test_page_renders_for_admin(self):
         self.client.force_login(self.admin)
-        res = self.client.get(self.page)
+        res = self.client.get(self.page, {"mode": "time"})
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'id="free-room-form"')
         self.assertContains(res, self.api)

@@ -88,6 +88,7 @@ TEMPLATES = [
                 'accounts.context_processors.navbar_context',
                 # F2.1 / F7.3: active navigation identifier for sidebar highlighting
                 'accounts.context_processors.active_nav_context',
+                'accounts.context_processors.default_term_context',
             ],
         },
     },
@@ -170,9 +171,13 @@ else:
             DATABASES["default"]["CONN_MAX_AGE"] = 60
             DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
         else:
+            # The Supabase session pooler allows 15 clients in total, shared
+            # by every gunicorn worker, the cron job and any dev server. Two
+            # workers x 5 leaves headroom; 10 each would exhaust it under load
+            # (EMAXCONNSESSION "max clients reached").
             DATABASES["default"]["OPTIONS"]["pool"] = {
-                "min_size": config("DB_POOL_MIN", default=2, cast=int),
-                "max_size": config("DB_POOL_MAX", default=10, cast=int),
+                "min_size": config("DB_POOL_MIN", default=1, cast=int),
+                "max_size": config("DB_POOL_MAX", default=5, cast=int),
                 "timeout": config("DB_POOL_TIMEOUT", default=10, cast=int),
                 "max_idle": 300,
             }
@@ -257,6 +262,11 @@ SUPABASE_RATE_MAX_WAIT = config("SUPABASE_RATE_MAX_WAIT", default=5.0, cast=floa
 # Short-lived cache for data-heavy admin pages (accounts/cache_utils.py).
 # Entries are also dropped the moment related rows change.
 DATA_CACHE_TTL = config("DATA_CACHE_TTL", default=60, cast=int)
+if len(sys.argv) > 1 and sys.argv[1] == "test":
+    # Each test rolls its rows back but cache versions only go up, so a value
+    # cached in one test could leak into the next. Tests that exercise the
+    # cache opt in with override_settings(DATA_CACHE_TTL=60).
+    DATA_CACHE_TTL = 0
 
 # Supabase Auth checks guard/admin passwords (accounts/supabase_auth.py).
 # Roles and sessions stay in Django. Needs SUPABASE_URL, the anon or

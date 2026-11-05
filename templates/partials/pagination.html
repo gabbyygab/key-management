@@ -6,7 +6,9 @@
   skeleton rows.
   Params: page_obj (Django Page), item_label ("keys", "rooms"…; default
   "results"), querystring (optional, current filters without page; falls back
-  to request.GET). Without page_obj, total_count alone renders the summary.
+  to request.GET), fixed_page_size (optional; hides the Rows per page select
+  for a list that pages at one size only, e.g. the room finder's 4 rooms).
+  Without page_obj, total_count alone renders the summary.
 {% endcomment %}
 {% if page_obj and page_obj.paginator.count > 0 %}
 <nav aria-label="Pagination" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-stone-200 bg-white rounded-b-xl text-[13px]">
@@ -14,6 +16,7 @@
   <div>
     Showing <span class="font-semibold text-stone-800">{{ page_obj.start_index }}</span> to <span class="font-semibold text-stone-800">{{ page_obj.end_index }}</span> of <span class="font-semibold text-stone-800">{{ page_obj.paginator.count }}</span> {{ item_label|default:"results" }}
   </div>
+  {% if not fixed_page_size %}
   <label class="inline-flex items-center gap-2">
     <span>Rows per page</span>
     <select data-per-page aria-label="Rows per page"
@@ -23,6 +26,7 @@
       {% endfor %}
     </select>
   </label>
+  {% endif %}
   </div>
 
   {% if page_obj.has_other_pages %}

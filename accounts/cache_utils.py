@@ -65,6 +65,12 @@ WATCHED = {
     "scheduling.ScheduleBlock": ("schedule",),
     "scheduling.ScheduleException": ("schedule",),
     "scheduling.Term": ("schedule",),
+    "scheduling.ScheduleSettings": ("schedule",),
+    # live_blocks() hides blocks whose subject/section/offering is archived.
+    "scheduling.Subject": ("schedule",),
+    "scheduling.Section": ("schedule",),
+    "scheduling.SubjectOffering": ("schedule",),
+    "accounts.Department": ("txn",),
 }
 
 

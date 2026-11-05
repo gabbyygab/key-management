@@ -1,5 +1,5 @@
 from datetime import timedelta
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -7,6 +7,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -23,17 +24,21 @@ from audit.services import Action, form_changes, log_activity
 from facilities.models import Building, Room
 from . import curriculum as curriculum_rules
 from .forms import (AutoScheduleForm, BlockSwapForm, CurriculumAddForm, DepartmentForm, FreeRoomQueryForm,
+                    OfferingRoomQueryForm,
                     ScheduleBlockForm, ScheduleExceptionForm, SectionForm,
                     SubjectForm, SubjectOfferingForm, TermForm)
 from .models import (CurriculumSubject, ScheduleBlock, ScheduleException, Section, Subject,
                      SubjectOffering, Term)
-from .planner import (PlaceError, SwapError, auto_schedule, clear_term_schedule,
-                      file_offering,
+from .planner import (PlaceError, SwapError, auto_schedule, busy_slots,
+                      clear_term_schedule, file_offering,
                       get_section_timetable, group_labels, move_block,
                       offering_queue, placeable_subjects, place_class,
                       restore_blocker, section_scope_ids,
                       shared_label, sharing_info, swap_blocks,
                       unschedule_offering)
+from .room_finder import (ROOMS_PER_PAGE, axis_ticks, find_rooms_for_offering,
+                          meeting_options)
+from .term_default import SESSION_KEY, default_term, live_terms, resolve_term
 from .services import (
     effective_term, faculty_schedule, find_conflicts, find_free_rooms, get_room_timetable,
     get_room_today_schedule, live_blocks,
@@ -66,9 +71,9 @@ def _default_slot():
     return {"day": now.weekday(), "start": start.strftime("%H:%M"), "end": end.strftime("%H:%M")}
 
 
-def _search(form):
+def _search(form, request):
     d = form.cleaned_data
-    term = d.get("term") or Term.objects.filter(is_active=True).order_by("-start_date").first()
+    term = d.get("term") or default_term(request)
     return find_free_rooms(day_of_week=d["day"], start_time=d["start"], end_time=d["end"],
                            term=term, building=d["building"], room_type=d["room_type"],
                            min_capacity=d["min_capacity"])
@@ -115,22 +120,29 @@ def _time_slots():
 
 
 def _class_modal_context():
-    """Pickers the add/edit class modal needs (it is shared by both grids)."""
+    """Pickers the add/edit class modal needs (it is shared by both grids).
+
+    Reference lists, cached until a section, room or borrower is saved
+    (accounts/cache_utils.py), so the grids do not reload them on every visit.
+    """
+    from accounts.cache_utils import remember
     return {
-        "modal_sections": _section_options(
+        "modal_sections": remember("class-modal-sections", ["schedule"], lambda: _section_options(
             Section.objects.filter(is_active=True).select_related("department")
-            .order_by("program", "year_level", "block", "group")),
-        "modal_rooms": (Room.objects.filter(is_active=True, building__is_active=True)
-                        .exclude(status__in=[Room.Status.MAINTENANCE, Room.Status.INACTIVE])
-                        .select_related("building").order_by("building__code", "room_code")),
-        "modal_borrowers": Borrower.objects.filter(is_active=True)
-                                           .order_by("last_name", "first_name"),
+            .order_by("program", "year_level", "block", "group"))),
+        "modal_rooms": remember("class-modal-rooms", ["inventory"], lambda: list(
+            Room.objects.filter(is_active=True, building__is_active=True)
+            .exclude(status__in=[Room.Status.MAINTENANCE, Room.Status.INACTIVE])
+            .select_related("building").order_by("building__code", "room_code"))),
+        "modal_borrowers": remember("class-modal-borrowers", ["txn"], lambda: list(
+            Borrower.objects.filter(is_active=True).order_by("last_name", "first_name"))),
         "modal_days": [(c, l) for c, l in ScheduleBlock.DayOfWeek.choices if c <= 5],
         "options_url": reverse("scheduling:class_options"),
         "place_url": reverse("scheduling:class_place"),
         "move_url": reverse("scheduling:block_move", args=[0]),
         "delete_url": reverse("scheduling:schedule_block_delete", args=[0]),
         "swap_url": reverse("scheduling:block_swap"),
+        "busy_url": reverse("scheduling:busy_slots"),
     }
 
 
@@ -149,19 +161,12 @@ def room_timetable(request):
     moved by drag and drop; every change goes through ``planner`` so the
     section timetable and the subject offerings stay in step.
     """
-    terms = Term.objects.filter(is_active=True).order_by("-start_date")
+    terms, selected_term = resolve_term(request)
     rooms = (
         Room.objects.filter(is_active=True, building__is_active=True)
         .select_related("building")
         .order_by("building__code", "room_code")
     )
-
-    term_param = request.GET.get("term", "").strip()
-    selected_term = None
-    if term_param.isdigit():
-        selected_term = terms.filter(pk=term_param).first()
-    if not selected_term:
-        selected_term = terms.filter(is_active=True).first() or terms.first()
 
     room_param = request.GET.get("room", "").strip()
     selected_room = None
@@ -397,19 +402,111 @@ def exception_create(request, pk):
     return render(request, "scheduling/exception_form.html", ctx)
 
 
+def _offering_choices(form):
+    """The subject picker's rows, labelled like every other picker
+    (``IT401 · BSIT-4D (G1 + G2 together)``), in one extra query."""
+    offerings = list(form.fields["offering"].queryset)
+    labels = group_labels([o.section for o in offerings])
+    rows = []
+    for o in offerings:
+        shared = shared_label(o.section, labels)
+        section = f"{o.section.code} ({shared} together)" if shared else o.section.code
+        rows.append({"id": o.pk, "code": o.subject.code, "title": o.subject.title,
+                     "section_id": o.section_id, "subject_id": o.subject_id,
+                     "section": section, "lecture_lab": o.is_lecture_lab,
+                     "instructor": o.instructor.full_name if o.instructor_id else ""})
+    return rows
+
+
+def _room_finder_context(form, request):
+    """Run the subject search for a bound, valid form, and page the rooms.
+
+    The rooms are paged at ``ROOMS_PER_PAGE`` (``?page=``; a bad or
+    out-of-range page clamps to a real one). The headline counts, the hidden
+    rooms and the fully booked list always cover the whole result.
+    """
+    d = form.cleaned_data
+    result = find_rooms_for_offering(
+        offering=d["offering"], kind=d.get("kind") or "", days=d.get("days") or None,
+        window_start=d["window_start"], window_end=d["window_end"],
+        building=d.get("building"))
+    page_obj = Paginator(result.rooms, ROOMS_PER_PAGE).get_page(request.GET.get("page"))
+    return {"finder": result, "page_obj": page_obj,
+            "querystring": querystring_without_page(request),
+            "meeting_options": meeting_options(d["offering"]),
+            "ticks": axis_ticks(result.window_start, result.window_end)}
+
+
 @admin_required
 def free_rooms(request):
-    # GET with filters renders results server-side too (no-JS fallback).
-    if "day" in request.GET:
-        form = FreeRoomQueryForm(request.GET)
-        rooms = _search(form) if form.is_valid() else None
+    """Room finder. Two tabs on one page:
+
+    * **For a subject** (default): pick a subject offering and see every room
+      that fits one of its meetings, with the week's free windows
+      (``scheduling/room_finder.py``).
+    * **By time slot**: pick a day and time and see which rooms are free.
+
+    Either tab renders its results server-side when the query is in the URL, so
+    the page works without JS and a reload (after "Schedule this") keeps them.
+    """
+    terms, selected_term = _selected_term(request)
+    mode = "time" if request.GET.get("mode") == "time" or "day" in request.GET else "subject"
+    ctx = {"mode": mode, "terms": terms, "selected_term": selected_term,
+           **_class_modal_context()}
+    if mode == "time":
+        if "day" in request.GET:
+            form = FreeRoomQueryForm(request.GET)
+            rooms = _search(form, request) if form.is_valid() else None
+        else:
+            form = FreeRoomQueryForm(initial=_default_slot())
+            rooms = None
+        ctx.update({"form": form, "rooms": rooms, "durations": DURATIONS})
     else:
-        form = FreeRoomQueryForm(initial=_default_slot())
-        rooms = None
-    _, selected_term = _selected_term(request)
-    return render(request, "scheduling/free_rooms.html", {
-        "form": form, "rooms": rooms, "durations": DURATIONS, **_form_context(),
-        "selected_term": selected_term, **_class_modal_context(),
+        if "offering" in request.GET:
+            form = OfferingRoomQueryForm(request.GET, term=selected_term)
+            if form.is_valid():
+                ctx.update(_room_finder_context(form, request))
+        else:
+            form = OfferingRoomQueryForm(term=selected_term,
+                                         initial={"window_start": "07:00", "window_end": "21:00"})
+        ctx.update({"finder_form": form, "offering_choices": _offering_choices(form),
+                    "finder_days": [(c, l) for c, l in ScheduleBlock.DayOfWeek.choices if c <= 5],
+                    "picked_days": {int(d) for d in request.GET.getlist("days") if d.isdigit()}})
+    return render(request, "scheduling/free_rooms.html", ctx)
+
+
+@api_role_required("ADMIN")
+def room_finder_api(request):
+    """GET /api/scheduling/room-finder/?offering=&kind=&days=&window_start=&window_end=&building=
+
+    The subject tab's live search. Returns the rendered results region (so the
+    page and the API never drift apart) plus the headline numbers.
+    """
+    _, term = _selected_term(request)
+    form = OfferingRoomQueryForm(request.GET, term=term)
+    if not form.is_valid():
+        return JsonResponse(form.errors, status=422)
+    ctx = _room_finder_context(form, request)
+    result, page_obj = ctx["finder"], ctx["page_obj"]
+    req = result.requirement
+    html = render_to_string("scheduling/_room_finder_results.html",
+                            {**ctx, "selected_term": term}, request=request)
+    return JsonResponse({
+        "count": len(result.rooms),
+        "full_count": len(result.full_rooms),
+        "page": page_obj.number,
+        "num_pages": page_obj.paginator.num_pages,
+        "requirement": {
+            "offering": req.offering.pk, "kind": req.kind, "minutes": req.minutes,
+            "room_type": req.room_type, "seats": req.seats,
+            "department": req.department.code if req.department else None,
+        },
+        "rooms": [{
+            "id": r.room.pk, "label": str(r.room), "fit": r.fit,
+            "capacity": r.room.capacity, "free_minutes": r.free_minutes,
+            "windows": [{k: w[k] for k in ("day", "start", "end")} for w in r.windows],
+        } for r in page_obj],
+        "html": html,
     })
 
 
@@ -427,7 +524,7 @@ def free_rooms_api(request):
         "room_type_display": r.get_room_type_display(),
         "capacity": r.capacity,
         "floor": r.floor,
-    } for r in _search(form)]
+    } for r in _search(form, request)]
     return JsonResponse({"results": results, "count": len(results)})
 
 
@@ -942,14 +1039,32 @@ def section_toggle(request, pk):
 
 
 def _selected_term(request, param="term"):
-    """The term the page is about: the one asked for, else the active one."""
-    terms = Term.objects.filter(is_active=True).order_by("-start_date")
-    raw = (request.GET.get(param, "") or request.POST.get(param, "")).strip()
-    if raw.isdigit():
-        found = terms.filter(pk=int(raw)).first()
-        if found:
-            return terms, found
-    return terms, terms.filter(is_active=True).first() or terms.first()
+    """The term the page is about: the one asked for, else the navbar default."""
+    return resolve_term(request, param)
+
+
+@admin_required
+@require_POST
+def set_default_term(request):
+    """Navbar picker: remember the admin's default term for this session.
+
+    An empty value goes back to the automatic term. The redirect drops any
+    ``?term=`` from the page the admin was on, otherwise that explicit term
+    would still win over the new default."""
+    raw = request.POST.get("term", "").strip()
+    chosen = live_terms().filter(pk=int(raw)).first() if raw.isdigit() else None
+    if chosen:
+        request.session[SESSION_KEY] = chosen.pk
+        messages.success(request, f"Default term set to {chosen.name}.")
+    else:
+        request.session.pop(SESSION_KEY, None)
+        messages.info(request, "Default term back to automatic.")
+    target = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(target, {request.get_host()}, request.is_secure()):
+        target = reverse("scheduling:room_timetable")
+    parts = urlsplit(target)
+    query = urlencode([(k, v) for k, v in parse_qsl(parts.query) if k != "term"])
+    return redirect(urlunsplit(("", "", parts.path, query, parts.fragment)))
 
 @admin_required
 @require_POST
@@ -1290,13 +1405,7 @@ def autoschedule(request):
 def _curriculum_term(request):
     """The term whose semester the curriculum page highlights: the one asked
     for, else the term the guards work from today, else the newest live one."""
-    terms = Term.objects.filter(is_active=True).order_by("-start_date")
-    raw = request.GET.get("term", "").strip()
-    if raw.isdigit():
-        found = terms.filter(pk=int(raw)).first()
-        if found:
-            return terms, found
-    return terms, effective_term(timezone.localdate()) or terms.first()
+    return resolve_term(request)
 
 
 @admin_required
@@ -1478,7 +1587,7 @@ def section_timetable(request):
     """
     terms, term = _selected_term(request)
     sections, section = _selected_section(request)
-    include_groups = request.GET.get("groups", "1") != "0"
+    include_groups = request.GET.get("groups", "0") == "1"
 
     timetable = get_section_timetable(section, term, include_groups=include_groups)
 
@@ -1529,7 +1638,7 @@ def section_export(request):
         return redirect("scheduling:section_timetable")
     # No audit row: ActivityLog has no VIEW/EXPORT action, and reading a
     # timetable is not a change. The reports exports behave the same way.
-    include_groups = request.GET.get("groups", "1") != "0"
+    include_groups = request.GET.get("groups", "0") == "1"
     fmt = "png" if request.GET.get("format", "pdf").lower().strip() == "png" else "pdf"
     from .timetable_export import export_section_timetable
     return export_section_timetable(section, term, fmt, include_groups=include_groups)
@@ -1619,6 +1728,46 @@ def block_move_api(request, pk):
     })
 
 
+@api_role_required("ADMIN")
+def busy_slots_api(request):
+    """GET /api/scheduling/busy/ - where a class cannot go this week.
+
+    ``?block=<id>[&room=<id>]`` for a placed class (its section and professor;
+    ``room`` overrides its room, for the edit dialog), or
+    ``?term=&section=[&subject=][&room=]`` for a class being added (the
+    professor is the section's offering of that subject). Answers
+    ``{"busy": [...]}`` from ``planner.busy_slots``: the same rows the move
+    and place checks refuse, so the timetables can grey them out up front.
+    """
+    def pick(model, name):
+        raw = request.GET.get(name, "").strip()
+        return model.objects.filter(pk=int(raw)).first() if raw.isdigit() else None
+
+    room = pick(Room, "room")
+    block = pick(ScheduleBlock, "block")
+    if block is not None:
+        term, section, instructor = block.term, block.section, block.instructor
+        room = room or block.room
+        exclude = block.pk
+    else:
+        term, section, subject = pick(Term, "term"), pick(Section, "section"), pick(Subject, "subject")
+        instructor, exclude = None, None
+        if term and section and subject:
+            offering = (SubjectOffering.objects.filter(term=term, section=section,
+                                                       subject=subject, is_active=True)
+                        .select_related("instructor").first())
+            instructor = offering.instructor if offering else None
+    if term is None:
+        return JsonResponse({"error": "Pick a term."}, status=422)
+    return JsonResponse({
+        "busy": busy_slots(term=term, room=room, instructor=instructor, section=section,
+                           exclude_block_id=exclude),
+        "room": str(room) if room else "",
+        "instructor": instructor.full_name if instructor else "",
+        "section": section.code if section else "",
+    })
+
+
 def _parse_time(value):
     from datetime import datetime
     try:
@@ -1639,11 +1788,12 @@ def class_options_api(request):
     rows, restricted = placeable_subjects(section=section, term=term)
     if section is None:
         message = "Pick a section to see the subjects of its curriculum."
-    elif restricted:
-        message = f"{curriculum_rules.slot_label(section.program, section.year_level, term)} curriculum."
+    elif rows:
+        message = (f"Only subjects in {section.code}'s Subject Offerings for this term "
+                   "are listed. A new class only changes that offering's schedule.")
     else:
-        message = ("No curriculum is set for this program yet, so every subject is "
-                   "listed. Add one on the Curriculum page to narrow this list.")
+        message = (f"{section.code} has no Subject Offerings in this term yet. "
+                   "Add them under Subject Offerings first.")
     return JsonResponse({"subjects": rows, "restricted": restricted, "message": message})
 
 
@@ -1667,7 +1817,7 @@ def class_place_api(request):
 
     term, section = get(Term, "term"), get(Section, "section")
     subject, room = get(Subject, "subject"), get(Room, "room")
-    instructor = get(Borrower, "instructor")
+    instructor = None  # always the offering's professor, never set from here
     try:
         start, end = _parse_time(data.get("start_time")), _parse_time(data.get("end_time"))
         days = [int(data.get("day_of_week"))]

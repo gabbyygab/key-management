@@ -231,6 +231,20 @@ aside :focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
+ * Taken timetable slot (schedule-dnd.js while dragging, class-modal.js strip).
+ * Grey hatching marks a half hour where the class's room, professor or
+ * section is already booked. Unlayered so it beats the cell's
+ * hover:bg-emerald utility; the hatching (not only the colour) carries the
+ * meaning, so it still reads in greyscale.
+ * ------------------------------------------------------------------------- */
+.kt-slot-busy {
+  background-color: #e7e5e4;
+  background-image: repeating-linear-gradient(135deg, rgba(120, 113, 108, 0.22) 0 2px, transparent 2px 7px);
+  cursor: not-allowed;
+}
+.kt-slot-busy > span { display: none !important; }
+
+/* ---------------------------------------------------------------------------
  * Modal scrollbars — the "side bar" of every scrollable modal body.
  *
  * The OS default bar is a light grey rail that reads as a seam against the

@@ -32,6 +32,24 @@ Sections:
 
     <div class="app-header-spacer"></div>
 
+    {# Default term picker (ADMIN): term-aware pages open on this term. #}
+    {% if user.is_admin_role and nav_terms %}
+    <form method="post" action="{% url 'scheduling:set_default_term' %}" class="app-term-picker"
+          style="display:flex;align-items:center;gap:6px">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="navbar-term-select" class="sr-only">Default term</label>
+      <i data-lucide="calendar-range" aria-hidden="true" style="width:16px;height:16px;flex:none"></i>
+      <select id="navbar-term-select" name="term" title="Default term{% if not nav_term_is_manual %} (automatic){% endif %}"
+              onchange="this.form.submit()"
+              class="max-w-[200px] truncate rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-[13px] text-stone-800 focus:border-[#1E6B4A]">
+        <option value="" {% if not nav_term_is_manual %}selected{% endif %}>Automatic{% if nav_default_term and not nav_term_is_manual %} · {{ nav_default_term.name }}{% endif %}</option>
+        {% for t in nav_terms %}<option value="{{ t.pk }}" {% if nav_term_is_manual and nav_default_term and t.pk == nav_default_term.pk %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+      <noscript><button type="submit" class="text-[13px]">Set</button></noscript>
+    </form>
+    {% endif %}
+
     {# 2. Admin quick-add dropdown #}
     {% if user.is_admin_role %}
     <div class="app-quickadd">

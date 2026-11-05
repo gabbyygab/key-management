@@ -362,6 +362,8 @@ class SidebarRoleSplitTests(TestCase):
 
         # Admin Navigation Links
         self.assertContains(res, reverse("dashboard"))
+        self.assertContains(res, reverse("transactions:borrow_dashboard"))
+        self.assertContains(res, "Key Transactions (POS)")
         self.assertContains(res, reverse("scheduling:room_timetable"))
         self.assertContains(res, "Room Schedule")
         self.assertContains(res, reverse("scheduling:free_rooms"))
@@ -392,7 +394,6 @@ class SidebarRoleSplitTests(TestCase):
         self.assertContains(res, "Reports")
 
         # Guard-specific menu items MUST NOT appear for Admin
-        self.assertNotContains(res, "Key Transactions (POS)")
         self.assertNotContains(res, "Key Availability (read-only)")
         self.assertNotContains(res, "Borrower Lookup (read-only)")
         self.assertNotContains(res, "My Shift Log")
@@ -444,7 +445,7 @@ class SidebarRoleSplitTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Audit Log")
         self.assertContains(res, "Key Inventory")
-        self.assertNotContains(res, "Key Transactions (POS)")
+        self.assertContains(res, "Key Transactions (POS)")
 
     def test_user_chip_role_display_and_initials(self):
         """User chip uses user.get_role_display (not 'GUARD' fallback) and proper initials."""

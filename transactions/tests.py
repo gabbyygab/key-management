@@ -330,6 +330,17 @@ class ReturnEndpointTests(OutKeyFixture):
         self.txn.refresh_from_db()
         self.assertEqual(self.txn.status, BorrowTransaction.Status.ACTIVE)
 
+    def test_admin_without_shift_can_return(self):
+        admin = User.objects.create_user(
+            username="admin_return", email="admin_return@example.edu", password="pw",
+            role=User.Role.ADMIN)
+        self.client.force_login(admin)
+        res = self.post({"condition": "OK"})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.txn.refresh_from_db()
+        self.assertEqual(self.txn.status, BorrowTransaction.Status.RETURNED)
+        self.assertEqual(self.txn.received_by, admin)
+
 
 from scheduling.models import ScheduleBlock, Term
 from audit.models import ActivityLog
@@ -366,6 +377,14 @@ class RoleSplitDashboardTests(TestCase):
         self.client.force_login(self.staff)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 403)
+
+    def test_admin_can_open_the_key_transactions_pos(self):
+        self.client.force_login(self.admin)
+        res = self.client.get(reverse("transactions:borrow_dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.context["is_admin"])
+        self.assertTrue(res.context["can_transact"])
+        self.assertContains(res, "Admin access")
 
     def test_admin_dashboard_renders_admin_view_and_stat_cards(self):
         today = timezone.localdate()

@@ -3,6 +3,9 @@
  * Progressive enhancement over transactions/borrow_dashboard.html. Without JS
  * the page is a set of GET searches and a POST to borrow_confirm. With JS:
  *
+ *   0. Snapshot         — #pos-snapshot (embedded at render), refreshed from
+ *                         GET /api/transactions/pos-snapshot/. Steps 1–3 read
+ *                         it locally; the APIs below are the fallback.
  *   1. Borrower search  — GET /api/borrowers/search/?q=   (live, debounced)
  *   2. Key search       — GET /api/keys/search/?q=&building= (live; scanner
  *                         Enter picks the exact code match)
@@ -26,6 +29,162 @@
   var ENDPOINTS = {};
   var state = { borrower: null, key: null, keys: [], borrowers: [], building: "", releasing: false };
   var el = {};
+
+  /* ---- cache ----------------------------------------------------------
+   * Key lists and per-key schedule checks are cached in memory so picking a
+   * borrower or a key is instant. Lists are shown from cache first and then
+   * revalidated in the background (stale-while-revalidate); anything that
+   * changes who holds a key clears the cache. */
+  var LIST_TTL_MS = 60 * 1000;
+  var DETAIL_TTL_MS = 60 * 1000;
+  var keyListCache = {};
+  var keyDetailCache = {};
+
+  function cacheGet(store, key, ttl) {
+    var hit = store[key];
+    return hit && Date.now() - hit.t < ttl ? hit : null;
+  }
+
+  function clearCaches() {
+    keyListCache = {};
+    keyDetailCache = {};
+  }
+
+  /* ---- snapshot -------------------------------------------------------
+   * The page embeds every available key, every active borrower and today's
+   * blocks per room (transactions/pos_snapshot.py), so borrower search, the
+   * key list and the schedule verdict are computed here with no round trip.
+   * It is refreshed in the background when it is older than SNAPSHOT_TTL_MS,
+   * when the Currently Out count changes and after a release. The server
+   * re-checks everything on Release, so a slightly stale snapshot is safe. */
+  var SNAPSHOT_TTL_MS = 60 * 1000;
+  var BORROWER_LIMIT = 20;
+  var KEY_LIMIT = 30;
+  var snap = null;
+  var snapAt = 0;
+  var snapRequest = null;
+  var lastOutCount = null;
+
+  function setSnapshot(data) {
+    if (!data || !Array.isArray(data.keys)) return false;
+    snap = data;
+    snapAt = Date.now();
+    return true;
+  }
+
+  /* Server wall clock in minutes past midnight, advanced by the local clock
+   * so the browser's own time zone never matters. */
+  function nowMinutes() {
+    return snap.now_minutes + (Date.now() - snapAt) / 60000;
+  }
+
+  /* The day's blocks are only valid until midnight. */
+  function scheduleUsable() {
+    return !!(snap && snap.rooms && nowMinutes() < 24 * 60);
+  }
+
+  function refreshSnapshot() {
+    if (!ENDPOINTS.snapshot) return Promise.resolve(false);
+    if (snapRequest) return snapRequest;
+    snapRequest = getJSON(ENDPOINTS.snapshot)
+      .then(function (r) { return r.status === 200 && setSnapshot(r.body); })
+      .catch(function () { return false; /* keep the old snapshot */ })
+      .then(function (ok) {
+        snapRequest = null;
+        if (ok) repaintFromSnapshot();
+        return ok;
+      });
+    return snapRequest;
+  }
+
+  function refreshIfStale() {
+    if (!snap || Date.now() - snapAt > SNAPSHOT_TTL_MS || !scheduleUsable()) refreshSnapshot();
+  }
+
+  /* After a refresh, redraw the lists the guard is looking at, but only if
+   * they changed, so focus and scroll stay put. */
+  function repaintFromSnapshot() {
+    if (state.borrower && el.keyArea && !el.keyArea.classList.contains("hidden") && !state.key) {
+      var before = JSON.stringify(state.keys);
+      localKeySearch(el.keyInput.value.trim());
+      if (JSON.stringify(state.keys) !== before) renderKeys(el.keyInput.value.trim());
+    } else if (!state.borrower && snap.borrowers && el.borrowerInput) {
+      var prev = JSON.stringify(state.borrowers);
+      localBorrowerSearch(el.borrowerInput.value.trim());
+      if (JSON.stringify(state.borrowers) !== prev) renderBorrowers(el.borrowerInput.value.trim());
+    }
+  }
+
+  function contains(hay, needle) {
+    return String(hay == null ? "" : hay).toLowerCase().indexOf(needle) !== -1;
+  }
+
+  /* Every word must appear in the name or the ID number. */
+  function localBorrowerSearch(q) {
+    var words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    state.borrowers = snap.borrowers.filter(function (b) {
+      var hay = (b.first_name + " " + b.last_name + " " + b.id_number).toLowerCase();
+      return words.every(function (w) { return hay.indexOf(w) !== -1; });
+    }).slice(0, BORROWER_LIMIT);
+  }
+
+  /* Same match as /api/keys/search/: code, room, building or room name. */
+  function localKeySearch(q) {
+    var needle = q.toLowerCase();
+    var building = state.building ? parseInt(state.building, 10) : null;
+    var exact = null;
+    var matches = snap.keys.filter(function (k) {
+      if (building !== null && k.building_id !== building) return false;
+      if (!needle) return true;
+      var hit = contains(k.key_code, needle) || contains(k.room_code, needle) ||
+                contains(k.building, needle) || contains(k.room_name, needle);
+      if (hit && exact === null && k.key_code.toLowerCase() === needle) exact = k.id;
+      return hit;
+    });
+    state.keys = matches.slice(0, KEY_LIMIT);
+    return { results: state.keys, exact: exact };
+  }
+
+  /* The /api/keys/<id>/ schedule check, computed from today's blocks. */
+  function localSchedule(k, borrowerId) {
+    var blocks = snap.rooms[String(k.room_id)] || [];
+    var now = nowMinutes();
+    var current = null;
+    var next = null;
+    blocks.forEach(function (b) {
+      if (!current && b.start <= now && now < b.end) current = b;
+      else if (!next && b.start > now) next = b;
+    });
+    var s = {
+      state: current ? (current.instructor_id === borrowerId ? "holder" : "other") : "free",
+      no_timetable: !!snap.no_timetable,
+      term: snap.term || "",
+      current: current,
+      next: next,
+      enforcement: snap.enforcement,
+      expected_return_at: null,
+    };
+    if (s.state === "holder") s.expected_return_at = current.end_iso;
+    return { room_holder: k.room_holder || null, schedule: s };
+  }
+
+  /* Reflect a release at once instead of waiting for the refresh. */
+  function applyReleaseToSnapshot(key, borrower, body) {
+    if (!snap) return;
+    snap.keys = snap.keys.filter(function (k) { return k.id !== key.id; });
+    snap.keys.forEach(function (k) {
+      if (k.room_id === key.room_id && !k.room_holder) {
+        k.room_holder = { key_code: key.key_code, borrower: borrower.full_name, transaction_no: body.transaction_no };
+      }
+    });
+    (snap.borrowers || []).forEach(function (b) {
+      if (b.id !== borrower.id) return;
+      b.active_transaction = {
+        id: null, transaction_no: body.transaction_no, key_code: key.key_code,
+        room: key.room, borrowed_at: body.borrowed_at, status: "ACTIVE",
+      };
+    });
+  }
 
   /* ---- helpers ------------------------------------------------------- */
 
@@ -113,6 +272,13 @@
   var borrowerController = null;
 
   function searchBorrowers(q) {
+    if (snap && snap.borrowers) {
+      if (borrowerController) borrowerController.abort();
+      localBorrowerSearch(q);
+      renderBorrowers(q);
+      refreshIfStale();
+      return Promise.resolve();
+    }
     if (borrowerController) borrowerController.abort();
     borrowerController = new AbortController();
     if (KeyTrack.skeletons) KeyTrack.skeletons.posBorrower(el.borrowerResults, 4);
@@ -226,9 +392,27 @@
   function searchKeys(q, opts) {
     opts = opts || {};
     if (keyController) keyController.abort();
+    if (snap) {
+      var local = localKeySearch(q);
+      el.keyResults.removeAttribute("aria-busy");
+      renderKeys(q);
+      if (opts.pick) pickFrom(local, q);
+      refreshIfStale();
+      return Promise.resolve();
+    }
     keyController = new AbortController();
-    if (KeyTrack.skeletons) KeyTrack.skeletons.posKey(el.keyResults, 3);
-    el.keyResults.setAttribute("aria-busy", "true");
+
+    var cacheKey = (state.building || "") + "|" + q.toLowerCase();
+    var cached = cacheGet(keyListCache, cacheKey, LIST_TTL_MS);
+    if (cached) {
+      /* Instant paint from cache; the fetch below only re-renders on change. */
+      state.keys = cached.results;
+      renderKeys(q);
+      if (opts.pick) pickFrom(cached, q);
+    } else {
+      if (KeyTrack.skeletons) KeyTrack.skeletons.posKey(el.keyResults, 3);
+      el.keyResults.setAttribute("aria-busy", "true");
+    }
 
     var url = ENDPOINTS.keySearch + "?q=" + encodeURIComponent(q) +
       (state.building ? "&building=" + encodeURIComponent(state.building) : "");
@@ -236,19 +420,35 @@
     return getJSON(url, keyController.signal)
       .then(function (r) {
         if (r.status === 403) { KeyTrack.toast("You do not have permission.", "error"); return; }
-        state.keys = r.body.results || [];
-        renderKeys(q);
-        if (opts.pick) {
-          /* Scanner / Enter: the exact code match wins, else a lone result. */
-          var pick = null;
-          if (r.body.exact) pick = state.keys.filter(function (k) { return k.id === r.body.exact; })[0];
-          else if (state.keys.length === 1) pick = state.keys[0];
-          if (pick) selectKey(pick);
-          else if (q && !state.keys.length) KeyTrack.toast("No available key matches “" + q + "”.", "error");
+        var fresh = { t: Date.now(), results: r.body.results || [], exact: r.body.exact };
+        keyListCache[cacheKey] = fresh;
+        var changed = !cached || JSON.stringify(cached.results) !== JSON.stringify(fresh.results);
+        if (changed) {
+          state.keys = fresh.results;
+          renderKeys(q);
         }
+        if (opts.pick && (!cached || changed)) pickFrom(fresh, q);
       })
       .catch(function (err) { handleFetchError(err, function () { searchKeys(q, opts); }, "Key search"); })
       .then(function () { el.keyResults.removeAttribute("aria-busy"); });
+  }
+
+  /* Scanner / Enter: the exact code match wins, else a lone result. */
+  function pickFrom(data, q) {
+    var pick = null;
+    if (data.exact) pick = state.keys.filter(function (k) { return k.id === data.exact; })[0];
+    else if (state.keys.length === 1) pick = state.keys[0];
+    if (pick) selectKey(pick);
+    else if (q && !state.keys.length) KeyTrack.toast("No available key matches \u201c" + q + "\u201d.", "error");
+  }
+
+  /* Warm the default list while the guard is still choosing a borrower. */
+  function prefetchKeys() {
+    getJSON(ENDPOINTS.keySearch + "?q=").then(function (r) {
+      if (r.status === 200 && !keyListCache["|"]) {
+        keyListCache["|"] = { t: Date.now(), results: r.body.results || [], exact: r.body.exact };
+      }
+    }).catch(function () { /* best effort */ });
   }
 
   function renderKeys(q) {
@@ -266,6 +466,7 @@
         '<span class="min-w-0 flex-1"><b class="font-mono text-stone-900">' + esc(k.key_code) + "</b>" +
         '<span class="text-stone-500"> · ' + esc(k.room) + (k.room_name ? " " + esc(k.room_name) : "") + "</span>" +
         '<span class="block text-[12px] text-stone-400">' + esc(k.category) + (k.is_original ? "" : " · copy " + esc(k.copy_number)) + "</span></span>" +
+        (k.room_holder ? '<span class="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">Room occupied</span>' : "") +
         '<span class="shrink-0 text-[12px] font-semibold text-[#1E6B4A]">Select</span></button>';
     }).join("");
     KeyTrack.refreshIcons(el.keyResults);
@@ -298,8 +499,16 @@
       info: "border-stone-200 bg-stone-50 text-stone-700",
     };
     el.confirmSchedule.className = "mt-3 rounded-lg border px-3 py-2 text-[13px] " + styles[kind];
-    el.confirmSchedule.innerHTML = html;
+    el.confirmSchedule.innerHTML = occupiedHtml() + html;
     el.confirmSchedule.classList.remove("hidden");
+  }
+
+  /* "Room occupied" line shown above the schedule verdict (another copy is out). */
+  function occupiedHtml() {
+    var h = state.key && state.key.room_holder;
+    if (!h) return "";
+    return '<span class="mb-1 block font-semibold">Room is occupied right now: <span class="font-mono">' +
+      esc(h.key_code) + "</span> is with " + esc(h.borrower) + ".</span>";
   }
 
   function describeSchedule(s, borrowerName) {
@@ -326,11 +535,17 @@
       scheduleBox("info", "No timetable has been generated for " + esc(s.term || "this semester") + ", so there is nothing to check this room against.");
       return "ok";
     }
+    if (state.key && state.key.room_holder) {
+      scheduleBox("warn", "No class is scheduled in this room right now." + nextLine);
+      return "occupied";
+    }
     scheduleBox("ok", "Room is free right now." + nextLine);
     return "ok";
   }
 
   var detailController = null;
+
+  var RELEASE_MODAL = "pos-release-modal";
 
   function selectKey(k) {
     state.key = k;
@@ -338,31 +553,36 @@
     showError("");
     setOverride(false);
     el.confirmKey.textContent = k.key_code;
-    el.confirmRoom.textContent = "· " + k.room + (k.room_name ? " " + k.room_name : "");
+    el.confirmRoom.textContent = "\u00b7 " + k.room + (k.room_name ? " " + k.room_name : "");
     el.confirmBorrower.textContent = state.borrower.full_name;
     el.purpose.value = "";
     el.due.value = "";
-    el.confirm.classList.remove("hidden");
     el.confirmSchedule.classList.add("hidden");
     setReleaseEnabled(hasActiveShift(), "You must start a shift before releasing keys.");
-    el.confirm.scrollIntoView({ block: "nearest" });
+
+    /* The search result already says whether another copy is out, so the
+       occupied warning shows the moment the modal opens. */
+    if (k.room_holder) {
+      scheduleBox("warn", "");
+      setOverride(true, "This room is occupied. Give a reason to release another key.");
+    }
+    if (window.KeyTrackModal) window.KeyTrackModal.open(RELEASE_MODAL);
     el.purpose.focus();
 
     if (detailController) detailController.abort();
+    if (scheduleUsable()) { applyDetail(k, localSchedule(k, state.borrower.id)); return; }
+    var cacheKey = k.id + "|" + state.borrower.id;
+    var hit = cacheGet(keyDetailCache, cacheKey, DETAIL_TTL_MS);
+    if (hit) { applyDetail(k, hit.body); return; }
+
     detailController = new AbortController();
     var url = ENDPOINTS.keyDetail.replace("/0/", "/" + encodeURIComponent(k.id) + "/") +
       "?borrower=" + encodeURIComponent(state.borrower.id);
     getJSON(url, detailController.signal)
       .then(function (r) {
         if (r.status !== 200 || state.key !== k) return;
-        var s = r.body.schedule || {};
-        var verdict = describeSchedule(s, state.borrower.full_name);
-        if (s.expected_return_at && !el.due.value) el.due.value = toLocalInput(s.expected_return_at);
-        if (verdict === "warn") {
-          setOverride(true, "This room is scheduled to someone else. Give a reason to release it anyway.");
-        } else if (verdict === "block") {
-          setReleaseEnabled(false, "Blocked by the room schedule.");
-        }
+        keyDetailCache[cacheKey] = { t: Date.now(), body: r.body };
+        applyDetail(k, r.body);
       })
       .catch(function (err) {
         if (err && err.name === "AbortError") return;
@@ -371,10 +591,28 @@
       });
   }
 
+  function applyDetail(k, body) {
+    if (state.key !== k) return;
+    /* Detail is fresher than the list: take its view of who holds the room. */
+    k.room_holder = body.room_holder || null;
+    var s = body.schedule || {};
+    var verdict = describeSchedule(s, state.borrower.full_name);
+    if (s.expected_return_at && !el.due.value) el.due.value = toLocalInput(s.expected_return_at);
+    if (verdict === "warn" || verdict === "occupied") {
+      setOverride(true, k.room_holder
+        ? "This room is occupied. Give a reason to release another key."
+        : "This room is scheduled to someone else. Give a reason to release it anyway.");
+    } else if (verdict === "block") {
+      setReleaseEnabled(false, "Blocked by the room schedule.");
+    } else if (!k.room_holder) {
+      setOverride(false);
+    }
+  }
+
   function clearKey() {
     state.key = null;
     if (detailController) detailController.abort();
-    if (el.confirm) el.confirm.classList.add("hidden");
+    if (window.KeyTrackModal && window.KeyTrackModal.isOpen(RELEASE_MODAL)) window.KeyTrackModal.close(RELEASE_MODAL);
     if (el.keyResults && state.keys.length) renderKeys(el.keyInput.value.trim());
   }
 
@@ -404,7 +642,7 @@
     var needsReason = !el.override.classList.contains("hidden");
     var reason = el.overrideInput.value.trim();
     if (needsReason && reason.length < 5) {
-      showError("Type a reason (at least 5 characters) to override the schedule.");
+      showError("Type a reason (at least 5 characters) to continue.");
       el.overrideInput.focus();
       return;
     }
@@ -428,7 +666,11 @@
         if (r.status === 201 || r.status === 200) {
           var b = r.body;
           KeyTrack.toast("Released " + b.key_code + " to " + b.borrower + " (" + b.transaction_no + ")" +
-                         (b.overridden ? " — schedule override recorded." : "."), "success");
+                         (b.overridden ? " — override recorded." : "."), "success");
+          clearCaches();
+          applyReleaseToSnapshot(state.key, state.borrower, b);
+          refreshSnapshot();
+          if (window.KeyTrackModal) window.KeyTrackModal.close(RELEASE_MODAL);
           if (window.KeyTrackCurrentlyOut) window.KeyTrackCurrentlyOut.refresh();
           /* Ready for the next person in the queue. */
           el.borrowerInput.value = "";
@@ -448,7 +690,9 @@
         }
         showError(r.body.error || "The key could not be released.");
         /* The key may have just gone to someone else: refresh the list. */
-        searchKeys(el.keyInput.value.trim());
+        clearCaches();
+        if (snap) refreshSnapshot();
+        else searchKeys(el.keyInput.value.trim());
       })
       .catch(function (err) {
         if (err && err.message === "session_expired") return;
@@ -499,6 +743,12 @@
 
   function bindShortcuts() {
     document.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && state.key &&
+          window.KeyTrackModal && window.KeyTrackModal.isOpen(RELEASE_MODAL)) {
+        e.preventDefault();
+        submitRelease();
+        return;
+      }
       if (window.KeyTrackModal && window.KeyTrackModal.anyOpen && window.KeyTrackModal.anyOpen()) return;
 
       if (e.key === "F1" || (e.key === "/" && !isTyping(e))) {
@@ -536,9 +786,6 @@
         if (isTyping(e) && e.target.value && (e.target === el.borrowerInput || e.target === el.keyInput)) {
           e.target.value = "";
           e.target.dispatchEvent(new Event("input", { bubbles: true }));
-        } else if (state.key) {
-          clearKey();
-          focusInput(el.keyInput);
         }
       }
     });
@@ -554,7 +801,11 @@
       searchKeys(el.keyInput.value.trim());
     }, SEARCH_DEBOUNCE_MS);
 
-    el.borrowerInput.addEventListener("input", runBorrowerSearch);
+    /* Local filtering is instant, so only the API fallback is debounced. */
+    el.borrowerInput.addEventListener("input", function () {
+      if (snap && snap.borrowers) searchBorrowers(el.borrowerInput.value.trim());
+      else runBorrowerSearch();
+    });
     el.borrowerForm.addEventListener("submit", function (e) {
       e.preventDefault();
       if (runBorrowerSearch.cancel) runBorrowerSearch.cancel();
@@ -574,7 +825,10 @@
       selectBorrower(state.borrowers[parseInt(btn.getAttribute("data-pos-pick-borrower"), 10)]);
     });
 
-    el.keyInput.addEventListener("input", runKeySearch);
+    el.keyInput.addEventListener("input", function () {
+      if (snap) searchKeys(el.keyInput.value.trim());
+      else runKeySearch();
+    });
     el.keyForm.addEventListener("submit", function (e) {
       e.preventDefault();
       if (runKeySearch.cancel) runKeySearch.cancel();
@@ -609,11 +863,36 @@
     });
     el.overrideInput.addEventListener("input", function () { showError(""); });
 
+    /* Escape, overlay click or "Change key" closes the modal: drop the pick. */
+    document.addEventListener("modal:close", function (e) {
+      if (!e.detail || e.detail.id !== RELEASE_MODAL) return;
+      state.key = null;
+      if (detailController) detailController.abort();
+      if (state.keys.length) renderKeys(el.keyInput.value.trim());
+      if (state.borrower && !el.keyArea.classList.contains("hidden")) el.keyInput.focus();
+    });
+
     /* A return in the right pane may free the selected borrower. */
-    document.addEventListener("keytrack:out-changed", function () {
-      if (state.borrower && state.borrower.active_transaction) {
-        searchBorrowers(el.borrowerInput.value.trim() || state.borrower.id_number);
-      }
+    document.addEventListener("keytrack:out-changed", function (e) {
+      /* The panel fires this on every poll; only a changed count means a key
+         went out or came back somewhere. */
+      var count = e.detail ? e.detail.count : null;
+      if (count === lastOutCount && count !== null) return;
+      var first = lastOutCount === null;
+      lastOutCount = count;
+      if (first) return;
+      clearCaches();
+      var refreshed = snap ? refreshSnapshot() : Promise.resolve();
+      refreshed.then(function () {
+        if (state.borrower && state.borrower.active_transaction) {
+          searchBorrowers(el.borrowerInput.value.trim() || state.borrower.id_number);
+        }
+      });
+    });
+
+    /* Back to the tab after a while: fetch a fresh snapshot quietly. */
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") refreshIfStale();
     });
   }
 
@@ -628,9 +907,12 @@
       keySearch: root.dataset.keySearchUrl,
       keyDetail: root.dataset.keyDetailUrl,
       borrow: root.dataset.borrowUrl,
+      snapshot: root.dataset.snapshotUrl,
     };
 
     var q = function (s) { return root.querySelector(s); };
+    /* The release modal lives outside the POS root. */
+    var qd = function (s) { return document.querySelector(s); };
     el = {
       borrowerForm: q("[data-pos-borrower-form]"),
       borrowerInput: q("[data-pos-borrower-search]"),
@@ -641,20 +923,20 @@
       keyInput: q("[data-pos-key-search-js]"),
       keyResults: q("[data-pos-key-results-js]"),
       chips: q("[data-pos-building-chips]"),
-      confirm: q("[data-pos-confirm]"),
-      confirmForm: q("[data-pos-confirm-form]"),
-      confirmKey: q("[data-confirm-key]"),
-      confirmRoom: q("[data-confirm-room]"),
-      confirmBorrower: q("[data-confirm-borrower]"),
-      confirmSchedule: q("[data-confirm-schedule]"),
-      confirmError: q("[data-confirm-error]"),
-      override: q("[data-confirm-override]"),
-      overrideMessage: q("[data-override-message]"),
-      overrideInput: q("#pos-override"),
-      purpose: q("#pos-purpose"),
-      due: q("#pos-due"),
-      releaseBtn: q("[data-pos-release]"),
-      releaseLabel: q("[data-release-label]"),
+      confirm: qd("[data-pos-confirm]"),
+      confirmForm: qd("[data-pos-confirm-form]"),
+      confirmKey: qd("[data-confirm-key]"),
+      confirmRoom: qd("[data-confirm-room]"),
+      confirmBorrower: qd("[data-confirm-borrower]"),
+      confirmSchedule: qd("[data-confirm-schedule]"),
+      confirmError: qd("[data-confirm-error]"),
+      override: qd("[data-confirm-override]"),
+      overrideMessage: qd("[data-override-message]"),
+      overrideInput: qd("#pos-override"),
+      purpose: qd("#pos-purpose"),
+      due: qd("#pos-due"),
+      releaseBtn: qd("[data-pos-release]"),
+      releaseLabel: qd("[data-release-label]"),
     };
     if (!el.borrowerInput || !el.keyArea || !ENDPOINTS.borrowerSearch) return; /* stay on the no-JS UI */
 
@@ -664,15 +946,19 @@
     live.classList.remove("hidden");
     live.classList.add("flex");
 
+    var embedded = document.getElementById("pos-snapshot");
+    try { setSnapshot(embedded ? JSON.parse(embedded.textContent || "null") : null); } catch (err) { snap = null; }
+
     bind();
     bindShortcuts();
+    if (!snap) prefetchKeys();
 
     var preset = document.getElementById("pos-selected-borrower");
     var selected = preset ? JSON.parse(preset.textContent || "null") : null;
     if (selected) {
       state.borrowers = [selected];
       selectBorrower(selected);
-    } else if (el.borrowerInput.value.trim()) {
+    } else if (el.borrowerInput.value.trim() || (snap && snap.borrowers)) {
       searchBorrowers(el.borrowerInput.value.trim());
     }
   }

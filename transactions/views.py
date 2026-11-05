@@ -16,7 +16,7 @@ from accounts.cache_utils import remember
 from accounts.api import serialize_borrower
 from accounts.crud import is_modal, paginate, querystring_without_page
 from accounts.models import Borrower, User
-from accounts.permissions import admin_or_guard_required, admin_required, guard_required
+from accounts.permissions import admin_or_guard_required, admin_required
 from audit.models import ActivityLog
 from audit.services import Action, log_activity
 from facilities.models import Building, Room
@@ -25,6 +25,7 @@ from scheduling.models import ScheduleBlock, ScheduleException
 from scheduling.services import effective_term, get_room_today_schedule, get_schedule_settings
 from .forms import TransactionCorrectionForm
 from .models import BorrowTransaction, GuardShift
+from .pos_snapshot import build_snapshot
 from .services import (
     BorrowError,
     ScheduleWarning,
@@ -33,6 +34,7 @@ from .services import (
     admin_set_status,
     due_state,
     get_active_shift,
+    request_active_shift,
     log_return,
     parse_due,
     pos_borrow,
@@ -138,7 +140,7 @@ def dashboard(request):
         return render(request, "dashboard.html", {"is_admin": True, **data})
 
     # Guard Dashboard
-    shift = get_active_shift(request.user)
+    shift = request_active_shift(request)
     shift_elapsed = ""
     if shift:
         delta = now - shift.shift_start
@@ -156,29 +158,38 @@ def dashboard(request):
         my_released_txns = BorrowTransaction.objects.none()
 
     currently_out = active_transactions()[:20]
-    currently_out_count = BorrowTransaction.objects.filter(
-        status__in=[BorrowTransaction.Status.ACTIVE, BorrowTransaction.Status.OVERDUE]
-    ).count()
-    overdue_count = BorrowTransaction.objects.filter(
-        status=BorrowTransaction.Status.OVERDUE
-    ).count()
+    # One aggregate instead of three COUNT round trips.
+    Status = BorrowTransaction.Status
+    aggregates = {
+        "out": Count("pk", filter=Q(status__in=[Status.ACTIVE, Status.OVERDUE])),
+        "overdue": Count("pk", filter=Q(status=Status.OVERDUE)),
+    }
+    if shift:
+        aggregates["mine"] = Count("pk", filter=Q(guard_shift=shift))
+    counts = {"mine": 0, **BorrowTransaction.objects.aggregate(**aggregates)}
+    currently_out_count = counts["out"]
+    overdue_count = counts["overdue"]
 
     return render(request, "dashboard.html", {
         "is_admin": False,
         "shift": shift,
         "shift_elapsed": shift_elapsed,
         "my_released_txns": my_released_txns,
-        "my_released_count": my_released_txns.count(),
+        "my_released_count": counts["mine"],
         "currently_out": currently_out,
         "currently_out_count": currently_out_count,
         "overdue_count": overdue_count,
     })
 
 
-@guard_required
+@admin_or_guard_required
 def borrow_dashboard(request):
     """Borrow Management: search person -> select -> search available key -> confirm.
     Right panel: currently borrowed keys with return button.
+
+    Admins get the same screen as guards. They have no patrol shift, so their
+    releases/returns are recorded against their own account instead of a
+    GuardShift row (see services.borrow_key / return_key).
     """
     q_borrower = request.GET.get("q_borrower", "").strip()
     q_key = request.GET.get("q_key", "").strip()
@@ -238,7 +249,9 @@ def borrow_dashboard(request):
     querystring = params.urlencode()
 
     schedule_cfg = get_schedule_settings()
-    shift = get_active_shift(request.user)
+    shift = request_active_shift(request)
+    is_admin = request.user.is_superuser or request.user.role == "ADMIN"
+    can_transact = bool(shift) or is_admin
     buildings = Building.objects.filter(is_active=True).order_by("code")
 
     return render(request, "transactions/borrow_dashboard.html", {
@@ -251,12 +264,15 @@ def borrow_dashboard(request):
         "selected_key": selected_key, "selected_key_schedule": selected_key_schedule,
         "borrowed": borrowed_page, "page_obj": borrowed_page,
         "querystring": querystring, "shift": shift,
+        "is_admin": is_admin, "can_transact": can_transact,
         # pos.js picks up a borrower chosen through the no-JS links.
         "selected_json": serialize_borrower(selected, active=active_txn) if selected else None,
+        # Embedded so picking a borrower and a key needs no round trip.
+        "pos_snapshot": build_snapshot(),
     })
 
 
-@guard_required
+@admin_or_guard_required
 @require_POST
 def borrow_confirm(request):
     """No-JS fallback for the POS release. Same wrapper as the JSON API."""
@@ -288,7 +304,7 @@ def borrow_confirm(request):
     return redirect(f"{url}?{urlencode({'borrower_id': borrower_id})}")
 
 
-@guard_required
+@admin_or_guard_required
 @require_POST
 def return_confirm(request, pk):
     remarks = request.POST.get("remarks", "").strip()

@@ -1,4 +1,4 @@
-"""Guard POS key endpoints (B3.4): read-only, JSON, GUARD-gated."""
+"""POS key endpoints (B3.4): read-only, JSON, GUARD/ADMIN-gated."""
 from django.conf import settings
 from django.db.models import Q
 from django.http import JsonResponse
@@ -28,7 +28,31 @@ def serialize_key(k):
     }
 
 
-@api_role_required("GUARD")
+def room_holders(room_ids):
+    """{room_id: {key_code, borrower, transaction_no}} for rooms with a key out.
+
+    One query for the whole result list. The earliest open transaction wins, so
+    the warning names who actually has the room.
+    """
+    from transactions.models import BorrowTransaction
+
+    open_rows = (BorrowTransaction.objects
+                 .filter(room_id__in=set(room_ids),
+                         status__in=[BorrowTransaction.Status.ACTIVE,
+                                     BorrowTransaction.Status.OVERDUE])
+                 .select_related("key", "borrower")
+                 .order_by("-borrowed_at"))
+    holders = {}
+    for t in open_rows:  # newest first, so the earliest overwrites last
+        holders[t.room_id] = {
+            "key_code": t.key.key_code,
+            "borrower": t.borrower.full_name,
+            "transaction_no": t.transaction_no,
+        }
+    return holders
+
+
+@api_role_required("GUARD", "ADMIN")
 def key_search(request):
     """GET /api/keys/search/?q=&building= — available keys only, max 30.
 
@@ -46,14 +70,20 @@ def key_search(request):
         qs = qs.filter(room__building_id=int(building))
     keys = list(qs.order_by("room__building__code", "room__room_code", "copy_number")[:30])
     exact = next((k.pk for k in keys if q and k.key_code.lower() == q.lower()), None)
+    holders = room_holders(k.room_id for k in keys)
+    results = []
+    for k in keys:
+        row = serialize_key(k)
+        row["room_holder"] = holders.get(k.room_id)
+        results.append(row)
     return JsonResponse({
-        "results": [serialize_key(k) for k in keys],
+        "results": results,
         "exact": exact,
         "query": q,
     })
 
 
-@api_role_required("GUARD")
+@api_role_required("GUARD", "ADMIN")
 def key_detail(request, pk):
     """GET /api/keys/<pk>/ — one key plus today's schedule for its room, for
     the POS confirm panel (F3.5 / F5.6)."""
@@ -68,4 +98,5 @@ def key_detail(request, pk):
     from scheduling.services import get_schedule_settings
     check["enforcement"] = get_schedule_settings().enforcement
     data["schedule"] = check
+    data["room_holder"] = room_holders([key.room_id]).get(key.room_id)
     return JsonResponse(data)

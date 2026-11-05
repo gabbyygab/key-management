@@ -359,13 +359,19 @@ class EffectiveSettings:
 
 
 def get_schedule_settings():
+    # Read on nearly every page (navbar term, POS, timetables), so it is cached
+    # until a schedule row or the settings row is saved (accounts/cache_utils).
     from django.conf import settings as dj_settings
-    row = ScheduleSettings.objects.select_related("current_term").first()
-    if row is None:
-        mode = getattr(dj_settings, "SCHEDULE_ENFORCEMENT", "warn")
-        return EffectiveSettings(mode, ScheduleSettings.NoSchedule.AUTO, None)
-    return EffectiveSettings(row.enforcement, row.no_schedule_policy,
-                             row.current_term if row.current_term_id else None)
+    from accounts.cache_utils import remember
+    mode = getattr(dj_settings, "SCHEDULE_ENFORCEMENT", "warn")
+
+    def build():
+        row = ScheduleSettings.objects.select_related("current_term").first()
+        if row is None:
+            return EffectiveSettings(mode, ScheduleSettings.NoSchedule.AUTO, None)
+        return EffectiveSettings(row.enforcement, row.no_schedule_policy,
+                                 row.current_term if row.current_term_id else None)
+    return remember("schedule-settings", ["schedule"], build, parts=[mode])
 
 
 def effective_term(date, cfg=None):
@@ -380,7 +386,9 @@ def effective_term(date, cfg=None):
 def term_has_schedule(term):
     if term is None:
         return False
-    return live_blocks(ScheduleBlock.objects).filter(term=term, is_active=True).exists()
+    from accounts.cache_utils import remember
+    return remember("term-has-schedule", ["schedule"], lambda: live_blocks(
+        ScheduleBlock.objects).filter(term=term, is_active=True).exists(), parts=[term.pk])
 
 
 def get_room_today_schedule(room, when=None):
@@ -405,66 +413,17 @@ def get_room_today_schedule(room, when=None):
         when = timezone.localtime()
 
     target_date = when.date()
-    target_weekday = target_date.weekday()
     current_time = when.time()
 
-    # Active blocks for today's weekday
-    blocks_qs = live_blocks(ScheduleBlock.objects).filter(
-        is_active=True,
-        day_of_week=target_weekday,
-        term__is_active=True,
-    )
-
-    # An admin-pinned semester wins; otherwise prefer the term whose dates
-    # cover the day.
-    pinned = get_schedule_settings().current_term
-    if pinned is not None and pinned.is_active:
-        blocks_qs = blocks_qs.filter(term=pinned)
-    else:
-        term_in_range = blocks_qs.filter(
-            term__start_date__lte=target_date,
-            term__end_date__gte=target_date,
-        )
-        if term_in_range.exists():
-            blocks_qs = term_in_range
-
-    # Exceptions for today
-    cancelled_ids = list(ScheduleException.objects.filter(
-        date=target_date,
-        exception_type=ScheduleException.ExceptionType.CANCELLED,
-    ).values_list("schedule_block_id", flat=True))
-
-    moved_away_ids = list(ScheduleException.objects.filter(
-        date=target_date,
-        exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
-        schedule_block__room=room,
-    ).exclude(replacement_room=room).values_list("schedule_block_id", flat=True))
-
-    exclude_ids = set(cancelled_ids + moved_away_ids)
-
-    direct_blocks = blocks_qs.filter(room=room)
-    if exclude_ids:
-        direct_blocks = direct_blocks.exclude(id__in=exclude_ids)
-
-    # Blocks moved to this room today
-    moved_to_ids = list(ScheduleException.objects.filter(
-        date=target_date,
-        exception_type=ScheduleException.ExceptionType.ROOM_CHANGE,
-        replacement_room=room,
-    ).values_list("schedule_block_id", flat=True))
-
-    moved_to_blocks = blocks_qs.filter(id__in=moved_to_ids)
-
-    combined = (direct_blocks | moved_to_blocks).select_related(
-        "subject", "instructor", "term", "room", "room__building"
-    ).order_by("start_time", "end_time").distinct()
+    # Same rules as rooms_today_blocks() (pinned term, term-in-range,
+    # cancellations, room changes), restricted to this one room.
+    combined = rooms_today_blocks(when=when, room_ids=[room.pk]).get(room.pk, [])
 
     formatted_blocks = []
     current_block = None
     next_block = None
 
-    for block in combined:
-        summary = _format_block_summary(block, when)
+    for summary in combined:
         formatted_blocks.append(summary)
 
         if summary["is_current"] and current_block is None:
@@ -494,6 +453,77 @@ def get_room_today_schedule(room, when=None):
     }
 
 
+def _term_in_range_has_blocks(blocks_qs, target_date):
+    """Whether any of today's blocks belong to a term whose dates cover the
+    day. Cached per day until a schedule row changes."""
+    from accounts.cache_utils import remember
+    return remember("term-in-range-blocks", ["schedule"], lambda: blocks_qs.filter(
+        term__start_date__lte=target_date, term__end_date__gte=target_date).exists(),
+        parts=[target_date])
+
+
+def rooms_today_blocks(when=None, room_ids=None):
+    """Today's blocks per room: ``{room_id: [summary, ...]}``.
+
+    Rules: an admin-pinned term wins, else blocks of a term whose dates cover
+    the day are preferred; CANCELLED drops a block, ROOM_CHANGE moves it to
+    its replacement room. A fixed handful of queries however many rooms there
+    are (``room_ids`` limits the result to those rooms). Summaries are
+    _format_block_summary() dicts, ordered by start time. The POS snapshot and
+    get_room_today_schedule() both use it.
+    """
+    when = when or timezone.localtime()
+    target_date = when.date()
+
+    blocks_qs = live_blocks(ScheduleBlock.objects).filter(
+        is_active=True, day_of_week=target_date.weekday(), term__is_active=True)
+    pinned = get_schedule_settings().current_term
+    if pinned is not None and pinned.is_active:
+        blocks_qs = blocks_qs.filter(term=pinned)
+    elif _term_in_range_has_blocks(blocks_qs, target_date):
+        blocks_qs = blocks_qs.filter(term__start_date__lte=target_date,
+                                     term__end_date__gte=target_date)
+
+    exceptions = list(ScheduleException.objects.filter(
+        date=target_date,
+        exception_type__in=[ScheduleException.ExceptionType.CANCELLED,
+                            ScheduleException.ExceptionType.ROOM_CHANGE],
+    ).values_list("schedule_block_id", "exception_type", "replacement_room_id"))
+    cancelled = {bid for bid, kind, _ in exceptions
+                 if kind == ScheduleException.ExceptionType.CANCELLED}
+    # A block may carry more than one room change; any replacement room counts.
+    moved = {}
+    for bid, kind, replacement in exceptions:
+        if kind == ScheduleException.ExceptionType.ROOM_CHANGE:
+            moved.setdefault(bid, set()).add(replacement)
+
+    wanted = None
+    if room_ids is not None:
+        wanted = set(room_ids)
+        moved_in = [bid for bid, targets in moved.items() if targets & wanted]
+        blocks_qs = blocks_qs.filter(Q(room_id__in=wanted) | Q(pk__in=moved_in))
+
+    blocks = list(blocks_qs.select_related("subject", "instructor", "term", "room__building")
+                  .order_by("start_time", "end_time", "pk"))
+
+    out = {}
+    for block in blocks:
+        rooms = set()
+        targets = moved.get(block.pk, set())
+        # Stays in its own room unless cancelled or moved somewhere else today.
+        if block.pk not in cancelled and (not targets or block.room_id in targets):
+            rooms.add(block.room_id)
+        rooms.update(r for r in targets if r is not None)
+        if wanted is not None:
+            rooms &= wanted
+        if not rooms:
+            continue
+        summary = _format_block_summary(block, when)
+        for room_id in rooms:
+            out.setdefault(room_id, []).append(summary)
+    return out
+
+
 def get_current_occupant(room, when=None):
     """Return the Borrower scheduled to occupy this room right now, or None."""
     schedule = get_room_today_schedule(room, when=when)
@@ -510,8 +540,11 @@ def get_current_occupant(room, when=None):
 # ---------------------------------------------------------------------------
 
 def _active_term_for(date):
-    return (Term.objects.filter(is_active=True, start_date__lte=date, end_date__gte=date)
-            .order_by("-start_date").first())
+    from accounts.cache_utils import remember
+    # remember() skips None results, so wrap the answer to cache "no term" too.
+    return remember("active-term", ["schedule"], lambda: [
+        Term.objects.filter(is_active=True, start_date__lte=date, end_date__gte=date)
+        .order_by("-start_date").first()], parts=[date])[0]
 
 
 def get_day_schedule(date):

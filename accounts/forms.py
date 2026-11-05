@@ -208,9 +208,15 @@ class KeyForm(StyledFormMixin, forms.ModelForm):
             Key.objects.values("room_id").annotate(max_copy=Max("copy_number")).values_list("room_id", "max_copy")
         )
         room_map = {}
+        # default_key_category() only tells offices from everything else, so
+        # look it up twice at most, not once per room in the list.
+        cat_by_kind = {}
         for r in rooms_qs:
             b_code = r.building.code if r.building else ""
-            cat = default_key_category(r)
+            kind = r.room_type == "OFFICE"
+            if kind not in cat_by_kind:
+                cat_by_kind[kind] = default_key_category(r)
+            cat = cat_by_kind[kind]
             room_map[str(r.pk)] = {
                 "building": b_code,
                 "room": r.room_code,

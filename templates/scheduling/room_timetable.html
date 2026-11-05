@@ -185,7 +185,7 @@
     </div>
 
     <!-- Timetable Grid Body (28 rows x 7 cols) -->
-    <div data-schedule-grid data-room="{{ selected_room.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
+    <div data-schedule-grid data-room="{{ selected_room.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" data-busy-url="{{ busy_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
       
       <!-- Time Gutter Labels (Col 1) -->
       {% for slot in time_slots %}
@@ -264,6 +264,6 @@
 
 {% block extra_js %}
 {# csrf/toast/modal/confirm already load from base.html; loading them again double-binds every listener. #}
-<script src="{% static 'js/class-modal.js' %}?v=3"></script>
-<script src="{% static 'js/schedule-dnd.js' %}?v=2"></script>
+<script src="{% static 'js/class-modal.js' %}?v=7"></script>
+<script src="{% static 'js/schedule-dnd.js' %}?v=4"></script>
 {% endblock %}

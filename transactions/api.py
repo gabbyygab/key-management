@@ -1,4 +1,4 @@
-"""JSON endpoints for the guard POS screen.
+"""JSON endpoints for the POS screen.
 
 Mounted at /api/transactions/ (see transactions/api_urls.py). Only the two
 endpoints the "Currently Out" panel needs live here (backend B3.4's
@@ -23,10 +23,11 @@ from .services import (
     log_return, parse_due, pos_borrow, return_key_with_condition,
 )
 
-# role_required("GUARD") for a JSON path: a wrong role or an expired session
-# answers 403 JSON instead of login_required's redirect, so the POS panel can
-# tell "no permission" from "server said something weird".
-guard_api = api_role_required("GUARD")
+# role_required("GUARD", "ADMIN") for a JSON path: a wrong role or an expired
+# session answers 403 JSON instead of login_required's redirect, so the POS
+# panel can tell "no permission" from "server said something weird". Admins use
+# the same POS as guards, so they are allowed here too.
+pos_api = api_role_required("GUARD", "ADMIN")
 
 
 def _serialize(txn, *, now):
@@ -72,7 +73,15 @@ def panel_counts(*, now=None):
     return _counts([due_state(t, now=now) for t in active_transactions()])
 
 
-@guard_api
+@pos_api
+def pos_snapshot(request):
+    """GET /api/transactions/pos-snapshot/ — keys, borrowers and today's room
+    schedules for the POS to filter in the browser (see pos_snapshot.py)."""
+    from .pos_snapshot import build_snapshot
+    return JsonResponse(build_snapshot())
+
+
+@pos_api
 def active_list(request):
     """GET /api/transactions/active/?q= — currently-out keys + panel counters."""
     now = timezone.now()
@@ -86,7 +95,7 @@ def active_list(request):
     })
 
 
-@guard_api
+@pos_api
 @require_POST
 def transaction_return(request, pk):
     """POST /api/transactions/<pk>/return/ — body: remarks, condition."""
@@ -124,7 +133,7 @@ def transaction_return(request, pk):
     })
 
 
-@guard_api
+@pos_api
 @require_POST
 def transaction_borrow(request):
     """POST /api/transactions/borrow/ — B4.1.

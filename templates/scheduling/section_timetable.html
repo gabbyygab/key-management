@@ -7,7 +7,7 @@
   <div>
     <h1 class="text-[22px] font-extrabold tracking-tight">Section timetable</h1>
     <p class="mt-0.5 text-[13px] text-stone-500">
-      One section's week. Click a free slot to add one of its curriculum subjects, click a class to move it, or drag it to another day and time. Picking a whole block shows its group classes too.
+      One section's week. Click a free slot to add a class for one of its offered subjects, click a class to move it, or drag it to another day and time. Picking a whole block shows only its block-wide classes; each group (G1, G2) keeps its own schedule.
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
@@ -64,8 +64,8 @@
   <div>
     <label for="tt-groups" class="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-stone-500">Group classes</label>
     <select id="tt-groups" name="groups" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-[13px] focus:border-[#1E6B4A]">
-      <option value="1" {% if include_groups %}selected{% endif %}>Include group classes</option>
       <option value="0" {% if not include_groups %}selected{% endif %}>Block-wide classes only</option>
+      <option value="1" {% if include_groups %}selected{% endif %}>Include group classes</option>
     </select>
   </div>
   {% if selected_section and selected_term %}
@@ -90,7 +90,7 @@
 <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/60 p-3 text-[13px] text-sky-900">
   <p><strong>{{ selected_section.code }}</strong> splits into
     {% for g in group_rows %}<a href="?section={{ g.pk }}{% if selected_term %}&amp;term={{ selected_term.pk }}{% endif %}" class="font-mono font-semibold underline">{{ g.code }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
-    Group classes can share a time slot, so a day column splits into lanes below.
+    {% if include_groups %}Group classes can share a time slot, so a day column splits into lanes below.{% else %}Only block-wide classes show here; open a group to see its own lab or split classes, or choose "Include group classes".{% endif %}
     Classes marked <strong>together</strong> are shared: every group meets in the same room at the same time.
   </p>
 </div>
@@ -112,7 +112,7 @@
       {% endfor %}
     </div>
 
-    <div data-schedule-grid data-section="{{ selected_section.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
+    <div data-schedule-grid data-section="{{ selected_section.pk }}" data-move-url="{{ move_url }}" data-swap-url="{{ swap_url }}" data-busy-url="{{ busy_url }}" class="timetable-grid relative grid grid-cols-[4.5rem_repeat(6,minmax(0,1fr))]" style="grid-template-rows: repeat(28, 38px);">
       {% for slot in time_slots %}
       <div class="sticky left-0 z-10 bg-white border-r border-b border-stone-200 text-[11px] font-mono text-stone-500 px-2 flex items-center justify-end select-none"
            style="grid-column: 1; grid-row: {{ slot.row }};">
@@ -219,7 +219,7 @@
     <div class="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-5 py-4">
       <div class="min-w-0">
         <h2 id="section-subjects-title" class="text-[15px] font-bold text-stone-900">{{ selected_section.code }} subjects</h2>
-        <p class="text-[12px] text-stone-500">{{ selected_term.name }}{% if subjects_restricted %} · from the curriculum{% else %} · no curriculum set, all subjects listed{% endif %} · {{ subjects_placed }} placed, {{ subjects_unplaced }} not yet</p>
+        <p class="text-[12px] text-stone-500">{{ selected_term.name }} · from Subject Offerings · {{ subjects_placed }} placed, {{ subjects_unplaced }} not yet</p>
       </div>
       <button type="button" data-modal-close aria-label="Close" class="shrink-0 rounded-lg border border-stone-200 bg-white p-1 text-stone-500 hover:bg-stone-50">
         <i data-lucide="x" aria-hidden="true" class="h-4 w-4"></i>
@@ -309,8 +309,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/class-modal.js' %}?v=3"></script>
-<script src="{% static 'js/schedule-dnd.js' %}?v=2"></script>
+<script src="{% static 'js/class-modal.js' %}?v=7"></script>
+<script src="{% static 'js/schedule-dnd.js' %}?v=4"></script>
 <script>
 // The "Swap" link on a row preselects that class in the modal, so the admin
 // picks only the partner. The modal itself is the full control for both sides.

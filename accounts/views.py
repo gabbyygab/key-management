@@ -96,6 +96,12 @@ def login_view(request):
                 # Not the user's fault, so it does not count toward the lockout.
                 error = "The sign-in service cannot be reached right now. Try again shortly."
                 status = 503
+            elif _is_deactivated(username, password):
+                # Right password, but an admin switched the account off. Only
+                # said once the password matches, so the message never tells a
+                # stranger which usernames exist or are deactivated.
+                error = "Your account has been deactivated by an administrator. Contact your admin to restore access."
+                status = 403
             else:
                 lockout.record_failure(account)
                 left = lockout.attempts_left(account)
@@ -108,6 +114,22 @@ def login_view(request):
     # `next` goes back into the template so the form can carry it through the
     # POST; the form used to drop it, which sent every guard to the dashboard.
     return render(request, "accounts/login.html", {"error": error, "next": nxt}, status=status)
+
+
+def _is_deactivated(identifier, password):
+    """True when the login names an inactive user and the password is theirs.
+
+    authenticate() returns None for inactive users before the password is even
+    checked (and Supabase bans them), so the local hash answers here. Every
+    password change in KEYTRACK sets that hash, so it matches the real one.
+    """
+    identifier = identifier.strip()
+    if not identifier or not password:
+        return False
+    user = User.objects.filter(username=identifier).first()
+    if user is None and "@" in identifier:
+        user = User.objects.filter(email__iexact=identifier).first()
+    return user is not None and not user.is_active and user.check_password(password)
 
 
 @require_POST

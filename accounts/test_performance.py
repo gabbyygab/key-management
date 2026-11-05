@@ -68,6 +68,7 @@ class TokenBucketTests(TestCase):
         throttle.reset()
 
 
+@override_settings(DATA_CACHE_TTL=60)
 class DataCacheTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -118,3 +119,49 @@ class SessionTouchTests(TestCase):
         with mock.patch("accounts.middleware.time.time", return_value=first + 10_000):
             self.client.get(reverse("dashboard"))
         self.assertEqual(self.client.session["_touched"], first + 10_000)
+
+
+class QueryGrowthTests(TestCase):
+    """Pages whose query count used to grow with the number of rows."""
+
+    def setUp(self):
+        from facilities.models import Building, Room
+        from keys.models import KeyCategory
+        self.admin = User.objects.create_user("growth", password="x", role="ADMIN")
+        self.client.force_login(self.admin)
+        self.building = Building.objects.create(code="QG", name="Query Growth")
+        self.Room, self.KeyCategory = Room, KeyCategory
+        self.n = 0
+        self.add_rows(2)  # an office and a classroom: both default-category kinds
+
+    def add_rows(self, count=1):
+        from keys.models import Key
+        for _ in range(count):
+            self.n += 1
+            room = self.Room.objects.create(building=self.building, room_code=f"R{self.n}",
+                                            room_type="OFFICE" if self.n % 2 else "CLASSROOM")
+            cat = self.KeyCategory.objects.create(name=f"Cat {self.n}")
+            Key.objects.create(key_code=f"QG-{self.n}", room=room, category=cat)
+
+    def count(self, url, **headers):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            self.assertEqual(self.client.get(url, **headers).status_code, 200)
+        self.last_sql = [q["sql"][:150] for q in ctx.captured_queries]
+        return len(ctx.captured_queries)
+
+    def assert_flat(self, url, **headers):
+        self.count(url, **headers)  # the first hit after login also saves the session
+        before = self.count(url, **headers)
+        first = self.last_sql
+        self.add_rows(4)
+        self.assertEqual(self.count(url, **headers), before,
+                         "\n".join(["BEFORE:", *first, "AFTER:", *self.last_sql]))
+
+    def test_category_list_annotations_are_not_recounted(self):
+        self.assert_flat(reverse("keys:category_list"))
+
+    def test_key_form_looks_up_default_category_once_per_kind(self):
+        self.assert_flat(reverse("keys:key_create") + "?modal=1",
+                         HTTP_X_REQUESTED_WITH="XMLHttpRequest")

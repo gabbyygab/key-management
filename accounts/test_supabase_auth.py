@@ -127,7 +127,8 @@ class SupabaseLoginTests(FakeSupabaseMixin, TestCase):
     def test_inactive_never_reaches_supabase(self):
         self.guard.is_active = False
         self.guard.save()
-        self.assertEqual(self.login("guard").status_code, 200)
+        res = self.login("guard")
+        self.assertContains(res, "deactivated by an administrator", status_code=403)
         self.assertEqual(self.sb.calls, [])
 
     def test_offline_fallback_uses_local_hash(self):

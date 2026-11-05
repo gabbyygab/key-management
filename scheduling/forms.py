@@ -561,7 +561,7 @@ class FreeRoomQueryForm(forms.Form):
     min_capacity = forms.IntegerField(required=False, min_value=1, label="Min. capacity",
                                       widget=forms.NumberInput(attrs={"placeholder": "Any"}))
     term = forms.ModelChoiceField(queryset=Term.objects.filter(is_active=True).order_by("-start_date"),
-                                  required=False, empty_label="Active term",
+                                  required=False, empty_label="Default term",
                                   help_text="Rooms already booked in this term drop out.")
 
     def __init__(self, *args, **kwargs):
@@ -577,6 +577,74 @@ class FreeRoomQueryForm(forms.Form):
         start, end = cleaned.get("start"), cleaned.get("end")
         if start and end and end <= start:
             self.add_error("end", "End time must be after start time.")
+        return cleaned
+
+
+class OfferingRoomQueryForm(forms.Form):
+    """Room finder, subject mode: rooms for one meeting of a subject offering.
+
+    The term is resolved by the view (``?term=`` or the navbar default) and
+    passed in, so the offering picker only lists that term's live offerings.
+    """
+    offering = forms.ModelChoiceField(queryset=SubjectOffering.objects.none(),
+                                      label="Subject", empty_label="Choose a subject…",
+                                      error_messages={"required": "Choose a subject.",
+                                                      "invalid_choice": "That subject is not offered this term."})
+    kind = forms.ChoiceField(required=False, label="Meeting",
+                             choices=[("", "Meeting")] + list(ScheduleBlock.MeetingKind.choices))
+    days = forms.TypedMultipleChoiceField(required=False, coerce=int, label="Days",
+                                          choices=[(d, l) for d, l in DAY_CHOICES if d <= 5])
+    window_start = forms.TimeField(required=False, label="From",
+                                   widget=forms.TimeInput(attrs={"type": "time", "step": 1800,
+                                                                 "min": "07:00", "max": "21:00"},
+                                                          format="%H:%M"))
+    window_end = forms.TimeField(required=False, label="To",
+                                 widget=forms.TimeInput(attrs={"type": "time", "step": 1800,
+                                                               "min": "07:00", "max": "21:00"},
+                                                        format="%H:%M"))
+    building = forms.ModelChoiceField(queryset=Building.objects.filter(is_active=True),
+                                      required=False, empty_label="Any building")
+
+    def __init__(self, *args, term=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.term = term
+        self.fields["offering"].queryset = (
+            SubjectOffering.objects.filter(term=term, is_active=True, subject__is_active=True,
+                                           section__is_active=True)
+            .select_related("term", "subject__department", "section__department", "instructor",
+                            "preferred_room", "preferred_lab_room")
+            .order_by("subject__code", "section__program", "section__year_level",
+                      "section__block", "section__group", "pk")
+            if term is not None else SubjectOffering.objects.none())
+        for name in ("window_start", "window_end", "building"):
+            self.fields[name].widget.attrs.setdefault("class", TAILWIND)
+
+    def clean(self):
+        from .planner import DAY_END, DAY_START
+        from .room_finder import meeting_options
+
+        cleaned = super().clean()
+        start = cleaned.get("window_start") or DAY_START
+        end = cleaned.get("window_end") or DAY_END
+        if start < DAY_START or end > DAY_END:
+            self.add_error("window_end" if end > DAY_END else "window_start",
+                           "Classes run between 7:00 AM and 9:00 PM.")
+            return cleaned
+        if end <= start:
+            self.add_error("window_end", "End time must be after start time.")
+            return cleaned
+        cleaned["window_start"], cleaned["window_end"] = start, end
+        offering = cleaned.get("offering")
+        if offering is not None:
+            options = meeting_options(offering)
+            kinds = [o["kind"] for o in options]
+            if cleaned.get("kind") not in kinds:
+                cleaned["kind"] = kinds[0]
+            minutes = next(o["minutes"] for o in options if o["kind"] == cleaned["kind"])
+            span = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+            if minutes and span < minutes:
+                self.add_error("window_end",
+                               f"This window is shorter than the {minutes}-minute meeting.")
         return cleaned
 
 

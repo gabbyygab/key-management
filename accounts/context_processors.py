@@ -13,10 +13,25 @@ def navbar_context(request):
         return {"navbar_shift": None}
 
     if getattr(request.user, "role", None) == "GUARD":
-        from transactions.services import get_active_shift
-        return {"navbar_shift": get_active_shift(request.user)}
+        from transactions.services import request_active_shift
+        return {"navbar_shift": request_active_shift(request)}
 
     return {"navbar_shift": None}
+
+
+def default_term_context(request):
+    """Navbar term picker (admins only): the live terms and the current default."""
+    user = request.user
+    if not user.is_authenticated or not (user.is_superuser or getattr(user, "role", None) == "ADMIN"):
+        return {}
+    from scheduling.term_default import cached_live_terms, default_term_from
+    terms = cached_live_terms()
+    pinned = request.session.get("kt_default_term")
+    return {
+        "nav_terms": terms,
+        "nav_default_term": default_term_from(request, terms) if terms else None,
+        "nav_term_is_manual": bool(pinned) and any(t.pk == pinned for t in terms),
+    }
 
 
 def active_nav_context(request):

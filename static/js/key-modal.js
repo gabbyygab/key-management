@@ -75,6 +75,135 @@
     }
   });
 
+  // ---- Room combobox: the search input opens a dropdown of rooms (default picker) ----
+  function enhanceRoomSearch(input) {
+    if (input.dataset.combo === "1") return;
+    var container = input.closest("[data-form-field]") || input.closest("form");
+    var select = container && container.querySelector("select[name=room]");
+    if (!select) return;
+    input.dataset.combo = "1";
+    select.classList.add("sr-only");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+
+    var wrap = input.closest(".relative");
+    var panel = document.createElement("div");
+    panel.className = "hidden absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-stone-200 bg-white py-1 shadow-lg";
+    panel.setAttribute("role", "listbox");
+    wrap.appendChild(panel);
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-autocomplete", "list");
+
+    var active = -1;
+
+    function selectedLabel() {
+      var o = select.options[select.selectedIndex];
+      return o && o.value ? o.text : "";
+    }
+    function items() { return panel.querySelectorAll("[data-room-opt]"); }
+    function setActive(i) {
+      var list = items();
+      if (!list.length) { active = -1; return; }
+      active = (i + list.length) % list.length;
+      list.forEach(function (el, n) {
+        el.classList.toggle("bg-stone-100", n === active);
+      });
+      list[active].scrollIntoView({ block: "nearest" });
+    }
+    function render(query) {
+      query = (query || "").trim().toLowerCase();
+      panel.innerHTML = "";
+      var count = 0;
+      function addOpt(opt, groupMatch) {
+        if (!opt.value) return;
+        if (query && !groupMatch && opt.text.toLowerCase().indexOf(query) === -1) return;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("data-room-opt", opt.value);
+        b.setAttribute("role", "option");
+        b.className = "block w-full px-3 py-1.5 text-left text-[12px] text-stone-800 hover:bg-stone-100" +
+          (opt.value === select.value ? " font-semibold text-[#1E6B4A]" : "");
+        b.textContent = opt.text;
+        panel.appendChild(b);
+        count++;
+      }
+      Array.prototype.forEach.call(select.children, function (child) {
+        if (child.tagName === "OPTGROUP") {
+          var gm = !!query && child.label.toLowerCase().indexOf(query) !== -1;
+          var before = panel.children.length;
+          var head = document.createElement("div");
+          head.className = "px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400";
+          head.textContent = child.label;
+          panel.appendChild(head);
+          Array.prototype.forEach.call(child.children, function (o) { addOpt(o, gm); });
+          if (panel.children.length === before + 1) panel.removeChild(head);
+        } else if (child.tagName === "OPTION") {
+          addOpt(child, false);
+        }
+      });
+      if (!count) {
+        var empty = document.createElement("p");
+        empty.className = "px-3 py-2 text-[12px] text-stone-500";
+        empty.textContent = "No rooms match";
+        panel.appendChild(empty);
+      }
+      active = -1;
+    }
+    function open(filter) {
+      render(filter);
+      panel.classList.remove("hidden");
+      input.setAttribute("aria-expanded", "true");
+    }
+    function close() {
+      panel.classList.add("hidden");
+      input.setAttribute("aria-expanded", "false");
+      input.value = selectedLabel();
+    }
+    function choose(value) {
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      close();
+    }
+
+    input.value = selectedLabel();
+    input.addEventListener("focus", function () { input.select(); open(""); });
+    input.addEventListener("click", function () { if (panel.classList.contains("hidden")) open(""); });
+    input.addEventListener("input", function () { open(input.value); });
+    input.addEventListener("keydown", function (e) {
+      var isOpen = !panel.classList.contains("hidden");
+      if (e.key === "ArrowDown") { e.preventDefault(); if (!isOpen) open(""); setActive(active + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (isOpen) setActive(active - 1); }
+      else if (e.key === "Enter" && isOpen) {
+        e.preventDefault();
+        var list = items();
+        var pick = list[active >= 0 ? active : (list.length === 1 ? 0 : -1)];
+        if (pick) choose(pick.getAttribute("data-room-opt"));
+      } else if (e.key === "Escape" && isOpen) {
+        e.preventDefault(); e.stopPropagation(); close();
+      }
+    });
+    panel.addEventListener("mousedown", function (e) {
+      var b = e.target.closest("[data-room-opt]");
+      if (!b) return;
+      e.preventDefault();
+      choose(b.getAttribute("data-room-opt"));
+    });
+    document.addEventListener("mousedown", function (e) {
+      if (!document.body.contains(input)) return;
+      if (!wrap.contains(e.target) && !panel.classList.contains("hidden")) close();
+    });
+    select.addEventListener("change", function () {
+      if (panel.classList.contains("hidden")) input.value = selectedLabel();
+    });
+  }
+
+  function enhanceAll(root) {
+    (root || document).querySelectorAll("[data-room-search]").forEach(enhanceRoomSearch);
+  }
+  enhanceAll();
+  new MutationObserver(function () { enhanceAll(); }).observe(document.documentElement, { childList: true, subtree: true });
+
   // Clear room search input
   document.addEventListener("click", function (e) {
     var clearBtn = e.target.closest("[data-room-search-clear]");
